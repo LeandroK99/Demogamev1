@@ -22,3 +22,17 @@ const MOVING_SHOOTER_FACTOR: float = 0.4 # si el que dispara se mueve
 const EXPOSURE_WEIGHT_K: float = 8.0 # peso de la exposición en el costo del A*
 const HULLDOWN_RADIUS: int = 15 # celdas de búsqueda de candidatos
 const MAX_TURNS: int = 12 # al llegar, gana el bando con más tanques vivos
+
+# --- Generación del terreno ---
+const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
+const NOISE_OCTAVES: int = 3
+const NOISE_WEIGHT: float = 0.3 # aporte del ruido (0..1 de MAX_HEIGHT)
+const RIDGE_MIN_H: float = 0.5 # altura mínima de la cresta central (fracción de MAX_HEIGHT)
+const RIDGE_MAX_H: float = 0.7 # altura máxima de la cresta central
+const RIDGE_WIDTH: float = 6.0 # celdas; a esta distancia del eje la cresta vale ~37 %
+const RIDGE_TILT: float = 0.2 # pendiente de la diagonal (celdas en y por celda en x)
+const RIDGE_WAVE_AMP: float = 4.0 # ondulación sinusoidal del eje, en celdas
+const MINOR_HILL_H_MIN: float = 0.2
+const MINOR_HILL_H_MAX: float = 0.35
+const MINOR_HILL_R_MIN: float = 5.0 # celdas
+const MINOR_HILL_R_MAX: float = 8.0
