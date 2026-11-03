@@ -870,10 +870,15 @@ func set_engagement(unit_id: int, arc_dir: Vector2, max_m: float = Config.MAX_RA
 ## Qué cara le muestra target a un tirador en from: frente, flanco o retaguardia,
 ## según el ángulo entre el heading del blanco y la dirección al tirador.
 static func aspect_of(target: Unit, from: Vector2) -> int:
-	var to_shooter: Vector2 = from - target.pos
-	if to_shooter.length_squared() < 0.0001:
+	return aspect_from(target.heading, target.pos, from)
+
+
+## Igual que aspect_of, para un blanco hipotético con ese heading en target_pos.
+static func aspect_from(heading: Vector2, target_pos: Vector2, from: Vector2) -> int:
+	var to_shooter: Vector2 = from - target_pos
+	if to_shooter.length_squared() < 0.0001 or heading.length_squared() < 0.0001:
 		return Aspect.FRONT
-	var c: float = target.heading.normalized().dot(to_shooter.normalized())
+	var c: float = heading.normalized().dot(to_shooter.normalized())
 	if c >= Config.ARMOR_FRONT_COS:
 		return Aspect.FRONT
 	if c <= -Config.ARMOR_FRONT_COS:
@@ -910,6 +915,78 @@ func hit_probability(shooter: Unit, target: Unit) -> float:
 		f_move *= Config.OVERWATCH_FIRST_SHOT_FACTOR # emboscada
 	var f_armor: float = aspect_factor(aspect_of(target, shooter.pos)) if armor_enabled else 1.0
 	return minf(p_hit_base * f_dist * f_hull * f_move * f_armor, p_hit_max)
+
+
+## Probabilidad de que un tirador quieto en shooter_cell impacte a un blanco en target_cell
+## con ese heading (para la vista previa de riesgo: sin emboscada ni movimiento del tirador).
+func hit_probability_at(shooter_cell: Vector2i, target_cell: Vector2i, target_heading: Vector2) -> float:
+	var d: float = TerrainAnalysis.dist_m(shooter_cell, target_cell)
+	var f_dist: float = clampf(1.0 - d / Config.MAX_RANGE, 0.2, 1.0)
+	var f_hull: float = 1.0
+	if not analysis.los(shooter_cell, Config.EYE_H, target_cell, Config.HULL_H):
+		f_hull = hulldown_hit_factor
+	var f_armor: float = 1.0
+	if armor_enabled:
+		f_armor = aspect_factor(aspect_from(target_heading, Vector2(target_cell), Vector2(shooter_cell)))
+	return minf(p_hit_base * f_dist * f_hull * f_armor, p_hit_max)
+
+
+## Vista previa de riesgo de la ruta planificada de una unidad contra las amenazas conocidas
+## de su bando (en su última posición conocida, quietas y con la recarga lista).
+## Devuelve {total_s, exposed_s, expected_hits, threats_seeing, worst_aspect (-1 = nunca lo ven),
+## level (0 bajo, 1 medio, 2 alto), exposed (PackedByteArray: 1 si la celda i de la ruta está expuesta)}.
+## No cuenta las esperas de las condiciones de los tramos.
+func route_risk(unit_id: int) -> Dictionary:
+	var u: Unit = get_unit(unit_id)
+	var out: Dictionary = {"total_s": 0.0, "exposed_s": 0.0, "expected_hits": 0.0, "threats_seeing": 0,
+		"worst_aspect": -1, "level": 0, "exposed": PackedByteArray()}
+	if u == null or not u.alive or u.path.is_empty():
+		return out
+	var threats: Array[Vector2i] = threats_for(u.side)
+	var pace: int = effective_pace(u)
+	var spot_m: float = Config.SPOT_RANGE_STATIONARY if pace == Unit.Pace.CAUTIOUS else Config.MAX_RANGE
+	var seeing: Dictionary = {}
+	var exposed: PackedByteArray = PackedByteArray()
+	var pos: Vector2 = u.pos
+	var heading: Vector2 = u.heading
+	var total: float = 0.0
+	var exposed_s: float = 0.0
+	var hits: float = 0.0
+	var worst: int = -1
+	for c: Vector2i in u.path:
+		var delta: Vector2 = Vector2(c) - pos
+		var speed: float = speed_at(c) * pace_speed_factor(pace) * (Config.REVERSE_SPEED_FACTOR if u.reversing else 1.0)
+		var dt: float = delta.length() * Config.CELL_SIZE / maxf(speed, 0.01)
+		if not u.reversing and delta.length() > 0.0001:
+			heading = delta.normalized()
+		total += dt
+		var seen_here: bool = false
+		for i: int in threats.size():
+			var th: Vector2i = threats[i]
+			if TerrainAnalysis.dist_m(th, c) > minf(spot_m, Config.MAX_RANGE) \
+					or not analysis.los(th, Config.EYE_H, c, Config.CENTER_H):
+				continue
+			seen_here = true
+			seeing[i] = true
+			hits += dt / Config.RELOAD_SECONDS * hit_probability_at(th, c, heading)
+			worst = maxi(worst, aspect_from(heading, Vector2(c), Vector2(th)))
+		if seen_here:
+			exposed_s += dt
+		exposed.append(1 if seen_here else 0)
+		pos = Vector2(c)
+	out["total_s"] = total
+	out["exposed_s"] = exposed_s
+	out["expected_hits"] = hits
+	out["threats_seeing"] = seeing.size()
+	out["worst_aspect"] = worst
+	out["exposed"] = exposed
+	var level: int = 0
+	if hits >= Config.RISK_HIGH_HITS:
+		level = 2
+	elif hits >= Config.RISK_MEDIUM_HITS or worst == Aspect.REAR:
+		level = 1
+	out["level"] = level
+	return out
 
 
 func alive_count(side: int) -> int:

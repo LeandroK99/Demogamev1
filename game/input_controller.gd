@@ -16,6 +16,7 @@ const COLOR_PATH_DIRECT: Color = Color(1.0, 0.5, 0.1)
 const COLOR_WAYPOINT: Color = Color(1.0, 1.0, 1.0)
 const COLOR_OVERWATCH: Color = Color(0.4, 1.0, 0.6)
 const COLOR_SCOOT: Color = Color(0.9, 0.5, 1.0)
+const COLOR_PATH_EXPOSED: Color = Color(1.0, 0.15, 0.1) # tramo de la ruta a la vista de una amenaza conocida
 const COLOR_GATE: Color = Color(1.0, 0.3, 0.9) # tramo que espera una condición
 const COLOR_ENGAGE: Color = Color(1.0, 0.55, 0.55) # área de enganche (arco + distancia de la ROE)
 const OVERWATCH_ARC_STEPS: int = 12
@@ -43,6 +44,7 @@ var _rdrag_target: Variant = null # punto del terreno donde se apretó el derech
 var _rdrag_facing: Vector2 = Vector2.ZERO # orientación elegida mientras se arrastra
 var _rdrag_direct: bool = false # Ctrl apretado al dar la orden: ruta directa
 var _rdrag_append: bool = false # Shift apretado al dar la orden: agregar tramo
+var _risk_cache: Dictionary = {} # id -> {key, risk}: la vista previa de riesgo se recalcula solo si cambió la ruta
 var _box: ColorRect = ColorRect.new()
 var _paths_mesh: ImmediateMesh = ImmediateMesh.new()
 var _paths_material: StandardMaterial3D = StandardMaterial3D.new()
@@ -408,6 +410,19 @@ func _formation_cells(target: Vector2i, facing: Vector2) -> Dictionary:
 	return world.formation_cells(selected_ids, target, facing)
 
 
+## Vista previa de riesgo de la ruta de u (ver SimWorld.route_risk), cacheada mientras no cambie.
+func risk_for(u: Unit) -> Dictionary:
+	if u.path.is_empty() or world.phase != SimWorld.Phase.PLAN:
+		return {}
+	var key: Array = [u.path.size(), u.path[0], u.path.back(), u.pos, SimWorld.effective_pace(u), u.reversing,
+		world.turn, world.threats_for(u.side), world.smoke_clouds.size()]
+	var cached: Dictionary = _risk_cache.get(u.id, {})
+	if cached.is_empty() or cached["key"] != key:
+		cached = {"key": key, "risk": world.route_risk(u.id)}
+		_risk_cache[u.id] = cached
+	return cached["risk"]
+
+
 ## El pelotón si la selección son exactamente sus tanques vivos (o null).
 func selected_platoon() -> Platoon:
 	if selected_ids.is_empty():
@@ -439,6 +454,10 @@ func _draw_paths() -> void:
 		var start: Vector3 = _ground(u.pos)
 		var prev: Vector3 = start
 		var seg_idx: int = 0
+		var exposed: PackedByteArray = PackedByteArray()
+		if selected_ids.has(u.id):
+			exposed = risk_for(u).get("exposed", PackedByteArray())
+		var cell_idx: int = 0
 		if not u.waypoints.is_empty() and u.waypoints[0].has("gate") and not bool(u.waypoints[0].get("gate_open", false)):
 			_cross(segs, colors, u.pos, COLOR_GATE) # espera antes de arrancar
 		for c: Vector2i in u.path:
@@ -446,7 +465,11 @@ func _draw_paths() -> void:
 			if seg_idx < u.waypoints.size():
 				direct = bool(u.waypoints[seg_idx]["direct"])
 			var p: Vector3 = _ground(Vector2(c))
-			_seg(segs, colors, prev, p, COLOR_PATH_DIRECT if direct else COLOR_PATH)
+			var color: Color = COLOR_PATH_DIRECT if direct else COLOR_PATH
+			if cell_idx < exposed.size() and exposed[cell_idx] == 1:
+				color = COLOR_PATH_EXPOSED
+			cell_idx += 1
+			_seg(segs, colors, prev, p, color)
 			prev = p
 			if seg_idx < u.waypoints.size() and u.waypoints[seg_idx]["cell"] == c:
 				seg_idx += 1

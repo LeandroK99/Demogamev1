@@ -16,6 +16,8 @@ const ORDER_NAMES: Dictionary = {
 	Unit.Order.ASSAULT: "asaltar",
 	Unit.Order.WITHDRAW: "retirarse",
 }
+const ASPECT_NAMES: Array[String] = ["el frente", "el flanco", "la cola"]
+const RISK_NAMES: Array[String] = ["BAJO", "MEDIO", "ALTO"]
 const PACE_NAMES: Dictionary = {
 	Unit.Pace.NORMAL: "normal",
 	Unit.Pace.FAST: "rápido",
@@ -108,6 +110,8 @@ static func gate_text(gate: Dictionary) -> String:
 			return "la señal %s" % gate["name"]
 		"unit":
 			return "al tanque %d" % (int(gate["unit"]) + 1)
+		"all_signals":
+			return "a que llegue la otra sección"
 	return "?"
 
 
@@ -154,15 +158,25 @@ func _unit_text() -> String:
 		lines.append("Ritmo: %s" % PACE_NAMES.get(SimWorld.effective_pace(sel), "?"))
 		for i: int in sel.waypoints.size():
 			var wp: Dictionary = sel.waypoints[i]
-			var extra: String = ""
+			var parts: PackedStringArray = PackedStringArray()
 			if wp.has("gate") and not bool(wp.get("gate_open", false)):
-				extra += " espera %s" % gate_text(wp["gate"])
+				parts.append("espera %s" % gate_text(wp["gate"]))
 			if str(wp.get("signal", "")) != "":
-				extra += " · al llegar: señal %s" % wp["signal"]
-			if extra != "":
-				lines.append("Tramo %d:%s" % [i + 1, extra])
+				parts.append("al llegar emite la señal %s" % wp["signal"])
+			if not parts.is_empty():
+				lines.append("Tramo %d: %s" % [i + 1, ", ".join(parts)])
 		if sel.waiting:
 			lines.append("ESPERANDO")
+		var risk: Dictionary = input_controller.risk_for(sel)
+		if not risk.is_empty():
+			lines.append("")
+			lines.append("Ruta: %d s, %d s a la vista de %d amenaza(s)" % [
+				roundi(risk["total_s"]), roundi(risk["exposed_s"]), int(risk["threats_seeing"])])
+			var aspect: String = ""
+			if int(risk["worst_aspect"]) >= 0:
+				aspect = ", muestra %s" % ASPECT_NAMES[int(risk["worst_aspect"])]
+			lines.append("Impactos esperados: %.1f%s" % [float(risk["expected_hits"]), aspect])
+			lines.append("RIESGO %s" % RISK_NAMES[int(risk["level"])])
 		lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
 		lines.append("")
 	lines.append("Disparos recibidos")

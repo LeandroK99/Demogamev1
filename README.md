@@ -49,6 +49,8 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 
 - **Reglas de fuego:** con *fuego libre* el tanque tira solo a lo que ve. Con *solo si le disparan* espera a recibir un disparo y queda liberado 15 s. Con *retener fuego* no tira nunca, y como no dispara tampoco se delata. Las ROE y el área de enganche duran hasta que las cambies. La IA en vigilancia espera a que te acerques a 250 m, salvo que ya la hayas atacado.
 
+- **Vista previa de riesgo:** con un tanque seleccionado, los tramos de su ruta que quedan a la vista de un enemigo conocido se pintan en rojo, y el panel muestra cuánto dura la ruta, cuántos segundos está expuesto, los impactos esperados (contra los enemigos conocidos, quietos y con la recarga lista), qué cara del blindaje muestra y un riesgo bajo, medio o alto. No cuenta las esperas de las condiciones.
+
 Ganás si destruís a los 4 rojos. Si se llega al turno 12, gana el bando con más tanques vivos.
 
 ## Tests

@@ -97,6 +97,10 @@ const PACE_FAST_FIRE_FACTOR: float = 0.6 # se suma al de tirador en movimiento a
 const PACE_CAUTIOUS_FIRE_FACTOR: float = 0.75 # reemplaza al de tirador en movimiento a ritmo cauto
 const WITHDRAW_RADIUS: int = 10 # celdas: dónde buscar cubierta al retirarse sin destino
 
+# --- Vista previa de riesgo ---
+const RISK_MEDIUM_HITS: float = 0.3 # impactos esperados en la ruta a partir de los que el riesgo es medio
+const RISK_HIGH_HITS: float = 1.0 # ... y alto
+
 # --- Orden hull-down e IA ---
 const HULLDOWN_MIN_SEPARATION: float = 3.0 # celdas mínimas entre destinos de una misma orden
 const NO_THREAT_ADVANCE: int = 20 # celdas hacia el centro si no hay amenazas conocidas
