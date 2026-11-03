@@ -1,13 +1,14 @@
 class_name CameraRTS
 extends Node3D
-## Pivote de cámara RTS: WASD/flechas mueven, rueda hace zoom, botón medio rota.
+## Pivote de cámara RTS: WASD/flechas mueven, rueda hace zoom, Q/E o botón medio rotan.
 
 const PITCH_DEG: float = 60.0
 const ZOOM_MIN: float = 40.0
 const ZOOM_MAX: float = 300.0
 const ZOOM_STEP: float = 1.15
 const PAN_SPEED: float = 1.0 # fracción del zoom por segundo
-const ROTATE_SPEED: float = 0.006 # radianes por píxel
+const ROTATE_SPEED: float = 0.006 # radianes por píxel (botón medio)
+const KEY_ROTATE_SPEED: float = 1.8 # radianes por segundo (Q/E)
 
 var camera: Camera3D = Camera3D.new()
 var zoom: float = 220.0
@@ -37,6 +38,10 @@ func _process(delta: float) -> void:
 		dir.x -= 1.0
 	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
 		dir.x += 1.0
+	if Input.is_physical_key_pressed(KEY_Q):
+		rotation.y += KEY_ROTATE_SPEED * delta
+	if Input.is_physical_key_pressed(KEY_E):
+		rotation.y -= KEY_ROTATE_SPEED * delta
 	if dir != Vector3.ZERO:
 		position += dir.normalized().rotated(Vector3.UP, rotation.y) * zoom * PAN_SPEED * delta
 		_clamp_to_map()
