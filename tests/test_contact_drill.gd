@@ -91,6 +91,7 @@ func test_new_visible_enemy_triggers_once() -> void:
 	var red: Unit = world.add_unit(1, Vector2(48, 50), Unit.Kind.INFANTRY)
 	red.reload_left = 1000.0
 	world.visible_enemies[0][red.id] = true
+	world.minds.on_detection(world)
 	world.mind_think_now(sq)
 	assert_eq(sq.mind.option, O.CONTACT_DRILL, "lo ve: drill")
 	assert_true(sq.mind.reacted.has(red.id), "anotado")

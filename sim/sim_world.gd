@@ -19,6 +19,9 @@ var units: Array[Unit] = []
 var platoons: Array[Platoon] = [] # uno por bando (índice = side)
 var _bound_count: int = 0 # para nombrar las señales de los avances por saltos
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+## Azar de la autonomía (error de los contactos, demoras de radio, ruido de las decisiones). Aparte
+## del de combate para que pensar no cambie la secuencia de los dados; también con semilla.
+var mind_rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var turn: int = 1
 var tick_in_turn: int = 0
 var total_ticks: int = 0 # ticks desde el comienzo de la partida
@@ -71,6 +74,7 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 	if with_ai:
 		ai = AICommander.new(1)
 	rng.seed = sim_seed
+	mind_rng.seed = sim_seed * 7919 + 17
 	if hf == null:
 		hf = HeightField.new()
 		hf.generate(sim_seed)
@@ -317,6 +321,7 @@ func update_detection(full: bool = true) -> void:
 				known_enemies[side][enemy.id] = {"cell": enemy.cell(), "last_seen_turn": turn}
 		visible_enemies[side] = vis
 		inf.visible_soldiers[side] = vis_s
+	minds.on_detection(self)
 
 
 ## Detección de un tanque por otro: LOS al centro del blanco y distancia dentro del alcance de
@@ -1169,6 +1174,7 @@ func _fire_slot(shooter: Unit, slot: int) -> void:
 	shooter.last_fire_tick = total_ticks
 	# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
 	known_enemies[target.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
+	minds.flash(self, target, shooter, shooter.pos_m())
 	target.shots_received += 1
 	target.last_fired_upon_tick = total_ticks
 	var hit: bool = rng.randf() < hit_probability(shooter, target, w)
@@ -1225,6 +1231,7 @@ func _area_fire(shooter: Unit, slot: int, w: int) -> void:
 		if not u.alive or u.side == shooter.side or u.pos.distance_to(center) > Config.SUPPRESS_AREA_RADIUS:
 			continue
 		known_enemies[u.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
+		minds.flash(self, u, shooter, shooter.pos_m())
 		if u.is_infantry() and rng.randf() < hit_probability(shooter, u, w) * Config.SUPPRESS_AREA_HIT_FACTOR:
 			_damage(u)
 		_add_suppression(u, weapon_suppression(w) * Config.SUPPRESS_AREA_SUPP)

@@ -87,6 +87,11 @@ static func ground_offset(w: SimWorld, p: Vector2) -> float:
 ## Punto (en metros) contra el que se cubre la escuadra: el centro de las amenazas conocidas
 ## o, si no hay, uno adelante en su rumbo.
 func threat_point(w: SimWorld, u: Unit) -> Vector2:
+	if u.mind != null and not u.mind.contacts.is_empty():
+		var acc: Vector2 = Vector2.ZERO
+		for id: int in u.mind.contacts:
+			acc += u.mind.contacts[id]["pos"]
+		return acc / float(u.mind.contacts.size()) # lo que sabe la propia escuadra
 	var threats: Array[Vector2i] = w.threats_for(u.side)
 	if threats.is_empty():
 		return u.pos_m() + u.heading * Config.SOLDIER_NO_THREAT_M
@@ -625,6 +630,7 @@ func _shoot(w: SimWorld, su: Unit, from: Vector2, eye: float, s: Soldier, tu: Un
 	su.overwatch_ready = false
 	# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
 	w.known_enemies[tu.side][su.id] = {"cell": su.cell(), "last_seen_turn": w.turn}
+	w.minds.flash(w, tu, su, from)
 	tu.shots_received += 1
 	tu.last_fired_upon_tick = w.total_ticks
 	var hit: bool = false
@@ -672,6 +678,7 @@ func _area_shot(w: SimWorld, u: Unit, s: Soldier, wpn: int) -> void:
 		if not tu.alive or tu.side == u.side or tu.pos_m().distance_to(center) > r + Config.SOLDIER_LAG_M:
 			continue
 		w.known_enemies[tu.side][u.id] = {"cell": u.cell(), "last_seen_turn": w.turn}
+		w.minds.flash(w, tu, u, s.pos)
 		w._add_suppression(tu, SimWorld.weapon_suppression(wpn) * Config.SUPPRESS_AREA_SUPP * Config.SOLDIER_SHOT_SUPP_SCALE)
 	_burst(w, u, s.moving, s.pos, eye, 1 - u.side, at, wpn, Config.SUPPRESS_AREA_HIT_FACTOR, s)
 	w.shot_events.append({"shooter": u.id, "target": -1, "cell": u.suppress_cell, "hit": false,

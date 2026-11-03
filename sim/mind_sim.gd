@@ -6,8 +6,15 @@ extends RefCounted
 ## retoma la orden guardada. Es de SimWorld y recibe el mundo en cada llamada.
 
 
-## Un tick: las escuadras a las que les toca piensan; todas ejecutan su opción.
+## Avisos de radio en camino: {tick (de llegada), unit (el que lo recibe), enemy, pos, seen (tick de la noticia)}.
+var _radio_queue: Array[Dictionary] = []
+var _announced: Array[Dictionary] = [{}, {}] # por bando: enemigo -> tick del último anuncio por radio
+
+
+## Un tick: llegan los avisos de radio, se olvidan los contactos viejos, las escuadras a las que
+## les toca piensan y todas ejecutan su opción.
 func update(w: SimWorld) -> void:
+	_deliver_radio(w)
 	for u: Unit in w.units:
 		if not u.alive or u.mind == null:
 			continue
@@ -19,8 +26,83 @@ func update(w: SimWorld) -> void:
 		_smoke_reflex(w, u)
 		if w.total_ticks >= m.next_think_tick:
 			m.next_think_tick = w.total_ticks + think_interval(u)
+			_forget(w, u)
 			think(w, u)
 		act(w, u)
+
+
+## --- Conocimiento ---
+
+## Tras cada detección: lo que el bando ve a menos de CONTACT_OWN_M de una escuadra, ella lo sabe
+## al momento y exacto; lo que está más lejos le llega por radio con demora.
+func on_detection(w: SimWorld) -> void:
+	for u: Unit in w.units:
+		if not u.alive or u.mind == null:
+			continue
+		var m: SquadMind = u.mind
+		for id: int in w.visible_enemies[u.side]:
+			var e: Unit = w.units[id]
+			if e.pos_m().distance_to(u.pos_m()) <= Config.CONTACT_OWN_M:
+				if m.learn(id, e.pos_m(), w.total_ticks, true):
+					_announce_contact(w, u, e, e.pos_m())
+			elif not m.pending.has(id):
+				m.pending[id] = true
+				var delay: float = w.mind_rng.randf_range(Config.RADIO_DELAY_MIN, Config.RADIO_DELAY_MAX)
+				_radio_queue.append({"tick": w.total_ticks + roundi(delay / Config.TICK), "unit": u.id,
+					"enemy": id, "pos": e.pos_m(), "seen": w.total_ticks})
+
+
+## Le tiraron: si no ve al tirador, sabe más o menos de dónde vino (CONTACT_FLASH_ERROR de la distancia).
+func flash(w: SimWorld, target: Unit, shooter: Unit, from: Vector2) -> void:
+	if target.mind == null or not target.alive:
+		return
+	if w.visible_enemies[target.side].has(shooter.id) and from.distance_to(target.pos_m()) <= Config.CONTACT_OWN_M:
+		target.mind.learn(shooter.id, shooter.pos_m(), w.total_ticks, true)
+		return
+	var old: Dictionary = target.mind.contacts.get(shooter.id, {})
+	if not old.is_empty() and int(old["tick"]) >= w.total_ticks - Config.MIND_THINK_TICKS:
+		return # ya tiene una noticia de este segundo
+	var err: float = from.distance_to(target.pos_m()) * Config.CONTACT_FLASH_ERROR
+	var pos: Vector2 = from + Vector2(w.mind_rng.randf_range(-err, err), w.mind_rng.randf_range(-err, err))
+	if target.mind.learn(shooter.id, pos, w.total_ticks, false):
+		_announce_contact(w, target, shooter, pos)
+
+
+func _deliver_radio(w: SimWorld) -> void:
+	while not _radio_queue.is_empty() and int(_radio_queue[0]["tick"]) <= w.total_ticks:
+		var msg: Dictionary = _radio_queue.pop_front()
+		var u: Unit = w.get_unit(int(msg["unit"]))
+		if u == null or not u.alive or u.mind == null:
+			continue
+		u.mind.pending.erase(int(msg["enemy"]))
+		u.mind.learn(int(msg["enemy"]), msg["pos"], int(msg["seen"]), true)
+
+
+## Se olvidan los contactos sin noticias en CONTACT_FORGET_SECONDS (y los de enemigos muertos).
+func _forget(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	for id: int in m.contacts.keys():
+		var e: Unit = w.units[id]
+		if not e.alive or float(w.total_ticks - int(m.contacts[id]["tick"])) * Config.TICK > Config.CONTACT_FORGET_SECONDS:
+			m.contacts.erase(id)
+
+
+## Primera noticia de un enemigo para el bando (o pasado RADIO_REPORT_SECONDS): se anuncia por radio.
+func _announce_contact(w: SimWorld, u: Unit, e: Unit, pos: Vector2) -> void:
+	var last: int = int(_announced[u.side].get(e.id, -1000000))
+	if float(w.total_ticks - last) * Config.TICK < Config.RADIO_REPORT_SECONDS:
+		return
+	_announced[u.side][e.id] = w.total_ticks
+	var what: String = "infantería" if e.is_infantry() else "tanque"
+	var d: Vector2 = pos - u.pos_m()
+	w.radio(u, "contacto: %s a %d m al %s" % [what, roundi(d.length()), compass(d)])
+
+
+## Rumbo en palabras (el norte es -y en la grilla).
+static func compass(d: Vector2) -> String:
+	const NAMES: Array[String] = ["este", "sudeste", "sur", "sudoeste", "oeste", "noroeste", "norte", "noreste"]
+	var a: float = fposmod(atan2(d.y, d.x), TAU)
+	return NAMES[roundi(a / (TAU / 8.0)) % 8]
 
 
 ## Reflejo de la escuadra: frenada por la supresión más de INF_SMOKE_SUPPRESSED_SECONDS, tira una
@@ -96,14 +178,11 @@ func _score_drill(w: SimWorld, u: Unit, s: Dictionary) -> void:
 		s[SquadMind.Option.CONTACT_DRILL] = Config.DRILL_SCORE
 
 
-## Enemigos visibles a menos de DRILL_SPOT_M que todavía no provocaron un drill.
-func _new_contacts(w: SimWorld, u: Unit) -> Array[int]:
+## Contactos de la escuadra a menos de DRILL_SPOT_M que todavía no provocaron un drill.
+func _new_contacts(_w: SimWorld, u: Unit) -> Array[int]:
 	var out: Array[int] = []
-	for id: int in w.visible_enemies[u.side]:
-		if u.mind.reacted.has(id):
-			continue
-		var e: Unit = w.units[id]
-		if e.alive and e.pos_m().distance_to(u.pos_m()) <= Config.DRILL_SPOT_M:
+	for id: int in u.mind.contacts:
+		if not u.mind.reacted.has(id) and (u.mind.contacts[id]["pos"] as Vector2).distance_to(u.pos_m()) <= Config.DRILL_SPOT_M:
 			out.append(id)
 	return out
 
@@ -134,7 +213,7 @@ func _enter(w: SimWorld, u: Unit, opt: int) -> void:
 		SquadMind.Option.CONTACT_DRILL:
 			m.cover_m = Config.DRILL_COVER_M
 			m.data["calm_since"] = w.total_ticks
-			for id: int in w.visible_enemies[u.side]:
+			for id: int in m.contacts:
 				m.reacted[id] = true
 
 

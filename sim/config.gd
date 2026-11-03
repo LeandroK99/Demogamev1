@@ -209,6 +209,14 @@ const DRILL_COVER_M: float = 4.0 # en el drill, cada uno busca cobertura a esta 
 const DRILL_CALM_SUPP: float = 25.0 # retoma la marcha con la supresión media por debajo de esto...
 const DRILL_CALM_SECONDS: float = 5.0 # ... durante este tiempo
 
+# --- Conocimiento de cada escuadra y radio ---
+const CONTACT_OWN_M: float = 150.0 # lo que la escuadra ve a menos de esto lo sabe en el acto y exacto
+const CONTACT_FLASH_ERROR: float = 0.1 # el fogonazo de un tirador que no ve: error de esta fracción de la distancia
+const CONTACT_FORGET_SECONDS: float = 60.0 # un contacto sin noticias nuevas se olvida
+const RADIO_DELAY_MIN: float = 3.0 # segundos que tarda un contacto en llegar por radio a otra escuadra
+const RADIO_DELAY_MAX: float = 5.0
+const RADIO_REPORT_SECONDS: float = 30.0 # un bando no vuelve a anunciar el mismo contacto antes de esto
+
 # --- Reflejos del soldado ---
 const REFLEX_DIVE_SUPP: float = 8.0 # un tiro que le suma esto en marcha y al descubierto lo tira al suelo
 const REFLEX_DIVE_SECONDS: float = 2.0 # ... por este tiempo

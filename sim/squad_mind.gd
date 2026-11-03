@@ -27,6 +27,10 @@ var data: Dictionary = {} # estado propio de la opción actual
 var scores: Dictionary = {} # últimos puntajes (para el HUD y los tests)
 var cover_m: float = Config.SOLDIER_COVER_SEARCH_M # radio en que cada soldado busca cobertura
 var reacted: Dictionary = {} # enemigos (id) que ya provocaron un drill de contacto
+## Lo que la escuadra sabe de los enemigos: id -> {pos (metros), tick, exact}. Lo propio cercano
+## es exacto y al momento; el fogonazo de un tirador que no ve, aproximado; lo demás llega por radio.
+var contacts: Dictionary = {}
+var pending: Dictionary = {} # enemigos con un aviso de radio en camino
 var halted_since: int = -1 # tick desde el que la supresión la tiene frenada (-1 = no lo está)
 
 
@@ -73,6 +77,15 @@ func reset(now: int) -> void:
 	rerouted = false
 	data = {}
 	cover_m = Config.SOLDIER_COVER_SEARCH_M
+
+
+## Anota (o actualiza) un contacto si la noticia es más nueva que la que tiene.
+func learn(enemy_id: int, pos: Vector2, tick: int, exact: bool) -> bool:
+	var old: Dictionary = contacts.get(enemy_id, {})
+	if not old.is_empty() and (int(old["tick"]) > tick or (bool(old["exact"]) and not exact and int(old["tick"]) == tick)):
+		return false
+	contacts[enemy_id] = {"pos": pos, "tick": tick, "exact": exact}
+	return old.is_empty()
 
 
 func is_following() -> bool:
