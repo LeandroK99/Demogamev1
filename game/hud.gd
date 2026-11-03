@@ -283,6 +283,7 @@ func _unit_text() -> String:
 			lines.append("RIESGO %s" % RISK_NAMES[int(risk["level"])])
 		if sel.is_infantry():
 			lines.append("Antitanque: %d / %d" % [sel.at_charges, Config.INF_AT_CHARGES])
+			lines.append("Munición: %d %%%s" % [roundi(sel.ammo_fraction() * 100.0), " (fuego rápido)" if InfantrySim.rapid_fire(sel) else ""])
 		else:
 			lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
 		lines.append("")

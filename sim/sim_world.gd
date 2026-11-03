@@ -1104,6 +1104,7 @@ func step() -> void:
 	inf.update_wounded(self)
 	inf.update_care(self)
 	inf.update_evac(self)
+	inf.update_ammo(self)
 	_tick_smoke()
 	tick_in_turn += 1
 	total_ticks += 1

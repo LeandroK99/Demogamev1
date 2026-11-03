@@ -386,3 +386,14 @@ const AI_RETREAT_RADIUS: int = 10 # celdas de búsqueda para retroceder con hp =
 const AI_CREST_SEARCH_DEPTH: int = 50 # celdas hacia adelante para buscar la cresta
 const AI_CREST_PROBE_DIST: int = 20 # observador hipotético a esta distancia delante de la cresta
 const AI_CREST_CAND_RADIUS: int = 6 # radio de candidatos alrededor de la cresta
+
+# --- Munición y disciplina de fuego (fase 48) ---
+const AMMO_RIFLE: int = 120 # tiros por fusilero (cada tiro del modelo es un par de disparos)
+const AMMO_MG: int = 150 # ráfagas que lleva la ametralladora
+const AMMO_ASSISTANT_CARRY: int = 150 # ráfagas extra que carga el proveedor para la ametralladora
+const AMMO_PASS_M: float = 6.0 # el proveedor le pasa cintas a la ametralladora si está a esta distancia
+const AMMO_PASS_PER_SECOND: int = 5 # ráfagas que pasa por segundo
+const AMMO_PASS_BELOW: float = 0.5 # le pasa cuando a la ametralladora le queda menos de esta fracción
+const AMMO_LOW_FRACTION: float = 0.25 # por debajo de esto, la escuadra tiene poca munición y dosifica
+const FIRE_RAPID_RELOAD: float = 0.6 # fuego rápido: multiplica el tiempo entre tiros (asalto, suprimir, ritmo rápido)
+const FIRE_CONSERVE_RELOAD: float = 1.5 # con poca munición: tira más espaciado

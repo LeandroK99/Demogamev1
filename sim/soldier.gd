@@ -53,6 +53,9 @@ var evac_wounded: bool = false # evacuando: es el herido (si no, el camillero)
 var jitter: Vector2 = Vector2.ZERO # corrimiento de su lugar en la formación (x a la derecha, y hacia atrás)
 var rush_until: int = 0 # bajo fuego: tick en que termina su carrera (0 = no está corriendo)
 var down_until: int = 0 # bajo fuego: tick hasta el que queda tirado entre carreras
+## Munición (fase 48): tiros (fusil) o ráfagas (ametralladora) que le quedan; el proveedor carga extra.
+var ammo: int = 0
+var ammo_carry: int = 0
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
@@ -60,6 +63,9 @@ func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
 	role = p_role
 	pos = p_pos
 	team = team_of(p_index)
+	ammo = max_ammo(p_role)
+	if p_role == Role.ASSISTANT:
+		ammo_carry = Config.AMMO_ASSISTANT_CARRY
 
 
 ## Equipo de fuego del soldado i.
@@ -104,6 +110,15 @@ func top_h() -> float:
 		Posture.PRONE:
 			return Config.SOLDIER_TOP_PRONE
 	return Config.SOLDIER_TOP_STAND
+
+
+## Munición llena según el rol (el antitanque usa las cargas de la escuadra, y su fusil).
+static func max_ammo(r: int) -> int:
+	return Config.AMMO_MG if r == Role.MG else Config.AMMO_RIFLE
+
+
+func ammo_fraction() -> float:
+	return float(ammo) / float(max_ammo(role))
 
 
 ## Rol según el lugar en la escuadra: 0 jefe, 1 ametralladora, 2 proveedor, 3 antitanque, el resto fusileros.

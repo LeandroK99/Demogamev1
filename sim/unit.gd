@@ -62,6 +62,8 @@ var formation: int = Formation.WEDGE
 ## Infantería: la cabeza de la escuadra (autonomía, ver MindSim). null en los tanques.
 var mind: SquadMind = null
 var jitter_at: Vector2 = Vector2(-1.0e9, -1.0e9) # dónde estaba el ancla la última vez que se reacomodaron
+var low_ammo_reported: bool = false # ya avisó por radio que le queda poca munición
+var mg_dry_reported: bool = false # ya avisó que la ametralladora se quedó sin munición
 
 
 func _init(p_id: int, p_side: int, p_pos: Vector2, p_kind: int = Kind.TANK) -> void:
@@ -80,6 +82,17 @@ func _init(p_id: int, p_side: int, p_pos: Vector2, p_kind: int = Kind.TANK) -> v
 		smoke_charges = Config.INF_SMOKE_CHARGES
 		mind = SquadMind.new(Config.MIND_AUTONOMY_BLUE if side == 0 else Config.MIND_AUTONOMY_RED)
 		mind.next_think_tick = p_id % Config.MIND_THINK_TICKS
+
+
+## Fracción de munición que le queda a los soldados en condiciones (1 = llena). Los tanques, 1.
+func ammo_fraction() -> float:
+	var have: int = 0
+	var full: int = 0
+	for s: Soldier in soldiers:
+		if s.is_ok():
+			have += s.ammo
+			full += Soldier.max_ammo(s.role)
+	return 1.0 if full == 0 else float(have) / float(full)
 
 
 ## Ancla de la formación en metros.

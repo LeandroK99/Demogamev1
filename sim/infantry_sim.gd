@@ -720,7 +720,7 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 			if tank != null:
 				_fire_at_tank(w, u, s, tank)
 				continue
-		if u.reload_left > 0.0:
+		if u.reload_left > 0.0 or s.ammo <= 0:
 			continue
 		var wpn: int = Unit.Weapon.MG if s.role == Soldier.Role.MG else Unit.Weapon.RIFLES
 		if area:
@@ -733,6 +733,56 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 			var cell: Vector2i = Vector2i((s.suppress_m / Config.CELL_SIZE).round())
 			if w.can_suppress_at(u, cell):
 				_area_shot(w, u, s, wpn, cell) # base de fuego: bate el contacto aunque no lo vea
+
+
+## --- Munición (fase 48) ---
+
+## ¿La escuadra tira a fuego rápido? Al asaltar, al suprimir una zona o a ritmo rápido.
+static func rapid_fire(u: Unit) -> bool:
+	return u.order == Unit.Order.ASSAULT or u.order == Unit.Order.SUPPRESS or SimWorld.effective_pace(u) == Unit.Pace.FAST
+
+
+## Multiplica el tiempo entre tiros: fuego rápido lo acorta; con poca munición, el soldado lo estira.
+static func fire_rate_factor(u: Unit, s: Soldier) -> float:
+	if s.ammo_fraction() < Config.AMMO_LOW_FRACTION:
+		return Config.FIRE_CONSERVE_RELOAD
+	return Config.FIRE_RAPID_RELOAD if rapid_fire(u) else 1.0
+
+
+## Gasta un tiro (o una ráfaga) y avisa por radio cuando la escuadra se va quedando sin munición.
+func spend_ammo(w: SimWorld, u: Unit, s: Soldier) -> void:
+	s.ammo = maxi(0, s.ammo - 1)
+	if s.role == Soldier.Role.MG and s.ammo == 0 and not u.mg_dry_reported:
+		u.mg_dry_reported = true
+		w.radio(u, "¡ametralladora sin munición!")
+	if not u.low_ammo_reported and u.ammo_fraction() < Config.AMMO_LOW_FRACTION:
+		u.low_ammo_reported = true
+		w.radio(u, "nos queda poca munición")
+
+
+## El proveedor le pasa cintas a la ametralladora (una vez por segundo) si está cerca y a ella le falta.
+func update_ammo(w: SimWorld) -> void:
+	if w.total_ticks % roundi(1.0 / Config.TICK) != 0:
+		return
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		var mg: Soldier = null
+		var ast: Soldier = null
+		for s: Soldier in u.soldiers:
+			if s.is_ok() and s.role == Soldier.Role.MG:
+				mg = s
+			elif s.is_ok() and s.role == Soldier.Role.ASSISTANT:
+				ast = s
+		if mg == null or ast == null or ast.ammo_carry <= 0 or mg.ammo_fraction() >= Config.AMMO_PASS_BELOW:
+			continue
+		if mg.pos.distance_to(ast.pos) > Config.AMMO_PASS_M:
+			continue
+		var n: int = mini(ast.ammo_carry, mini(Config.AMMO_PASS_PER_SECOND, Config.AMMO_MG - mg.ammo))
+		ast.ammo_carry -= n
+		mg.ammo += n
+		if mg.ammo > 0:
+			u.mg_dry_reported = false
 
 
 ## Coaxial de un tanque: ráfaga al soldado enemigo visible más cercano que ve desde su óptica.
@@ -831,7 +881,8 @@ func _shoot(w: SimWorld, su: Unit, from: Vector2, eye: float, s: Soldier, tu: Un
 	var reload: float = SimWorld.weapon_reload(wpn)
 	if s != null:
 		reload = (Config.SOLDIER_RIFLE_RELOAD if wpn == Unit.Weapon.RIFLES else reload) * w.rng.randf_range(0.75, 1.25)
-		s.reload_left = reload
+		s.reload_left = reload * fire_rate_factor(su, s)
+		spend_ammo(w, su, s)
 		s.last_fire_tick = w.total_ticks
 		s.heading = (t.pos - s.pos).normalized()
 	else:
@@ -879,7 +930,8 @@ func _area_shot(w: SimWorld, u: Unit, s: Soldier, wpn: int, cell: Vector2i = Vec
 		cell = u.suppress_cell
 	if not w.can_suppress_at(u, cell):
 		return
-	s.reload_left = (Config.SOLDIER_RIFLE_RELOAD if wpn == Unit.Weapon.RIFLES else SimWorld.weapon_reload(wpn)) * w.rng.randf_range(0.75, 1.25)
+	s.reload_left = (Config.SOLDIER_RIFLE_RELOAD if wpn == Unit.Weapon.RIFLES else SimWorld.weapon_reload(wpn)) * w.rng.randf_range(0.75, 1.25) * fire_rate_factor(u, s)
+	spend_ammo(w, u, s)
 	s.last_fire_tick = w.total_ticks
 	u.last_fire_tick = w.total_ticks
 	var r: float = Config.SUPPRESS_AREA_RADIUS * Config.CELL_SIZE
