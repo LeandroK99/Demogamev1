@@ -19,6 +19,8 @@ func update(w: SimWorld) -> void:
 		if not u.alive or u.mind == null:
 			continue
 		var m: SquadMind = u.mind
+		if not u.clear.is_empty() and str(u.clear["phase"]) != "approach":
+			continue # limpiando la casa: manda el plan de la limpieza (CqbSim)
 		if u.broken:
 			if not m.is_following():
 				switch_to(w, u, SquadMind.Option.FOLLOW) # la retirada por moral manda

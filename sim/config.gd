@@ -555,3 +555,40 @@ const TANK_ESCORT_M: float = 30.0 # infantería propia a esto del tanque: le cui
 const TANK_ESCORT_AT_FACTOR: float = 0.5 # ... y el antitanque le pega menos
 const TANK_ALONE_TOWN_M: float = 15.0 # un tanque sin escolta a esto de una casa...
 const TANK_ALONE_AT_FACTOR: float = 1.5 # ... recibe tiros de antitanque más certeros (de cerca, de costado)
+
+# --- CQB: apilarse y entrar (fases 66 y 67) ---
+const CQB_STACK_OFF_M: float = 0.7 # el apilado va a esto de la pared...
+const CQB_STACK_FIRST_M: float = 1.3 # ... el primero a esto del centro de la puerta, al costado (nunca delante)
+const CQB_STACK_GAP_M: float = 0.8 # entre uno y otro del apilado
+const CQB_STACK_SECONDS: float = 12.0 # si en esto no se apilaron todos, entran igual
+const CQB_TEAM: int = 4 # los que entran (1 a 4)
+const CQB_SPEED: float = 3.0 # m/s del que entra (y del que se apila)
+const CQB_FLOW_SECONDS: float = 0.4 # uno detrás del otro: entre que arranca uno y el siguiente
+const CQB_WALL_M: float = 1.0 # los puntos de dominio, a esto de la pared de la entrada...
+const CQB_CORNER_M: float = 0.8 # ... y las esquinas, a esto de la pared del costado
+const CQB_ENTRY_MAX_SECONDS: float = 8.0 # si no llegaron todos, igual se da por dominado
+const CQB_DOMINATE_SECONDS: float = 2.0 # quietos en sus puntos antes de dar el cuarto por limpio
+const CQB_ROOM_MAX_SECONDS: float = 25.0 # pelea adentro: después de esto reevalúa
+const CQB_CORRIDOR_W_M: float = 2.0 # un cuarto así de angosto...
+const CQB_CORRIDOR_MIN_LEN_M: float = 4.0 # ... y así de largo es un pasillo
+const CQB_SNAKE_GAP_M: float = 1.5 # en el pasillo, en serpentina a esta distancia
+
+# --- CQB: granada y reflejos (fase 68) ---
+const CQB_GRENADE_FUSE_SECONDS: float = 2.0 # la granada al cuarto: entre que la tira y explota
+const CQB_AFTER_BLAST_SECONDS: float = 0.3 # entran apenas explota
+const CQB_WALL_FRAG_FACTOR: float = 0.3 # esquirlas a través de una pared delgada (y su supresión)
+const CQB_REFLEX_M: float = 8.0 # a esta distancia se tira por reflejo, sin apuntar
+const CQB_REACT_READY: float = 0.25 # segundos para tirar con el arma lista (entrando o apostado)
+const CQB_REACT_MOVING: float = 0.7 # ... caminando sin esperarlo
+const CQB_REACT_SUPP: float = 1.2 # segundos más con la supresión a 100 (aturdido por la granada)
+const CQB_REACT_JITTER: float = 0.15
+const CQB_REFLEX_P_HIT: float = 0.75 # tiro reflejo a menos de CQB_REFLEX_M
+const CQB_REFLEX_RELOAD: float = 0.6 # entre un tiro reflejo y el siguiente
+const CQB_REACH_SQUADS_M: float = 40.0 # solo se buscan reflejos entre escuadras con las anclas a esto (más el alcance)
+
+# --- Limpiar la casa y defenderla (fases 70 y 71) ---
+const CQB_CLEAR_RANGE_M: float = 12.0 # la orden toma la casa a esto del punto marcado
+const CQB_APPROACH_M: float = 5.0 # la escuadra se junta a esto de la puerta antes de apilarse
+const CQB_MIN_TEAM: int = 2 # con menos en condiciones, deja de limpiar
+const DEFEND_POST_DOOR_M: float = 2.0 # el defensor se pone a esto (o más) de la puerta del cuarto, apuntándole
+const DEFEND_CHECK_SECONDS: float = 1.0 # cada cuánto revisa si cayó un cuarto

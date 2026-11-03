@@ -58,6 +58,9 @@ func move_soldiers(w: SimWorld) -> void:
 			if not s.is_ok() or (s.suppression >= Config.PINNED and not crawl) or s.dive_until > w.total_ticks or s.hold_pos:
 				s.moving = false # herido, clavado, recién tirado al suelo o base de fuego: se queda donde está
 				continue
+			if s.cqb_start_tick > w.total_ticks:
+				s.moving = false # espera su turno para entrar
+				continue
 			var target: Vector2 = u.slot_pos_m(s.index)
 			if s.task_pos.x >= 0.0:
 				target = s.task_pos
@@ -85,7 +88,8 @@ func move_soldiers(w: SimWorld) -> void:
 			s.moving = true
 			s.heading = d / dist
 			var run: float = Config.RUSH_SPEED if rushing and s.rush_until > 0 else 1.0
-			s.pos += d / dist * minf(step_m * run, dist)
+			var adv: float = Config.CQB_SPEED * Config.TICK if s.cqb_fast and s.task_pos.x >= 0.0 else step_m * run
+			s.pos += d / dist * minf(adv, dist)
 
 
 ## Con casas: si ir derecho a target atraviesa una pared o una ventana, el soldado va por una ruta
@@ -958,8 +962,8 @@ func assign_sectors(u: Unit, threat: Vector2) -> void:
 	var right: Vector2 = Vector2(-dir.y, dir.x)
 	var riflemen: Array[Soldier] = []
 	for s: Soldier in u.soldiers:
-		if not s.is_ok():
-			continue
+		if not s.is_ok() or s.cqb_role >= 0:
+			continue # el que entra a un cuarto tiene su sector de CQB
 		if s.role == Soldier.Role.MG:
 			s.sector_dir = dir
 			s.sector_half_deg = Config.SECTOR_FRONT_DEG * 0.5
@@ -1215,12 +1219,14 @@ func explode(w: SimWorld, at: Vector2, owner: Unit, from: Vector2) -> void:
 			if d > r * 2.0:
 				continue
 			touched = true
+			# Las esquirlas atraviesan una pared delgada, pero pocas
+			var wall: float = Config.CQB_WALL_FRAG_FACTOR if w.buildings != null and w.buildings.crosses(at, t.pos) else 1.0
 			if t.is_ok():
-				add_soldier_suppression(w, t, Config.GRENADE_SUPP * (1.0 if d <= r else 0.5))
+				add_soldier_suppression(w, t, Config.GRENADE_SUPP * (1.0 if d <= r else 0.5) * wall)
 			if d > r:
 				continue
 			var low: bool = t.posture == Soldier.Posture.PRONE or (t.posture == Soldier.Posture.CROUCH and w.micro != null and w.micro.type_at_m(t.pos) == MicroCover.Type.CRATER)
-			var p: float = Config.GRENADE_P_HIT * (1.0 - 0.5 * d / r) * (Config.GRENADE_PRONE_FACTOR if low else 1.0)
+			var p: float = Config.GRENADE_P_HIT * (1.0 - 0.5 * d / r) * (Config.GRENADE_PRONE_FACTOR if low else 1.0) * wall
 			if w.rng.randf() < p:
 				w.damage_soldier(tu, t)
 		if touched and tu.alive:
