@@ -90,11 +90,11 @@ func test_suppressed_soldier_does_not_peek() -> void:
 
 func _pin(world: SimWorld, sq: Unit) -> void:
 	world.known_enemies[0][4] = {"cell": Vector2i(48, 20), "last_seen_turn": world.turn}
-	sq.set_suppression(60.0, 1000000) # no baja durante el test
+	sq.set_suppression(90.0, 1000000) # clavada; no baja durante el test
 	world.begin_execute()
 
 
-func test_smoke_after_15s_halted() -> void:
+func test_smoke_after_15s_pinned() -> void:
 	var world: SimWorld = _world()
 	var sq: Unit = world.add_unit(0, Vector2(48, 50), Unit.Kind.INFANTRY)
 	_pin(world, sq)

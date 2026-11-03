@@ -32,7 +32,21 @@ func move_soldiers(w: SimWorld) -> void:
 			continue
 		var speed: float = w.speed_at(u.cell(), Unit.Kind.INFANTRY) * SimWorld.pace_speed_factor(SimWorld.effective_pace(u))
 		var step_m: float = speed * Config.SOLDIER_CATCHUP * Config.TICK
+		if u.moving and u.pos_m().distance_to(u.jitter_at) >= Config.JITTER_REROLL_M:
+			reroll_jitter(w, u)
+		var rushing: bool = u.moving and u.mind != null and u.mind.rushing
 		for s: Soldier in u.soldiers:
+			if rushing and s.is_ok() and not s.hold_pos and s.care_target < 0 and s.drag_target < 0:
+				if s.down_until > w.total_ticks:
+					s.moving = false # entre carrera y carrera, tirado
+					continue
+				if s.rush_until > 0 and w.total_ticks >= s.rush_until:
+					s.rush_until = 0 # terminó la carrera: al suelo
+					s.down_until = w.total_ticks + roundi(w.mind_rng.randf_range(Config.RUSH_DOWN_MIN_SECONDS, Config.RUSH_DOWN_MAX_SECONDS) / Config.TICK)
+					s.moving = false
+					continue
+				if s.rush_until == 0:
+					s.rush_until = w.total_ticks + roundi(w.mind_rng.randf_range(Config.RUSH_MIN_SECONDS, Config.RUSH_MAX_SECONDS) / Config.TICK)
 			if s.drag_target >= 0 and s.is_ok() and s.suppression < Config.PINNED:
 				_drag(w, u, s, speed)
 				continue
@@ -57,7 +71,51 @@ func move_soldiers(w: SimWorld) -> void:
 				continue
 			s.moving = true
 			s.heading = d / dist
-			s.pos += d / dist * minf(step_m, dist)
+			var run: float = Config.RUSH_SPEED if rushing and s.rush_until > 0 else 1.0
+			s.pos += d / dist * minf(step_m * run, dist)
+
+
+## Dispersión: cada soldado elige un corrimiento de hasta JITTER_M de su lugar, prefiriendo quedar
+## pegado a una roca, un arbusto, un tronco o un muro, y separado de los demás.
+func reroll_jitter(w: SimWorld, u: Unit) -> void:
+	u.jitter_at = u.pos_m()
+	var right: Vector2 = Vector2(-u.heading.y, u.heading.x)
+	var taken: Array[Vector2] = []
+	for s: Soldier in u.soldiers:
+		var base: Vector2 = Unit.formation_offset(s.index, u.formation)
+		var best: Vector2 = Vector2.ZERO
+		var best_score: float = -INF
+		for k: int in Config.JITTER_TRIES:
+			var a: float = w.mind_rng.randf() * TAU
+			var r: float = sqrt(w.mind_rng.randf()) * Config.JITTER_M
+			var o: Vector2 = Vector2(cos(a), sin(a)) * r
+			var p: Vector2 = u.pos_m() + right * (base.x + o.x) - u.heading * (base.y + o.y)
+			if not _spaced_by(p, taken, Config.JITTER_SEPARATION_M):
+				continue
+			var score: float = w.mind_rng.randf() * 0.3 + (1.0 if _hugs_cover(w, p) else 0.0)
+			if score > best_score:
+				best = o
+				best_score = score
+		s.jitter = best
+		taken.append(u.pos_m() + right * (base.x + best.x) - u.heading * (base.y + best.y))
+
+
+static func _spaced_by(p: Vector2, taken: Array[Vector2], d: float) -> bool:
+	for t: Vector2 in taken:
+		if p.distance_to(t) < d:
+			return false
+	return true
+
+
+## ¿Hay una roca, arbusto, tronco o muro pegado a p?
+static func _hugs_cover(w: SimWorld, p: Vector2) -> bool:
+	if w.micro == null:
+		return false
+	for o: Vector2 in [Vector2(1.0, 0.0), Vector2(-1.0, 0.0), Vector2(0.0, 1.0), Vector2(0.0, -1.0)]:
+		var t: int = w.micro.type_at_m(p + o)
+		if t != MicroCover.Type.NONE and t != MicroCover.Type.CRATER:
+			return true
+	return false
 
 
 ## Rescate: el rescatista va hasta el herido y lo arrastra a DRAG_SPEED hasta drag_dest.
@@ -507,7 +565,7 @@ func update_postures(w: SimWorld) -> void:
 				s.posture = Soldier.Posture.CROUCH if cautious else Soldier.Posture.STAND
 			elif s.care_target >= 0 and not s.moving:
 				s.posture = Soldier.Posture.CROUCH # agachado sobre el herido
-			elif s.dive_until > w.total_ticks:
+			elif s.dive_until > w.total_ticks or (s.down_until > w.total_ticks and not s.moving):
 				s.posture = Soldier.Posture.PRONE # se tiró al suelo
 			elif s.has_cover:
 				s.posture = s.fire_posture if s.peeking else s.cover_posture
@@ -963,13 +1021,14 @@ func pinned_fraction(u: Unit) -> float:
 	return float(pinned) / float(n) if n > 0 else 0.0
 
 
-## ¿La escuadra no avanza? Cuando más de SOLDIER_SUPP_HALT de sus soldados están suprimidos.
+## ¿La escuadra no avanza? Cuando más de SOLDIER_SUPP_HALT de sus soldados están clavados: la orden
+## pesa más que la supresión (suprimidos avanzan igual, cuerpo a tierra cuando les toca).
 func halted(u: Unit) -> bool:
 	var n: int = 0
 	var supp: int = 0
 	for s: Soldier in u.soldiers:
 		if s.is_ok():
 			n += 1
-			if s.suppression >= Config.SUPPRESSED:
+			if s.suppression >= Config.PINNED:
 				supp += 1
 	return n > 0 and float(supp) / float(n) > Config.SOLDIER_SUPP_HALT

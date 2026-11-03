@@ -7,7 +7,8 @@ extends RefCounted
 ## FOLLOW cumple la orden del jugador; las demás son decisiones propias.
 enum Option { FOLLOW, CONTACT_DRILL, RELOCATE, AMBUSH, BREAK_CONTACT, BOUND, FLANK, RESCUE }
 ## Estricta: solo cumple la orden. Normal: reacciona (drill, reubicarse, emboscar, rescatar).
-## Alta: además maniobra (saltos, flanqueo) y rompe el contacto sola.
+## Normal también avanza por fuego y movimiento. Alta: además flanquea y rompe el contacto sola
+## (solo diezmada de verdad).
 enum Autonomy { STRICT, NORMAL, HIGH }
 ## Calidad del jefe: cada cuánto piensa y cuánto se equivoca al puntuar.
 enum Quality { VETERAN, REGULAR, GREEN }
@@ -40,6 +41,8 @@ var contacts: Dictionary = {}
 var target_cell: Vector2i = Vector2i(-1, -1) # destino de la opción que se mueve (reubicarse, flanquear)
 var flank_enemy: int = -1 # contacto que está flanqueando
 var rescue_index: int = -1 # herido elegido para rescatar
+var drill_end_tick: int = -1000000 # cuándo terminó la última reacción al contacto
+var rushing: bool = false # bajo fuego, los que avanzan van a carreras cortas (ver InfantrySim)
 var pending: Dictionary = {} # enemigos con un aviso de radio en camino
 var halted_since: int = -1 # tick desde el que la supresión la tiene frenada (-1 = no lo está)
 
@@ -53,7 +56,7 @@ static func allowed(p_autonomy: int, opt: int) -> bool:
 	match opt:
 		Option.FOLLOW:
 			return true
-		Option.CONTACT_DRILL, Option.RELOCATE, Option.AMBUSH, Option.RESCUE:
+		Option.CONTACT_DRILL, Option.RELOCATE, Option.AMBUSH, Option.RESCUE, Option.BOUND:
 			return p_autonomy >= Autonomy.NORMAL
 	return p_autonomy >= Autonomy.HIGH
 

@@ -74,7 +74,7 @@ func test_ambush_holds_fire_until_close() -> void:
 func test_break_contact_when_decimated() -> void:
 	var world: SimWorld = _world()
 	var sq: Unit = world.add_unit(1, Vector2(48, 30), Unit.Kind.INFANTRY)
-	sq.set_men(4)
+	sq.set_men(3)
 	world.begin_execute()
 	_under_fire(world, sq, Vector2i(48, 60))
 	world.mind_think_now(sq)
