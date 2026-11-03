@@ -242,10 +242,11 @@ func _score_near_ambush(w: SimWorld, u: Unit, s: Dictionary) -> void:
 		return # solo la que va en marcha cae en una emboscada; la que defiende se queda en su puesto
 	if m.option in [SquadMind.Option.BREAK_CONTACT, SquadMind.Option.RESCUE]:
 		return
+	if float(w.total_ticks - m.drill_end_tick) * Config.TICK < Config.DRILL_COOLDOWN_SECONDS:
+		return # recién reaccionó: no vuelve a lanzarse
 	var id: int = _nearest_contact_id(u)
-	if id >= 0 and Vector2(m.contacts[id]["pos"]).distance_to(u.pos_m()) <= Config.NEAR_AMBUSH_M:
-		m.data["near_enemy"] = id
-		s[SquadMind.Option.NEAR_AMBUSH] = Config.NEAR_AMBUSH_SCORE
+	if id >= 0 and not m.reacted.has(id) and Vector2(m.contacts[id]["pos"]).distance_to(u.pos_m()) <= Config.NEAR_AMBUSH_M:
+		s[SquadMind.Option.NEAR_AMBUSH] = Config.NEAR_AMBUSH_SCORE # sorpresa: un enemigo al que no había reaccionado
 
 
 func _nearest_contact_id(u: Unit) -> int:
@@ -263,6 +264,8 @@ func _start_near_ambush(w: SimWorld, u: Unit) -> void:
 	var m: SquadMind = u.mind
 	var id: int = _nearest_contact_id(u)
 	m.data["enemy"] = id
+	for c: int in m.contacts:
+		m.reacted[c] = true
 	m.hold = false
 	_release_teams(u)
 	for s: Soldier in u.soldiers:
