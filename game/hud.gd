@@ -3,13 +3,14 @@ extends CanvasLayer
 ## HUD: estado del turno, unidad seleccionada, disparos recibidos, ayuda de teclas y cartel final.
 
 const PLAYER_SIDE: int = 0
-const HELP: String = "Clic izq: seleccionar · Clic der: mover · H: hull-down · Espacio: ejecutar turno · " \
-	+ "1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
+const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Clic der sobre rojo: atacar · " \
+	+ "H: hull-down · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
 	Unit.Order.HULLDOWN: "hull-down",
 	Unit.Order.HOLD: "mantener",
+	Unit.Order.ATTACK: "atacar",
 }
 
 var world: SimWorld
@@ -89,7 +90,10 @@ func _unit_text() -> String:
 		lines.append("Tanque %d" % (sel.id + 1))
 		lines.append("Vida: %d / %d" % [sel.hp, Config.TANK_HP])
 		lines.append("Recarga: %s" % ("lista" if sel.reload_left <= 0.0 else "%.1f s" % sel.reload_left))
-		lines.append("Orden: %s" % ORDER_NAMES.get(sel.order, "?"))
+		var order_text: String = ORDER_NAMES.get(sel.order, "?")
+		if sel.order == Unit.Order.ATTACK and sel.attack_target >= 0:
+			order_text += " (rojo %d)" % (sel.attack_target - Config.UNITS_PER_SIDE + 1)
+		lines.append("Orden: %s" % order_text)
 		lines.append("")
 	lines.append("Disparos recibidos")
 	for u: Unit in world.units:

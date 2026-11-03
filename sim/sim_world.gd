@@ -134,7 +134,8 @@ func invalidate_exposure() -> void:
 
 
 ## Calcula la ruta más cubierta para el bando de la unidad. Devuelve false si no hay ruta.
-func order_move(unit_id: int, target_cell: Vector2i) -> bool:
+## facing: orientación final opcional (Vector2.ZERO = la de la marcha).
+func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.ZERO) -> bool:
 	var u: Unit = get_unit(unit_id)
 	if u == null or not u.alive or phase != Phase.PLAN:
 		return false
@@ -148,7 +149,47 @@ func order_move(unit_id: int, target_cell: Vector2i) -> bool:
 	u.path = path
 	u.order = Unit.Order.MOVE
 	u.moving = not path.is_empty()
+	u.attack_target = -1
+	u.final_heading = facing.normalized() if facing != Vector2.ZERO else Vector2.ZERO
+	if not u.moving and u.final_heading != Vector2.ZERO:
+		u.heading = u.final_heading # ya está en destino: solo gira
 	return true
+
+
+## Orden ATTACK: avanzar por la ruta cubierta hacia la última posición conocida del enemigo,
+## detenerse apenas tenga línea de tiro y priorizarlo como blanco. Solo enemigos conocidos.
+func order_attack(unit_id: int, enemy_id: int) -> bool:
+	var u: Unit = get_unit(unit_id)
+	var enemy: Unit = get_unit(enemy_id)
+	if u == null or enemy == null or not u.alive or not enemy.alive or enemy.side == u.side:
+		return false
+	if phase != Phase.PLAN or not known_enemies[u.side].has(enemy_id):
+		return false
+	if _can_see(u, enemy, Config.CENTER_H) and visible_enemies[u.side].has(enemy_id):
+		u.path.clear()
+		u.moving = false
+		u.final_heading = Vector2.ZERO
+	elif not order_move(unit_id, known_enemies[u.side][enemy_id]["cell"]):
+		return false
+	u.order = Unit.Order.ATTACK
+	u.attack_target = enemy_id
+	return true
+
+
+## Atacantes: frenan al tener línea de tiro; si el blanco murió, la orden termina.
+func _update_attackers() -> void:
+	for u: Unit in units:
+		if not u.alive or u.attack_target < 0:
+			continue
+		var enemy: Unit = units[u.attack_target]
+		if not enemy.alive:
+			u.attack_target = -1
+			u.order = Unit.Order.NONE
+			u.path.clear()
+			u.moving = false
+		elif not u.path.is_empty() and _can_see(u, enemy, Config.CENTER_H):
+			u.path.clear()
+			u.moving = false
 
 
 ## Orden HULLDOWN para un grupo: cada unidad va al mejor candidato contra las amenazas
@@ -207,6 +248,7 @@ func destination(u: Unit) -> Vector2i:
 func step() -> void:
 	if game_over:
 		return
+	_update_attackers()
 	for u: Unit in units:
 		if u.alive and not u.path.is_empty():
 			_advance(u, Config.TICK)
@@ -243,9 +285,14 @@ func _combat() -> void:
 
 ## Enemigo visible para el bando del tirador, más cercano, al que el tirador ve.
 func _pick_target(shooter: Unit) -> Unit:
+	var vis: Dictionary = visible_enemies[shooter.side]
+	# Blanco prioritario de la orden ATTACK, si se lo puede tirar
+	if shooter.attack_target >= 0 and vis.has(shooter.attack_target):
+		var prio: Unit = units[shooter.attack_target]
+		if prio.alive and _can_see(shooter, prio, Config.CENTER_H):
+			return prio
 	var best: Unit = null
 	var best_d: float = INF
-	var vis: Dictionary = visible_enemies[shooter.side]
 	for id: int in vis:
 		var enemy: Unit = units[id]
 		if not enemy.alive:
@@ -320,5 +367,8 @@ func _advance(u: Unit, dt: float) -> void:
 			u.pos += delta.normalized() * (budget_m / Config.CELL_SIZE)
 			budget_m = 0.0
 	u.moving = not u.path.is_empty()
-	if not u.moving and u.order == Unit.Order.MOVE:
-		u.order = Unit.Order.NONE
+	if not u.moving:
+		if u.final_heading != Vector2.ZERO:
+			u.heading = u.final_heading
+		if u.order == Unit.Order.MOVE:
+			u.order = Unit.Order.NONE

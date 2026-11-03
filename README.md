@@ -16,6 +16,8 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 |---|---|
 | Clic izquierdo / arrastrar | Seleccionar un tanque / selección por recuadro |
 | Clic derecho | Mover (solo al planificar) |
+| Clic derecho y arrastrar | Mover y elegir hacia dónde queda mirando el tanque al llegar |
+| Clic derecho sobre un rojo | Atacar: avanza por la ruta cubierta hasta tener línea de tiro, frena y lo prioriza como blanco (solo rojos visibles o fantasmas) |
 | H | Hull-down: cada tanque seleccionado busca una posición con el casco cubierto |
 | Espacio | Ejecutar el turno |
 | 1 | Overlay de exposición azul (verde = cubierto, rojo = visto por todos los enemigos conocidos) |
