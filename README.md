@@ -16,9 +16,14 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 |---|---|
 | Clic izquierdo / arrastrar | Seleccionar un tanque / selección por recuadro |
 | Clic derecho | Mover (solo al planificar) |
+| Ctrl + clic derecho | Mover por la ruta directa (la más corta, sin importar la exposición; se dibuja en naranja) |
+| Shift + clic derecho | Agregar un tramo al final de la ruta (waypoint). Ctrl + Shift: tramo directo |
 | Clic derecho y arrastrar | Mover y elegir hacia dónde queda mirando el tanque al llegar |
 | Clic derecho sobre un rojo | Atacar: avanza por la ruta cubierta hasta tener línea de tiro, frena y lo prioriza como blanco (solo rojos visibles o fantasmas) |
 | H | Hull-down: cada tanque seleccionado busca una posición con el casco cubierto |
+| V | Vigilancia: el tanque se queda quieto mirando hacia el cursor y solo dispara dentro de un sector de ±35°. Arranca cada turno con la recarga lista y su primer disparo contra un blanco en movimiento tiene ×1,5 |
+| F y clic derecho | Disparar y replegarse: va a esa posición, hace un disparo y vuelve en reversa a donde estaba, mirando al blanco. Esc cancela |
+| G y clic izquierdo | Humo: una nube de 12 m de radio que corta la línea de visión durante 2 turnos. 2 cargas por tanque, hasta 150 m y con línea de visión al punto. Aparece en el acto, así que tirala antes de planear la ruta. Esc cancela |
 | Espacio | Ejecutar el turno |
 | 1 | Overlay de exposición azul (verde = cubierto, rojo = visto por todos los enemigos conocidos) |
 | 2 | Mejores posiciones hull-down de la unidad seleccionada |
@@ -28,6 +33,11 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | Rueda | Zoom |
 | Q / E o botón medio | Rotar la cámara |
 | R / Shift+R | Reiniciar con la misma semilla / con un mapa nuevo |
+
+### Reglas de combate
+
+- **Blindaje:** un tanque recibe menos impactos de frente (×0,6) que de flanco (×1) o por detrás (×1,4). Al ir a hull-down mira hacia las amenazas; con el clic derecho arrastrado elegís vos la orientación. El casco no gira solo.
+- **Detección:** a un tanque en movimiento se lo detecta hasta 350 m; quieto, hasta 220 m, y quieto con el casco oculto, hasta 150 m. Disparar te delata: el enemigo sabe de dónde vino el tiro y durante 3 s te ve a 350 m.
 
 Ganás si destruís a los 4 rojos. Si se llega al turno 12, gana el bando con más tanques vivos.
 

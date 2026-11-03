@@ -1,6 +1,7 @@
 class_name Overlay
 extends Node3D
-## Overlays de análisis: 1 = exposición azul, 2 = candidatos hull-down, 3 = líneas de LOS.
+## Overlays de análisis: 1 = exposición azul, 2 = candidatos hull-down, 3 = líneas de LOS
+## (con la cara que cada rojo visible le muestra a la unidad seleccionada).
 
 const CANDIDATE_COUNT: int = 10
 const COLOR_SAFE: Color = Color(0.1, 0.75, 0.2)
@@ -18,6 +19,7 @@ var _show_exposure: bool = false
 var _show_candidates: bool = false
 var _show_los: bool = false
 var _markers: Node3D = Node3D.new()
+var _aspect_labels: Node3D = Node3D.new()
 var _lines_mesh: ImmediateMesh = ImmediateMesh.new()
 var _line_material: StandardMaterial3D = StandardMaterial3D.new()
 
@@ -27,6 +29,7 @@ func setup(tv: TerrainView, p_world: SimWorld) -> void:
 	world = p_world
 	analysis = p_world.analysis
 	add_child(_markers)
+	add_child(_aspect_labels)
 	var lines: MeshInstance3D = MeshInstance3D.new()
 	lines.mesh = _lines_mesh
 	add_child(lines)
@@ -114,12 +117,41 @@ func _refresh_candidates() -> void:
 		_markers.add_child(mi)
 
 
+const ASPECT_TEXT: Dictionary = {
+	SimWorld.Aspect.FRONT: "frente",
+	SimWorld.Aspect.FLANK: "flanco",
+	SimWorld.Aspect.REAR: "atrás",
+}
+const ASPECT_COLOR: Dictionary = {
+	SimWorld.Aspect.FRONT: Color(0.8, 0.8, 0.8),
+	SimWorld.Aspect.FLANK: Color(1.0, 0.85, 0.2),
+	SimWorld.Aspect.REAR: Color(1.0, 0.35, 0.2),
+}
+
+
 func _refresh_los() -> void:
 	_lines_mesh.clear_surfaces()
+	for child: Node in _aspect_labels.get_children():
+		child.queue_free()
 	var hf: HeightField = analysis.height_field
 	var threats: Array[Vector2i] = world.threats_for(PLAYER_SIDE)
 	if not _show_los or not hf.in_bounds(selected_cell) or threats.is_empty():
 		return
+	# Cara que cada rojo visible le muestra a la unidad seleccionada
+	for id: int in world.visible_enemies[PLAYER_SIDE]:
+		var enemy: Unit = world.units[id]
+		if not enemy.alive:
+			continue
+		var aspect: int = SimWorld.aspect_of(enemy, Vector2(selected_cell))
+		var label: Label3D = Label3D.new()
+		label.text = ASPECT_TEXT[aspect]
+		label.modulate = ASPECT_COLOR[aspect]
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.no_depth_test = true
+		label.font_size = 48
+		label.outline_size = 12
+		label.position = Vector3(enemy.pos.x * Config.CELL_SIZE, hf.height_at(enemy.pos) + 7.0, enemy.pos.y * Config.CELL_SIZE)
+		_aspect_labels.add_child(label)
 	_lines_mesh.surface_begin(Mesh.PRIMITIVE_LINES, _line_material)
 	var eye: Vector3 = hf.cell_to_world(selected_cell) + Vector3.UP * Config.EYE_H
 	for th: Vector2i in threats:

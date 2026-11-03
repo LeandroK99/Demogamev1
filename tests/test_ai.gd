@@ -43,12 +43,14 @@ func test_ai_retreats_when_damaged() -> void:
 	_blue_known_by_red(world)
 	var red: Unit = world.units[4]
 	red.hp = 1
+	var e: PackedFloat32Array = world.exposure_for(1) # sin humo (la IA puede tirar humo al retroceder)
 	AICommander.new(1).issue_orders(world)
-	var e: PackedFloat32Array = world.exposure_for(1)
 	var here: Vector2i = red.cell()
 	var dest: Vector2i = world.destination(red)
 	assert_true(dest != here, "se mueve")
 	assert_lt(e[dest.y * N + dest.x], e[here.y * N + here.x], "el destino está menos expuesto")
+	if e[here.y * N + here.x] > Config.AI_SMOKE_EXPOSURE:
+		assert_eq(red.smoke_charges, Config.SMOKE_CHARGES - 1, "expuesto: tira humo para cubrir la retirada")
 
 
 func test_ai_without_threats_goes_to_crest() -> void:

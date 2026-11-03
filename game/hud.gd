@@ -3,14 +3,16 @@ extends CanvasLayer
 ## HUD: estado del turno, unidad seleccionada, disparos recibidos, ayuda de teclas y cartel final.
 
 const PLAYER_SIDE: int = 0
-const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Clic der sobre rojo: atacar · " \
-	+ "H: hull-down · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
+const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
+	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
 	Unit.Order.HULLDOWN: "hull-down",
 	Unit.Order.HOLD: "mantener",
 	Unit.Order.ATTACK: "atacar",
+	Unit.Order.OVERWATCH: "vigilancia",
+	Unit.Order.SCOOT: "disparar y replegarse",
 }
 
 var world: SimWorld
@@ -83,9 +85,22 @@ func _process(_delta: float) -> void:
 		_banner.text = "%s\nR: jugar de nuevo · Shift+R: mapa nuevo" % result
 
 
+## Rumbo de la grilla como punto cardinal (y crece hacia el sur).
+static func compass(dir: Vector2) -> String:
+	const NAMES: Array[String] = ["este", "sureste", "sur", "suroeste", "oeste", "noroeste", "norte", "noreste"]
+	var idx: int = posmod(roundi(dir.angle() / (PI / 4.0)), 8)
+	return NAMES[idx]
+
+
 func _unit_text() -> String:
 	var lines: PackedStringArray = PackedStringArray()
 	var sel: Unit = input_controller.primary_unit()
+	if input_controller.pending_mode == "scoot":
+		lines.append("Clic derecho: posición de tiro (Esc cancela)")
+		lines.append("")
+	elif input_controller.pending_mode == "smoke":
+		lines.append("Clic izquierdo: dónde tirar el humo (Esc cancela)")
+		lines.append("")
 	if sel != null:
 		lines.append("Tanque %d" % (sel.id + 1))
 		lines.append("Vida: %d / %d" % [sel.hp, Config.TANK_HP])
@@ -94,6 +109,8 @@ func _unit_text() -> String:
 		if sel.order == Unit.Order.ATTACK and sel.attack_target >= 0:
 			order_text += " (rojo %d)" % (sel.attack_target - Config.UNITS_PER_SIDE + 1)
 		lines.append("Orden: %s" % order_text)
+		lines.append("Mira al %s" % compass(sel.heading))
+		lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
 		lines.append("")
 	lines.append("Disparos recibidos")
 	for u: Unit in world.units:

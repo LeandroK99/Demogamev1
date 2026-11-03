@@ -22,6 +22,13 @@ const MOVING_SHOOTER_FACTOR: float = 0.4 # si el que dispara se mueve
 const EXPOSURE_WEIGHT_K: float = 8.0 # peso de la exposición en el costo del A*
 const HULLDOWN_RADIUS: int = 15 # celdas de búsqueda de candidatos
 const MAX_TURNS: int = 12 # al llegar, gana el bando con más tanques vivos
+const P_HIT_MAX: float = 0.95 # tope de la probabilidad de impacto
+
+# --- Blindaje por ángulo ---
+const ARMOR_FRONT_COS: float = 0.5 # coseno del semiángulo frontal (0,5 = ±60°); el trasero es el simétrico
+const ARMOR_FRONT_FACTOR: float = 0.6 # multiplicador de impacto si el tirador está al frente del blanco
+const ARMOR_FLANK_FACTOR: float = 1.0
+const ARMOR_REAR_FACTOR: float = 1.4
 
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
@@ -54,6 +61,26 @@ const PATH_SLOPE_COST: float = 1.0 # costo extra en el A* a pendiente máxima
 
 # --- Detección ---
 const DETECTION_INTERVAL_TICKS: int = 5 # cada cuántos ticks se recalcula quién ve a quién
+const SPOT_RANGE_STATIONARY: float = 220.0 # metros: alcance para detectar a un blanco quieto
+const SPOT_RANGE_HULLDOWN: float = 150.0 # metros: blanco quieto con el casco oculto para el observador
+const FIRE_REVEAL_SECONDS: float = 3.0 # tras disparar, se lo detecta a MAX_RANGE aunque esté quieto
+
+# --- Vigilancia (overwatch) ---
+const OVERWATCH_HALF_ANGLE_DEG: float = 35.0 # semiángulo del sector de tiro
+const OVERWATCH_FIRST_SHOT_FACTOR: float = 1.5 # primer disparo del turno contra un blanco en movimiento
+
+# --- Disparar y replegarse ---
+const REVERSE_SPEED_FACTOR: float = 0.6 # velocidad en reversa (volviendo a cubierto mirando al enemigo)
+const AI_SCOOT_RADIUS: int = 6 # celdas para buscar una posición de tiro desde la que asomar
+
+# --- Humo ---
+const SMOKE_CHARGES: int = 2 # granadas de humo por tanque
+const SMOKE_RADIUS: float = 3.0 # celdas
+const SMOKE_HEIGHT: float = 8.0 # metros sobre el terreno en el centro de la nube
+const SMOKE_RANGE: float = 150.0 # metros: alcance del lanzador
+const SMOKE_TURNS: int = 2 # turnos de ejecución que dura la nube
+const AI_SMOKE_EXPOSURE: float = 0.5 # la IA tira humo al retroceder si su celda está más expuesta que esto
+const AI_SMOKE_DIST: float = 5.0 # celdas hacia la amenaza donde la IA pone la nube
 
 # --- Orden hull-down e IA ---
 const HULLDOWN_MIN_SEPARATION: float = 3.0 # celdas mínimas entre destinos de una misma orden

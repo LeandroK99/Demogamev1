@@ -1,6 +1,6 @@
 class_name CombatFx
 extends Node3D
-## Trazadoras de 0,15 s y destello en los impactos.
+## Trazadoras de 0,15 s y destello en los impactos (más grande y rojo si entró por flanco o atrás).
 
 const TRACER_SECONDS: float = 0.15
 const FLASH_SECONDS: float = 0.3
@@ -25,7 +25,7 @@ func _point(u: Unit, h: float) -> Vector3:
 	return Vector3(u.pos.x * Config.CELL_SIZE, height_field.height_at(u.pos) + h, u.pos.y * Config.CELL_SIZE)
 
 
-func add_shot(shooter: Unit, target: Unit, hit: bool) -> void:
+func add_shot(shooter: Unit, target: Unit, hit: bool, aspect: int = SimWorld.Aspect.FRONT) -> void:
 	var to: Vector3 = _point(target, Config.CENTER_H)
 	if not hit:
 		# Errado: la trazadora pasa un poco por al lado
@@ -33,11 +33,19 @@ func add_shot(shooter: Unit, target: Unit, hit: bool) -> void:
 	_tracers.append({"from": _point(shooter, Config.EYE_H), "to": to, "left": TRACER_SECONDS})
 	if hit:
 		var mesh: SphereMesh = SphereMesh.new()
-		mesh.radius = 2.0
-		mesh.height = 4.0
+		var r: float = 2.0
+		var color: Color = Color(1.0, 0.6, 0.1)
+		if aspect == SimWorld.Aspect.FLANK:
+			r = 2.6
+			color = Color(1.0, 0.4, 0.1)
+		elif aspect == SimWorld.Aspect.REAR:
+			r = 3.2
+			color = Color(1.0, 0.15, 0.1)
+		mesh.radius = r
+		mesh.height = r * 2.0
 		var mat: StandardMaterial3D = StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.albedo_color = Color(1.0, 0.6, 0.1)
+		mat.albedo_color = color
 		mesh.material = mat
 		var flash: MeshInstance3D = MeshInstance3D.new()
 		flash.mesh = mesh

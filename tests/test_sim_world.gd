@@ -41,10 +41,45 @@ func test_determinism() -> void:
 
 
 func test_detected_on_open_ground() -> void:
-	# Control: sin pared, a 83 celdas (332 m) en el llano sí se ven
+	# Control: sin pared, a 83 celdas (332 m) en el llano se ven si se mueven
+	var world: SimWorld = _flat_world()
+	for u: Unit in world.units:
+		u.moving = true
+	world.update_detection()
+	assert_eq(world.visible_enemies[0].size(), 4, "azules ven a los 4 rojos en movimiento")
+
+
+func test_stationary_not_spotted_far() -> void:
+	# Quietos a 332 m: fuera de SPOT_RANGE_STATIONARY, nadie ve a nadie
 	var world: SimWorld = _flat_world()
 	world.update_detection()
-	assert_eq(world.visible_enemies[0].size(), 4, "azules ven a los 4 rojos")
+	assert_eq(world.visible_enemies[0].size(), 0, "rojos quietos a 332 m no se detectan")
+	# A 200 m, quieto y con el casco a la vista: sí
+	world.units[4].pos = world.units[0].pos + Vector2(0.0, -50.0)
+	world.update_detection()
+	assert_true(world.visible_enemies[0].has(4), "rojo quieto a 200 m detectado")
+
+
+func test_firing_reveals_shooter() -> void:
+	# Un rojo detrás de la pared le dispara a un azul visible (por ejemplo, gracias a otro rojo):
+	# el azul no lo ve, pero queda como fantasma en known_enemies.
+	var world: SimWorld = _flat_world()
+	for u: Unit in world.units:
+		u.alive = u.id == 0 or u.id == 4
+	var blue: Unit = world.units[0]
+	var red: Unit = world.units[4]
+	red.pos = blue.pos + Vector2(0.0, -70.0) # 280 m, quieto: el azul no lo detecta
+	blue.moving = true # el rojo sí detecta al azul en movimiento
+	world.update_detection()
+	assert_true(world.visible_enemies[1].has(0), "el rojo ve al azul que se mueve")
+	assert_true(not world.visible_enemies[0].has(4), "el azul no ve al rojo quieto")
+	world.known_enemies[0].clear()
+	world.begin_execute()
+	world._combat()
+	assert_true(world.known_enemies[0].has(4), "el fogonazo delata al rojo")
+	assert_true(world.recently_fired(red), "recién disparó")
+	world.update_detection()
+	assert_true(world.visible_enemies[0].has(4), "recién disparado se lo detecta a 280 m")
 
 
 func test_wall_hides_tank() -> void:
@@ -60,6 +95,8 @@ func test_visible_target_takes_damage() -> void:
 	world.p_hit_base = 1.0
 	world.hulldown_hit_factor = 1.0
 	world.moving_shooter_factor = 1.0
+	world.armor_enabled = false
+	world.p_hit_max = 1.0
 	# Duelo aislado: un azul y un rojo pegados (factor de distancia ~1)
 	for u: Unit in world.units:
 		u.alive = u.id == 0 or u.id == 4
@@ -90,3 +127,61 @@ func test_last_side_standing_wins() -> void:
 	world.step()
 	assert_true(world.game_over, "terminó la partida")
 	assert_eq(world.winner, 0, "ganó azul")
+
+
+## Mundo llano sin IA, con el azul 0 y el rojo 4 vivos frente a frente a 20 celdas.
+func _duel_world() -> SimWorld:
+	var world: SimWorld = SimWorld.new(3, HeightField.new(96), false)
+	for u: Unit in world.units:
+		u.alive = u.id == 0 or u.id == 4
+	world.units[0].pos = Vector2(48, 60)
+	world.units[4].pos = Vector2(48, 40)
+	return world
+
+
+func test_armor_front_flank_rear() -> void:
+	var world: SimWorld = _duel_world()
+	var shooter: Unit = world.units[0]
+	var target: Unit = world.units[4]
+	target.heading = Vector2(0.0, 1.0) # mira al tirador (sur)
+	var p_front: float = world.hit_probability(shooter, target)
+	target.heading = Vector2(1.0, 0.0)
+	var p_flank: float = world.hit_probability(shooter, target)
+	target.heading = Vector2(0.0, -1.0) # le da la espalda
+	var p_rear: float = world.hit_probability(shooter, target)
+	assert_lt(p_front, p_flank, "frente < flanco")
+	assert_lt(p_flank, p_rear, "flanco < retaguardia")
+	assert_eq(SimWorld.aspect_of(target, shooter.pos), SimWorld.Aspect.REAR, "cara trasera")
+
+
+func test_hulldown_faces_threat() -> void:
+	var world: SimWorld = _duel_world()
+	var blue: Unit = world.units[0]
+	world.known_enemies[0][4] = {"cell": Vector2i(48, 20), "last_seen_turn": world.turn}
+	world.invalidate_exposure()
+	world.order_hulldown([0])
+	assert_true(blue.final_heading.dot(Vector2(0.0, -1.0)) > 0.9, "va a mirar al norte, hacia la amenaza (%s)" % blue.final_heading)
+
+
+func test_smoke_order_and_duration() -> void:
+	var world: SimWorld = _duel_world()
+	world.p_hit_base = 0.0
+	var blue: Unit = world.units[0]
+	var red: Unit = world.units[4]
+	red.moving = true
+	world.update_detection()
+	assert_true(world.visible_enemies[0].has(4), "antes del humo se ven")
+	assert_true(not world.order_smoke(0, Vector2i(48, 10)), "fuera de alcance: rechazada")
+	assert_true(world.order_smoke(0, Vector2i(48, 50)), "humo en el medio")
+	assert_eq(blue.smoke_charges, Config.SMOKE_CHARGES - 1, "gastó una carga")
+	world.update_detection()
+	assert_true(not world.visible_enemies[0].has(4), "el humo corta la detección")
+	world.begin_execute()
+	for i: int in world.ticks_per_turn:
+		world.step()
+		red.moving = true
+	assert_eq(world.smoke_clouds.size(), 1, "sigue después del primer turno")
+	world.begin_execute()
+	for i: int in world.ticks_per_turn:
+		world.step()
+	assert_eq(world.smoke_clouds.size(), 0, "se disipó después de SMOKE_TURNS turnos")

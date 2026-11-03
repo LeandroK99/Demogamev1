@@ -81,6 +81,7 @@ func test_attack_target_has_priority() -> void:
 func test_attack_ends_when_target_dies() -> void:
 	var ids: Array[int] = [0, 4]
 	var world: SimWorld = _world(ids)
+	world.units[4].moving = true # en movimiento se lo detecta a 332 m
 	world.update_detection()
 	assert_true(world.order_attack(0, 4), "orden aceptada")
 	world.units[4].alive = false
@@ -89,3 +90,112 @@ func test_attack_ends_when_target_dies() -> void:
 	world.step()
 	assert_eq(world.units[0].order, Unit.Order.NONE, "la orden terminó")
 	assert_eq(world.units[0].attack_target, -1, "sin blanco")
+
+
+func test_waypoints_chain() -> void:
+	var ids: Array[int] = [0, 4]
+	var world: SimWorld = _world(ids)
+	world.p_hit_base = 0.0
+	var u: Unit = world.units[0]
+	var a: Vector2i = u.cell() + Vector2i(0, -6)
+	var b: Vector2i = a + Vector2i(6, 0)
+	assert_true(world.order_move(0, a), "primer tramo")
+	assert_true(world.order_move(0, b, Vector2.ZERO, false, true), "segundo tramo (directo, agregado)")
+	assert_true(u.path.has(a), "la ruta pasa por el primer destino")
+	assert_eq(u.path.back(), b, "termina en el segundo")
+	assert_eq(u.waypoints.size(), 2, "dos tramos")
+	assert_true(bool(u.waypoints[1]["direct"]), "el segundo tramo es directo")
+	world.begin_execute()
+	for i: int in 120:
+		world.step()
+	assert_eq(u.cell(), b, "llegó al final")
+	assert_true(u.waypoints.is_empty(), "consumió los waypoints")
+
+
+func test_move_without_append_replaces() -> void:
+	var ids: Array[int] = [0, 4]
+	var world: SimWorld = _world(ids)
+	var u: Unit = world.units[0]
+	var a: Vector2i = u.cell() + Vector2i(0, -6)
+	assert_true(world.order_move(0, a), "primer tramo")
+	assert_true(world.order_move(0, a + Vector2i(6, 0), Vector2.ZERO, true, true), "segundo tramo")
+	var c: Vector2i = u.cell() + Vector2i(-5, 0)
+	assert_true(world.order_move(0, c), "orden nueva sin Shift")
+	assert_eq(u.path.back(), c, "la ruta nueva termina en c")
+	assert_true(not u.path.has(a), "descartó los tramos anteriores")
+	assert_eq(u.waypoints.size(), 1, "un solo tramo")
+
+
+func test_overwatch_sector_limits_fire() -> void:
+	var ids: Array[int] = [0, 4]
+	var world: SimWorld = _world(ids)
+	var blue: Unit = world.units[0]
+	var red: Unit = world.units[4]
+	red.pos = blue.pos + Vector2(20.0, 0.0) # al este, a 80 m
+	red.reload_left = 100.0
+	blue.reload_left = 5.0
+	world.update_detection()
+	assert_true(world.visible_enemies[0].has(4), "lo ve")
+	assert_true(world.order_overwatch(0, Vector2(0.0, -1.0)), "vigila al norte")
+	world.begin_execute()
+	assert_eq(blue.reload_left, 0.0, "arranca con la recarga lista")
+	world.step()
+	assert_eq(world.shot_events.size(), 0, "no tira fuera del sector")
+	world.phase = SimWorld.Phase.PLAN
+	assert_true(world.order_overwatch(0, Vector2(1.0, 0.0)), "vigila al este")
+	world.begin_execute()
+	world.step()
+	assert_eq(world.shot_events.size(), 1, "tira dentro del sector en el primer tick")
+
+
+func test_overwatch_ambush_bonus() -> void:
+	var ids: Array[int] = [0, 4]
+	var world: SimWorld = _world(ids)
+	world.p_hit_base = 0.3 # lejos del tope
+	var blue: Unit = world.units[0]
+	var red: Unit = world.units[4]
+	red.pos = blue.pos + Vector2(0.0, -20.0)
+	red.moving = true
+	var p_normal: float = world.hit_probability(blue, red)
+	assert_true(world.order_overwatch(0, Vector2(0.0, -1.0)), "vigila al norte")
+	world.begin_execute()
+	var p_ambush: float = world.hit_probability(blue, red)
+	assert_true(is_equal_approx(p_ambush, p_normal * Config.OVERWATCH_FIRST_SHOT_FACTOR), "emboscada ×1,5 (%.3f vs %.3f)" % [p_ambush, p_normal])
+	blue.overwatch_ready = false
+	assert_true(is_equal_approx(world.hit_probability(blue, red), p_normal), "después del primer disparo, normal")
+
+
+## Pared de 3 m a lo ancho en y = 50: detrás (y > 50) el azul queda oculto del rojo al norte.
+func _scoot_world() -> SimWorld:
+	var hf: HeightField = HeightField.new(N)
+	for x: int in N:
+		hf.set_height(Vector2i(x, 50), 3.0)
+	var world: SimWorld = SimWorld.new(7, hf, false)
+	for u: Unit in world.units:
+		u.alive = u.id == 0 or u.id == 4
+	return world
+
+
+func test_scoot_fires_and_returns() -> void:
+	var world: SimWorld = _scoot_world()
+	var blue: Unit = world.units[0]
+	var red: Unit = world.units[4]
+	blue.pos = Vector2(48, 53) # detrás de la pared
+	red.pos = Vector2(48, 25) # 100 m al norte
+	red.moving = true # para que el azul lo detecte al asomar
+	red.reload_left = 1000.0
+	world.p_hit_base = 0.0
+	var home: Vector2i = blue.cell()
+	assert_true(world.order_scoot(0, Vector2i(54, 50)), "orden aceptada")
+	assert_eq(blue.order, Unit.Order.SCOOT, "orden SCOOT")
+	world.begin_execute()
+	var fired: bool = false
+	for i: int in world.ticks_per_turn - 1:
+		world.step()
+		red.moving = true
+		if blue.scoot_fired:
+			fired = true
+	assert_true(fired, "hizo su disparo")
+	assert_eq(blue.cell(), home, "volvió a la celda de partida")
+	assert_true(blue.heading.dot((red.pos - blue.pos).normalized()) > 0.8, "quedó mirando al blanco (%s)" % blue.heading)
+	assert_eq(blue.order, Unit.Order.NONE, "la orden terminó")
