@@ -4,6 +4,12 @@ extends Node3D
 var height_field: HeightField
 var terrain_view: TerrainView
 var camera_rig: CameraRTS
+var analysis: TerrainAnalysis
+var overlay: Overlay
+
+# Provisorio hasta la fase 3 (unidades): posiciones fijas para probar los overlays
+var placeholder_blue: Array[Vector2i] = [Vector2i(36, 89), Vector2i(44, 89), Vector2i(52, 89), Vector2i(60, 89)]
+var placeholder_red: Array[Vector2i] = [Vector2i(36, 6), Vector2i(44, 6), Vector2i(52, 6), Vector2i(60, 6)]
 
 
 func _ready() -> void:
@@ -39,4 +45,27 @@ func _ready() -> void:
 	world_env.environment = env
 	add_child(world_env)
 
+	analysis = TerrainAnalysis.new(height_field)
+	overlay = Overlay.new()
+	add_child(overlay)
+	overlay.setup(terrain_view, analysis)
+	overlay.set_context(placeholder_red, placeholder_blue[0])
+	for c: Vector2i in placeholder_blue:
+		_spawn_placeholder(c, Color(0.2, 0.4, 1.0))
+	for c: Vector2i in placeholder_red:
+		_spawn_placeholder(c, Color(1.0, 0.2, 0.15))
+
 	print("Hull-Down OK")
+
+
+## Poste de color en una celda (provisorio hasta la fase 3).
+func _spawn_placeholder(c: Vector2i, color: Color) -> void:
+	var mesh: BoxMesh = BoxMesh.new()
+	mesh.size = Vector3(3.5, 2.2, 7.0)
+	var mat: StandardMaterial3D = StandardMaterial3D.new()
+	mat.albedo_color = color
+	mesh.material = mat
+	var mi: MeshInstance3D = MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.position = height_field.cell_to_world(c) + Vector3.UP * 1.1
+	add_child(mi)
