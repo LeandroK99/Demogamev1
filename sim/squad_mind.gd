@@ -5,7 +5,7 @@ extends RefCounted
 ## las opciones está en MindSim; acá queda el estado y la regla para cambiar de opción.
 
 ## FOLLOW cumple la orden del jugador; las demás son decisiones propias.
-enum Option { FOLLOW, CONTACT_DRILL, RELOCATE, AMBUSH, BREAK_CONTACT, BOUND, FLANK, RESCUE, NEAR_AMBUSH }
+enum Option { FOLLOW, CONTACT_DRILL, RELOCATE, AMBUSH, BREAK_CONTACT, BOUND, FLANK, RESCUE, NEAR_AMBUSH, CROSS }
 ## Estricta: solo cumple la orden. Normal: reacciona (drill, reubicarse, emboscar, rescatar).
 ## Normal también avanza por fuego y movimiento. Alta: además flanquea y rompe el contacto sola
 ## (solo diezmada de verdad).
@@ -19,9 +19,9 @@ enum Quality { VETERAN, REGULAR, GREEN }
 
 ## Para la radio y el HUD.
 const OPTION_NAMES: Array[String] = ["sigue la orden", "contacto", "se reubica", "emboscada",
-	"rompe el contacto", "avanza por saltos", "flanquea", "rescata un herido", "asalta la emboscada"]
+	"rompe el contacto", "avanza por saltos", "flanquea", "rescata un herido", "asalta la emboscada", "cruza la zona de peligro"]
 ## Ícono de intención sobre la escuadra (vacío = cumple la orden).
-const INTENT_SHORT: Array[String] = ["", "CONTACTO", "REUBICA", "EMBOSCADA", "SE REPLIEGA", "SALTOS", "FLANQUEA", "RESCATE", "ASALTO"]
+const INTENT_SHORT: Array[String] = ["", "CONTACTO", "REUBICA", "EMBOSCADA", "SE REPLIEGA", "SALTOS", "FLANQUEA", "RESCATE", "ASALTO", "CRUZA"]
 const AUTONOMY_NAMES: Array[String] = ["estricta", "normal", "alta"]
 const QUALITY_NAMES: Array[String] = ["veterano", "regular", "novato"]
 
@@ -63,7 +63,7 @@ static func allowed(p_autonomy: int, opt: int) -> bool:
 	match opt:
 		Option.FOLLOW:
 			return true
-		Option.CONTACT_DRILL, Option.RELOCATE, Option.AMBUSH, Option.RESCUE, Option.BOUND, Option.NEAR_AMBUSH:
+		Option.CONTACT_DRILL, Option.RELOCATE, Option.AMBUSH, Option.RESCUE, Option.BOUND, Option.NEAR_AMBUSH, Option.CROSS:
 			return p_autonomy >= Autonomy.NORMAL
 	return p_autonomy >= Autonomy.HIGH
 

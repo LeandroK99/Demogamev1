@@ -466,3 +466,9 @@ const FPL_RANK: float = 0.5 # la ametralladora prefiere blancos sobre su línea
 const MG_DISPLACE_BURSTS: int = 3 # ráfagas desde el mismo lugar ya ubicada (le tiraron): se mueve
 const MG_DISPLACE_FIRED_SECONDS: float = 5.0 # "ya la ubicaron": le tiraron hace menos que esto
 const MG_DISPLACE_MIN_M: float = 3.0 # la nueva posición, al menos a esto de la anterior
+
+# --- Cruzar una zona de peligro (fase 56) ---
+const DANGER_MIN_CELLS: int = 4 # tramo abierto entre dos cubiertas de al menos esto (16 m)...
+const DANGER_MAX_CELLS: int = 15 # ... y a lo sumo esto (60 m): un claro, un camino
+const DANGER_SCORE: float = 2.5
+const DANGER_FIRED_SECONDS: float = 10.0 # bajo fuego no: ahí avanza por saltos
