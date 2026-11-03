@@ -452,3 +452,17 @@ const MARKSMAN_MOVING_FACTOR: float = 0.4 # contra un blanco en marcha
 const MARKSMAN_RELOAD: float = 4.0 # segundos entre tiros (apunta)
 const MARKSMAN_SPOT_FACTOR: float = 2.0 # con la mira ve a esto por el alcance normal
 const MARKSMAN_PRIORITY: float = 0.25 # jefes y ametralladoras cuentan como así de cerca al elegir blanco
+
+# --- Sectores, línea final y cambio de posición (fase 55) ---
+const SECTOR_FRONT_DEG: float = 120.0 # frente que se reparten los soldados de una escuadra quieta
+const SECTOR_OVERLAP_DEG: float = 10.0 # cada sector se pisa con el vecino
+const SECTOR_OUT_RANK: float = 3.0 # un blanco fuera de su sector cuenta como así de más lejos
+const SECTOR_RETHINK_DEG: float = 20.0 # se reparten de nuevo si la amenaza se corre más que esto
+const SECTOR_DRAW_M: float = 40.0 # largo de los sectores en el mapa
+const FPL_ANGLE_DEG: float = 25.0 # la línea final de la ametralladora cruza el frente oblicua
+const FPL_WIDTH_M: float = 2.0 # tiro rasante: barre a los que están a esto de la línea
+const FPL_GRAZE_FACTOR: float = 0.3 # a cada uno de ellos, esta fracción del impacto de la ráfaga
+const FPL_RANK: float = 0.5 # la ametralladora prefiere blancos sobre su línea
+const MG_DISPLACE_BURSTS: int = 3 # ráfagas desde el mismo lugar ya ubicada (le tiraron): se mueve
+const MG_DISPLACE_FIRED_SECONDS: float = 5.0 # "ya la ubicaron": le tiraron hace menos que esto
+const MG_DISPLACE_MIN_M: float = 3.0 # la nueva posición, al menos a esto de la anterior

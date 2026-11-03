@@ -533,6 +533,8 @@ func _draw_paths() -> void:
 			_sector(segs, colors, u, u.overwatch_dir, Config.OVERWATCH_HALF_ANGLE_DEG, Config.MAX_RANGE, COLOR_OVERWATCH)
 		if u.fire_arc_dir != Vector2.ZERO and selected_ids.has(u.id):
 			_sector(segs, colors, u, u.fire_arc_dir, Config.FIRE_ARC_HALF_ANGLE_DEG, u.max_engage_m, COLOR_ENGAGE)
+		if u.is_infantry() and selected_ids.has(u.id) and not u.moving:
+			_soldier_sectors(segs, colors, u)
 		if u.order == Unit.Order.SCOOT and not u.scoot_fired and not u.path.is_empty():
 			_dashed(segs, colors, Vector2(u.path.back()), Vector2(u.return_cell), COLOR_SCOOT)
 		if u.order == Unit.Order.SUPPRESS:
@@ -589,6 +591,20 @@ func _arrow(segs: PackedVector3Array, colors: PackedColorArray, at: Vector2, dir
 func _cross(segs: PackedVector3Array, colors: PackedColorArray, at: Vector2, color: Color) -> void:
 	for d: Vector2 in [Vector2(1.0, 1.0), Vector2(1.0, -1.0)]:
 		_seg(segs, colors, _ground(at - d), _ground(at + d), color)
+
+
+## Sectores de tiro de cada soldado de una escuadra quieta (bordes cortos) y la línea final de la ametralladora.
+func _soldier_sectors(segs: PackedVector3Array, colors: PackedColorArray, u: Unit) -> void:
+	for s: Soldier in u.soldiers:
+		if not s.is_ok() or s.sector_dir == Vector2.ZERO:
+			continue
+		var at: Vector2 = s.pos / Config.CELL_SIZE
+		if s.fpl_dir != Vector2.ZERO:
+			_seg(segs, colors, _ground(at), _ground(at + s.fpl_dir * Config.SOLDIER_MG_RANGE / Config.CELL_SIZE), COLOR_ATTACK)
+			continue
+		for side: float in [-1.0, 1.0]:
+			var edge: Vector2 = s.sector_dir.rotated(deg_to_rad(side * s.sector_half_deg))
+			_seg(segs, colors, _ground(at), _ground(at + edge * Config.SECTOR_DRAW_M / Config.CELL_SIZE), COLOR_ENGAGE)
 
 
 ## Abanico desde u.pos: dos bordes y el arco a range_m.

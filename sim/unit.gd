@@ -64,6 +64,7 @@ var formation: int = Formation.WEDGE # la que eligió el jugador
 var shape: int = Formation.WEDGE
 var spread: float = 1.0
 var echelon_side: float = 1.0 # 1 = escalón a la derecha, -1 a la izquierda
+var sector_threat: Vector2 = Vector2.ZERO # dirección de la amenaza con la que se repartieron los sectores
 var trail_m: float = 0.0 # desplazamiento con vigilancia: metros extra que el equipo A va detrás
 ## Infantería: la cabeza de la escuadra (autonomía, ver MindSim). null en los tanques.
 var mind: SquadMind = null

@@ -380,6 +380,8 @@ func choose_cover(w: SimWorld, u: Unit, s: Soldier, threat: Vector2, taken: Arra
 				continue # dentro de una roca, un muro o un tronco
 			if not pf.is_walkable(Vector2i((p / Config.CELL_SIZE).round())) or not _spaced(p, taken):
 				continue
+			if s.avoid_pos.x >= 0.0 and p.distance_to(s.avoid_pos) < Config.MG_DISPLACE_MIN_M:
+				continue # ahí ya la ubicaron
 			var ev: Dictionary = evaluate_spot(w, p, threat)
 			var base: float = (Config.SOLDIER_COVER_W_PROTECT if ev["protected"] else 0.0) \
 				+ (Config.SOLDIER_COVER_W_CONCEAL if concealed(w, p, threat) else 0.0) \
@@ -493,8 +495,13 @@ func update_cover(w: SimWorld) -> void:
 		if u.moving:
 			for s: Soldier in u.soldiers:
 				s.has_cover = false
+				s.sector_dir = Vector2.ZERO
+				s.fpl_dir = Vector2.ZERO
+				s.avoid_pos = Vector2(-1.0, -1.0)
+			u.sector_threat = Vector2.ZERO
 			continue
 		var threat: Vector2 = threat_point(w, u)
+		assign_sectors(u, threat)
 		var taken: Array[Vector2] = []
 		var pending: Array[Soldier] = []
 		for s: Soldier in u.soldiers:
@@ -738,7 +745,7 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 		var reach: float = Config.MARKSMAN_RANGE if s.marksman else SimWorld.weapon_range(wpn)
 		if s.ammo <= 0:
 			reach = Config.GL_RANGE if s.gl_rounds > 0 else Config.GRENADE_RANGE_M
-		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), reach, s.index, s.marksman)
+		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), reach, s.index, s.marksman, s)
 		if not t.is_empty():
 			if grenade_at(w, u, s, t["soldier"]) or s.ammo <= 0:
 				continue
@@ -747,6 +754,92 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 			var cell: Vector2i = Vector2i((s.suppress_m / Config.CELL_SIZE).round())
 			if w.can_suppress_at(u, cell):
 				_area_shot(w, u, s, wpn, cell) # base de fuego: bate el contacto aunque no lo vea
+
+
+## --- Sectores, línea final y cambio de posición (fase 55) ---
+
+## Escuadra quieta: los soldados se reparten SECTOR_FRONT_DEG del frente hacia la amenaza, de izquierda
+## a derecha según dónde están; la ametralladora cubre todo el frente con su línea final oblicua.
+## Se reparten de nuevo si la amenaza se corre más de SECTOR_RETHINK_DEG.
+func assign_sectors(u: Unit, threat: Vector2) -> void:
+	var to: Vector2 = threat - u.pos_m()
+	if to.length() < 1.0:
+		return
+	var dir: Vector2 = to.normalized()
+	if u.sector_threat != Vector2.ZERO and rad_to_deg(absf(u.sector_threat.angle_to(dir))) < Config.SECTOR_RETHINK_DEG:
+		return
+	u.sector_threat = dir
+	var right: Vector2 = Vector2(-dir.y, dir.x)
+	var riflemen: Array[Soldier] = []
+	for s: Soldier in u.soldiers:
+		if not s.is_ok():
+			continue
+		if s.role == Soldier.Role.MG:
+			s.sector_dir = dir
+			s.sector_half_deg = Config.SECTOR_FRONT_DEG * 0.5
+			s.fpl_dir = dir.rotated(deg_to_rad(Config.FPL_ANGLE_DEG))
+		else:
+			riflemen.append(s)
+	riflemen.sort_custom(func(a: Soldier, b: Soldier) -> bool: return a.pos.dot(right) < b.pos.dot(right))
+	var n: int = riflemen.size()
+	if n == 0:
+		return
+	var width: float = Config.SECTOR_FRONT_DEG / float(n)
+	for k: int in n:
+		var ang: float = -Config.SECTOR_FRONT_DEG * 0.5 + (float(k) + 0.5) * width
+		riflemen[k].sector_dir = dir.rotated(deg_to_rad(ang))
+		riflemen[k].sector_half_deg = width * 0.5 + Config.SECTOR_OVERLAP_DEG
+
+
+## ¿El punto at queda dentro del sector del soldado (o no tiene sector)?
+static func in_sector(s: Soldier, at: Vector2) -> bool:
+	if s.sector_dir == Vector2.ZERO:
+		return true
+	var d: Vector2 = at - s.pos
+	return d.length() < 1.0 or rad_to_deg(absf(s.sector_dir.angle_to(d))) <= s.sector_half_deg
+
+
+## Distancia de at a la línea final de la ametralladora s (INF si no tiene, o si queda detrás).
+static func fpl_dist(s: Soldier, at: Vector2) -> float:
+	if s.fpl_dir == Vector2.ZERO:
+		return INF
+	var d: Vector2 = at - s.pos
+	var along: float = d.dot(s.fpl_dir)
+	if along <= 0.0:
+		return INF
+	return absf(d.dot(Vector2(-s.fpl_dir.y, s.fpl_dir.x)))
+
+
+## Tiro rasante: la ráfaga de la ametralladora sobre su línea final barre a los demás que están sobre ella.
+func _graze(w: SimWorld, su: Unit, s: Soldier, side: int, hit_at: Vector2) -> void:
+	if fpl_dist(s, hit_at) > Config.FPL_WIDTH_M:
+		return
+	var eye: float = eye_of(w, s)
+	for tu: Unit in w.units:
+		if not tu.alive or tu.side != side or not tu.is_infantry():
+			continue
+		for t: Soldier in tu.soldiers:
+			if not t.is_ok() or t.pos.distance_to(hit_at) <= Config.SOLDIER_BURST_M or t.pos.distance_to(s.pos) > Config.SOLDIER_MG_RANGE:
+				continue
+			if fpl_dist(s, t.pos) > Config.FPL_WIDTH_M:
+				continue
+			if w.rng.randf() < soldier_hit_p(w, su, s.moving, s.pos, eye, tu, t, Unit.Weapon.MG, false, s) * Config.FPL_GRAZE_FACTOR:
+				w.damage_soldier(tu, t)
+			add_soldier_suppression(w, t, Config.SOLDIER_SUPP_BURST * 0.5)
+
+
+## La ametralladora ya ubicada (le tiran) cambia de posición tras MG_DISPLACE_BURSTS ráfagas.
+func _maybe_displace(w: SimWorld, u: Unit, s: Soldier) -> void:
+	if s.role != Soldier.Role.MG or u.moving or not s.has_cover:
+		return
+	s.bursts_here += 1
+	if s.bursts_here < Config.MG_DISPLACE_BURSTS:
+		return
+	if float(w.total_ticks - s.incoming_tick) * Config.TICK > Config.MG_DISPLACE_FIRED_SECONDS:
+		return
+	s.bursts_here = 0
+	s.avoid_pos = s.cover_pos
+	s.has_cover = false # update_cover le elige otro lugar, lejos de este
 
 
 ## --- Formación según terreno (fase 50) ---
@@ -991,7 +1084,7 @@ func tank_coax(w: SimWorld, tank: Unit) -> void:
 ## visible para el bando más cercano (los del blanco de ATTACK cuentan como más cerca) dentro del
 ## alcance, el arco y el sector, al que el tirador ve la cabeza. Vacío si no hay. spread reparte el
 ## fuego: el tirador arranca por el blanco spread entre los SOLDIER_TARGET_SPREAD más cercanos.
-func pick_soldier(w: SimWorld, u: Unit, from: Vector2, eye: float, reach: float, spread: int = 0, priority: bool = false) -> Dictionary:
+func pick_soldier(w: SimWorld, u: Unit, from: Vector2, eye: float, reach: float, spread: int = 0, priority: bool = false, shooter: Soldier = null) -> Dictionary:
 	var max_d: float = minf(reach, u.max_engage_m)
 	var cands: Array[Dictionary] = []
 	for key: int in visible_soldiers[u.side]:
@@ -1010,6 +1103,11 @@ func pick_soldier(w: SimWorld, u: Unit, from: Vector2, eye: float, reach: float,
 		var rank: float = d * (0.5 if tu.id == u.attack_target else 1.0)
 		if priority and (ts.role == Soldier.Role.LEADER or ts.role == Soldier.Role.MG):
 			rank *= Config.MARKSMAN_PRIORITY # el tirador selecto busca jefes y ametralladoras
+		if shooter != null and shooter.sector_dir != Vector2.ZERO:
+			if not in_sector(shooter, ts.pos):
+				rank *= Config.SECTOR_OUT_RANK # primero, lo de su sector
+			elif fpl_dist(shooter, ts.pos) <= Config.FPL_WIDTH_M:
+				rank *= Config.FPL_RANK
 		cands.append({"unit": tu, "soldier": ts, "rank": rank})
 	if cands.is_empty():
 		return {}
@@ -1102,7 +1200,11 @@ func _shoot(w: SimWorld, su: Unit, from: Vector2, eye: float, s: Soldier, tu: Un
 			w.damage_soldier(tu, t)
 	else:
 		hit = _burst(w, su, moving, from, eye, tu.side, t.pos, wpn, 1.0, s) > 0
+		if s != null and wpn == Unit.Weapon.MG:
+			_graze(w, su, s, tu.side, t.pos)
 	suppress_at(w, tu.side, t.pos, from, wpn, hit)
+	if s != null:
+		_maybe_displace(w, su, s)
 	w.shot_events.append({"shooter": su.id, "target": tu.id, "hit": hit, "aspect": SimWorld.Aspect.FRONT,
 		"weapon": wpn, "from_m": from, "from_h": eye, "to_m": t.pos, "to_h": t.center_h(), "soldier": t.index})
 
