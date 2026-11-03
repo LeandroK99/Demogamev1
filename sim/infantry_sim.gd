@@ -777,13 +777,11 @@ static func choose_technique(u: Unit) -> void:
 	u.trail_m = move_toward(u.trail_m, trail, Config.OVERWATCH_TRAIL_STEP)
 
 
-## Fila india en el bosque; cuña cerrada cerca del bosque o en terreno quebrado; abierta en terreno
-## limpio; línea a FORM_LINE_ASSAULT_M del objetivo del asalto; escalón hacia un contacto de costado.
+## Cuña cerrada en el bosque, cerca de él o en terreno quebrado; abierta en terreno limpio; línea a FORM_LINE_ASSAULT_M del objetivo del asalto; escalón hacia un contacto de costado.
 ## Si el jugador eligió fila o línea, solo se abre o se cierra.
 func adapt_formation(w: SimWorld, u: Unit) -> void:
 	var c: Vector2i = u.cell()
-	var forest_here: bool = w.cover != null and w.cover.type_at(c) == CoverMap.Type.FOREST
-	var closed: bool = forest_here or w.height_field.slope_at(c) > Config.FORM_ROUGH_SLOPE or _forest_near(w, c)
+	var closed: bool = (w.cover != null and w.cover.type_at(c) == CoverMap.Type.FOREST) or w.height_field.slope_at(c) > Config.FORM_ROUGH_SLOPE or _forest_near(w, c)
 	u.spread = move_toward(u.spread, 1.0 if closed else Config.FORM_SPREAD_OPEN, Config.FORM_SPREAD_STEP)
 	if u.formation != Unit.Formation.WEDGE:
 		u.shape = u.formation
@@ -792,8 +790,6 @@ func adapt_formation(w: SimWorld, u: Unit) -> void:
 	var side: float = _contact_side(u)
 	if u.order == Unit.Order.ASSAULT and not u.path.is_empty() and u.pos.distance_to(Vector2(u.path.back())) * Config.CELL_SIZE <= Config.FORM_LINE_ASSAULT_M:
 		shape = Unit.Formation.LINE
-	elif forest_here:
-		shape = Unit.Formation.FILE
 	elif side != 0.0:
 		shape = Unit.Formation.ECHELON
 		u.echelon_side = side

@@ -43,13 +43,15 @@ func test_open_ground_opens_the_wedge() -> void:
 	assert_lt(_mean_gap(sq), open_gap, "más juntos")
 
 
-func test_forest_becomes_file() -> void:
+func test_forest_closes_the_wedge() -> void:
 	var world: SimWorld = _world()
 	var sq: Unit = world.add_unit(0, Vector2(48, 80), Unit.Kind.INFANTRY)
+	sq.spread = Config.FORM_SPREAD_OPEN
 	world.cover.set_type(Vector2i(48, 80), CoverMap.Type.FOREST)
-	world.inf.adapt_formation(world, sq)
-	assert_eq(sq.shape, Unit.Formation.FILE, "fila india en el bosque")
-	assert_eq(sq.formation, Unit.Formation.WEDGE, "la elección del jugador no cambia")
+	for i: int in 30:
+		world.inf.adapt_formation(world, sq)
+	assert_eq(sq.shape, Unit.Formation.WEDGE, "cuña")
+	assert_eq(sq.spread, 1.0, "cerrada en el bosque")
 
 
 func test_echelon_toward_flank_contact() -> void:
