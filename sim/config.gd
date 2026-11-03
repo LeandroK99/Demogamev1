@@ -492,3 +492,14 @@ const COUNTER_DUG_FRACTION: float = 0.5 # el atacante en el objetivo con menos d
 const SURRENDER_ENEMY_M: float = 50.0 # quebrada, con el enemigo a menos de esto...
 const SURRENDER_AFTER_SECONDS: float = 8.0 # ... quebrada hace más de esto ...
 # ... y sin ruta de repliegue (clavada o sin camino): se rinde
+
+# --- Edificios (fase 60) ---
+const BUILDING_H: float = 3.0 # altura de las paredes hasta el techo
+const WINDOW_SILL_H: float = 0.9 # la ventana deja ver y tirar entre el antepecho...
+const WINDOW_TOP_H: float = 2.0 # ... y el dintel
+const DOOR_H: float = 2.1 # la puerta (y el boquete) hasta acá
+const BREACH_RUBBLE_H: float = 0.3 # escombros al pie de un boquete
+const BUILDING_LOS_STEP: float = 0.5 # metros entre muestras de la línea de visión dentro de una casa
+const BUILDING_WALK_STEP: float = 0.4 # ... y del camino recto de un soldado
+const ROUTE_REPLAN_M: float = 2.0 # el destino del soldado se corrió esto: rehace la ruta por adentro
+const ROUTE_ARRIVE_M: float = 0.4 # llegó a un punto de su ruta

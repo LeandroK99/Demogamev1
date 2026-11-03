@@ -66,6 +66,7 @@ var scenario: int = Scenario.TANKS
 var _forcing: bool = false # órdenes que da la propia simulación (una retirada por moral quebrada)
 var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
 var micro: MicroCover = null # microcobertura a 1 m (piedras, cráteres, pircas); null = sin ella
+var buildings: BuildingMap = null # casas a 1 m (fase 60); null = sin
 var inf: InfantrySim = InfantrySim.new() # los soldados de las escuadras
 var minds: MindSim = MindSim.new() # la autonomía de las escuadras
 ## Radio: lo que las escuadras deciden por su cuenta. {tick, turn, side, unit, text}, el último al final.
@@ -182,6 +183,19 @@ func set_cover(cm: CoverMap) -> void:
 func set_micro(mc: MicroCover) -> void:
 	micro = mc
 	analysis.micro = mc
+
+
+## Casas (fase 60): cortan la vista y las balas, los soldados entran por las puertas y el tanque
+## no pasa por encima.
+func set_buildings(bm: BuildingMap) -> void:
+	buildings = bm
+	analysis.buildings = bm
+	var pf: Pathfinder = pathfinders[Unit.Kind.TANK]
+	for c: Vector2i in bm.footprint_cells():
+		if height_field.in_bounds(c):
+			pf.astar.set_point_solid(c, true)
+			pf.astar_direct.set_point_solid(c, true)
+	invalidate_exposure()
 
 
 ## Cobertura de la celda para la infantería (0 sin cobertura).

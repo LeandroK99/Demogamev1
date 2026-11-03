@@ -67,6 +67,8 @@ var fpl_dir: Vector2 = Vector2.ZERO
 var dig_time: float = 0.0 # segundos cavando en su lugar (fase 57)
 var bursts_here: int = 0 # ráfagas desde su posición actual (la ametralladora cambia de lugar)
 var avoid_pos: Vector2 = Vector2(-1.0, -1.0) # posición que dejó por estar ubicada
+var route: PackedVector2Array = PackedVector2Array() # con casas: puntos por los que va (fase 60)
+var route_goal: Vector2 = Vector2.ZERO # destino para el que se armó la ruta
 var marksman: bool = false # tirador selecto (fase 54): fusil con mira, ve y tira más lejos
 
 

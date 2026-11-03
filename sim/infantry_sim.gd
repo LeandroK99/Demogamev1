@@ -60,6 +60,8 @@ func move_soldiers(w: SimWorld) -> void:
 			elif s.has_cover and not u.moving:
 				target = s.fire_pos if s.peeking else s.cover_pos
 			target = Vector2(clampf(target.x, 0.0, limit), clampf(target.y, 0.0, limit))
+			if w.buildings != null:
+				target = _steer(w.buildings, s, target)
 			var d: Vector2 = target - s.pos
 			var dist: float = d.length()
 			if dist > Config.SOLDIER_TELEPORT_M:
@@ -74,6 +76,23 @@ func move_soldiers(w: SimWorld) -> void:
 			s.heading = d / dist
 			var run: float = Config.RUSH_SPEED if rushing and s.rush_until > 0 else 1.0
 			s.pos += d / dist * minf(step_m * run, dist)
+
+
+## Con casas: si ir derecho a target atraviesa una pared o una ventana, el soldado va por una ruta
+## a 1 m (por las puertas y los boquetes) y devuelve el próximo punto de esa ruta.
+static func _steer(bm: BuildingMap, s: Soldier, target: Vector2) -> Vector2:
+	target = bm.nearest_walkable_m(target)
+	if s.route.is_empty() or s.route_goal.distance_to(target) > Config.ROUTE_REPLAN_M:
+		if not bm.crosses(s.pos, target):
+			s.route.clear()
+			return target
+		s.route = bm.route(s.pos, target)
+		s.route_goal = target
+	while not s.route.is_empty() and s.pos.distance_to(s.route[0]) <= Config.ROUTE_ARRIVE_M:
+		s.route.remove_at(0)
+	if s.route.is_empty():
+		return target if not bm.crosses(s.pos, target) else s.pos
+	return s.route[0]
 
 
 ## Dispersión: cada soldado elige un corrimiento de hasta JITTER_M de su lugar, prefiriendo quedar
@@ -309,6 +328,8 @@ func threat_point(w: SimWorld, u: Unit) -> Vector2:
 ## Obstáculo que protege a un soldado en p (con el centro del cuerpo a center_h) del fuego que
 ## viene de threat: el primero que lo tapa a menos de SOLDIER_COVER_PROBE_M. NONE si ninguno.
 static func protecting_obstacle(w: SimWorld, p: Vector2, center_h: float, threat: Vector2) -> int:
+	if w.buildings != null and _building_protects(w, p, center_h, threat):
+		return MicroCover.Type.WALL
 	var mc: MicroCover = w.micro
 	if mc == null:
 		return MicroCover.Type.NONE
@@ -323,6 +344,20 @@ static func protecting_obstacle(w: SimWorld, p: Vector2, center_h: float, threat
 			return t
 		s += Config.MICRO_LOS_STEP
 	return MicroCover.Type.NONE
+
+
+## ¿Una pared o el antepecho de una ventana, a menos de SOLDIER_COVER_PROBE_M hacia la amenaza,
+## le tapa el centro del cuerpo?
+static func _building_protects(w: SimWorld, p: Vector2, center_h: float, threat: Vector2) -> bool:
+	var bm: BuildingMap = w.buildings
+	var dir: Vector2 = (threat - p).normalized()
+	var s: float = Config.MICRO_SELF_M
+	while s <= Config.SOLDIER_COVER_PROBE_M:
+		var t: int = bm.type_at_m(p + dir * s)
+		if t == BuildingMap.Type.WALL or ((t == BuildingMap.Type.WINDOW or t == BuildingMap.Type.BREACH) and center_h < BuildingMap.opening(t).x):
+			return true
+		s += Config.MICRO_LOS_STEP
+	return false
 
 
 ## ¿Hay un arbusto entre p y la amenaza, pegado a p?
