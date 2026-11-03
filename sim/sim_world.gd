@@ -47,6 +47,7 @@ var shot_events: Array[Dictionary] = []
 ## Granadas en el aire: {at (metros), tick en que explota, side, unit, from}. blast_events: explosiones de este tick (para la vista).
 var grenades: Array[Dictionary] = []
 var blast_events: Array[Vector2] = []
+var dug_events: Array[Vector2] = [] # pozos de tirador recién cavados (para la vista)
 
 # Factores de combate (se pueden cambiar en tests)
 var p_hit_base: float = Config.P_HIT_BASE
@@ -1119,6 +1120,7 @@ func step() -> void:
 	inf.update_ammo(self)
 	inf.update_grenades(self)
 	inf.update_formations(self)
+	inf.update_digging(self)
 	_tick_smoke()
 	tick_in_turn += 1
 	total_ticks += 1

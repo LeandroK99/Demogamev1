@@ -93,6 +93,21 @@ func add_blast_m(m: Vector2) -> void:
 	_flash(_point_m(m, 0.5), SimWorld.Aspect.FLANK)
 
 
+## Pozo de tirador recién cavado (queda para siempre): un disco de tierra a ras del suelo.
+func add_pit_m(m: Vector2) -> void:
+	var mesh: CylinderMesh = CylinderMesh.new()
+	mesh.top_radius = 0.6
+	mesh.bottom_radius = 0.6
+	mesh.height = 0.08
+	var mat: StandardMaterial3D = StandardMaterial3D.new()
+	mat.albedo_color = Color(0.36, 0.28, 0.18)
+	mesh.material = mat
+	var pit: MeshInstance3D = MeshInstance3D.new()
+	pit.mesh = mesh
+	pit.position = _point_m(m, 0.04)
+	add_child(pit)
+
+
 ## Fuego de área (suprimir): trazadoras repartidas sobre la zona.
 func add_area_shot(shooter: Unit, cell: Vector2i) -> void:
 	var center: Vector3 = height_field.cell_to_world(cell)

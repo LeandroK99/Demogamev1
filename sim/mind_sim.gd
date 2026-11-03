@@ -28,6 +28,7 @@ func update(w: SimWorld) -> void:
 				continue # sin jefe: cada uno se cubre donde está
 			_new_leader(w, u)
 		_smoke_reflex(w, u)
+		_check_arrival(w, u)
 		if w.total_ticks >= m.next_think_tick:
 			m.next_think_tick = w.total_ticks + think_interval(u)
 			_forget(w, u)
@@ -128,6 +129,19 @@ func _smoke_reflex(w: SimWorld, u: Unit) -> void:
 	if throw_smoke_toward(w, u, w.inf.threat_point(w, u)):
 		w.radio(u, "humo, ¡nos tienen clavados!")
 	m.halted_since = w.total_ticks # la próxima, otros 15 s después
+
+
+## Llegó al final de su ruta: si era un asalto, o llegó al objetivo de la loma, consolida.
+func _check_arrival(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	var has: bool = not u.path.is_empty()
+	if m.had_path and not has and m.is_following():
+		var at_objective: bool = w.scenario == SimWorld.Scenario.LOMA and u.pos.distance_to(Vector2(w.objective_cell())) <= Config.LOMA_OBJECTIVE_RADIUS
+		if m.path_order == Unit.Order.ASSAULT or at_objective:
+			w.inf.consolidate(w, u)
+	m.had_path = has
+	if has:
+		m.path_order = u.order # al llegar la orden pasa a NONE: se recuerda cuál era
 
 
 ## Clavada en marcha más de CRAWL_AFTER_SECONDS (autonomía normal o alta): sigue reptando hacia su

@@ -756,6 +756,57 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 				_area_shot(w, u, s, wpn, cell) # base de fuego: bate el contacto aunque no lo vea
 
 
+## --- Pozos de tirador y consolidar (fase 57) ---
+
+## Cada soldado quieto en su cobertura, sin suprimir, cava: a los DIG_SECONDS tiene un pozo (un
+## cráter propio que lo protege agachado o cuerpo a tierra). En marcha se pierde lo cavado.
+func update_digging(w: SimWorld) -> void:
+	if w.micro == null or w.total_ticks % 10 != 0:
+		return
+	var dt: float = Config.TICK * 10.0
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		for s: Soldier in u.soldiers:
+			if u.moving or not s.is_ok() or s.moving or not s.has_cover or s.pos.distance_to(s.cover_pos) > 0.6:
+				s.dig_time = 0.0
+				continue
+			if s.suppression >= Config.DIG_MAX_SUPP or s.peeking:
+				continue
+			s.dig_time += dt
+			if s.dig_time >= Config.DIG_SECONDS:
+				s.dig_time = 0.0
+				if w.micro.type_at_m(s.pos) == MicroCover.Type.NONE:
+					w.micro.set_type(MicroCover.cell_of(s.pos), MicroCover.Type.CRATER)
+					w.dug_events.append(MicroCover.center_m(MicroCover.cell_of(s.pos)))
+					if w.dug_events.size() > 64:
+						w.dug_events.pop_front() # la vista los consume; sin vista (tests), que no crezca
+
+
+## Al tomar una posición (llegó al final de un asalto, o al objetivo de la loma): reparte la munición
+## entre los fusileros (incluida la de los caídos) y lo avisa. Los sectores y los pozos salen solos.
+func consolidate(w: SimWorld, u: Unit) -> void:
+	var pool: int = 0
+	var takers: Array[Soldier] = []
+	for s: Soldier in u.soldiers:
+		if s.role == Soldier.Role.MG:
+			continue
+		if s.is_ok():
+			takers.append(s)
+		pool += s.ammo
+		s.ammo = 0 if not s.is_ok() else s.ammo
+	if takers.is_empty():
+		return
+	for s: Soldier in takers:
+		s.ammo = 0
+	var each: int = pool / takers.size()
+	var extra: int = pool % takers.size()
+	for k: int in takers.size():
+		takers[k].ammo = mini(Config.AMMO_RIFLE, each + (1 if k < extra else 0))
+	u.low_ammo_reported = u.ammo_fraction() < Config.AMMO_LOW_FRACTION
+	w.radio(u, "posición tomada, consolidamos")
+
+
 ## --- Sectores, línea final y cambio de posición (fase 55) ---
 
 ## Escuadra quieta: los soldados se reparten SECTOR_FRONT_DEG del frente hacia la amenaza, de izquierda

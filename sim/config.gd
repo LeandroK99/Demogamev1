@@ -472,3 +472,7 @@ const DANGER_MIN_CELLS: int = 4 # tramo abierto entre dos cubiertas de al menos 
 const DANGER_MAX_CELLS: int = 15 # ... y a lo sumo esto (60 m): un claro, un camino
 const DANGER_SCORE: float = 2.5
 const DANGER_FIRED_SECONDS: float = 10.0 # bajo fuego no: ahí avanza por saltos
+
+# --- Pozos de tirador y consolidar (fase 57) ---
+const DIG_SECONDS: float = 45.0 # quieto en su lugar este tiempo (un turno), el soldado cava un pozo
+const DIG_MAX_SUPP: float = 50.0 # suprimido no cava
