@@ -7,7 +7,7 @@ enum Kind { TANK, INFANTRY }
 ## fusiles y ametralladora (contra infantería) y un antitanque con pocas cargas.
 enum Weapon { CANNON, COAX, RIFLES, AT }
 
-enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW }
+enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW, SUPPRESS }
 ## Reglas de fuego: libre, solo si te dispararon hace poco, o retener.
 enum Roe { FREE, RETURN_FIRE, HOLD }
 ## Ritmo de marcha: normal, rápido (más veloz, tira peor) o cauto (lento, se detecta como si estuviera quieto).
@@ -37,6 +37,11 @@ var reversing: bool = false # marcha atrás: no gira el casco al moverse
 var order: int = Order.NONE
 var moving: bool = false
 var prone: bool = false # infantería cuerpo a tierra
+var suppression: float = 0.0 # 0..100: sube con el fuego recibido, aunque no impacte
+var last_suppressed_tick: int = -1000000 # tick global de la última vez que la suprimieron
+var morale: float = 100.0 # 0..100 (solo infantería): baja con bajas y supresión
+var broken: bool = false # moral quebrada: se repliega sola e ignora órdenes hasta recuperarse
+var suppress_cell: Vector2i = Vector2i.ZERO # orden SUPPRESS: centro de la zona a batir
 var still_time: float = 0.0 # segundos quieta (la infantería se tira cuerpo a tierra)
 var waiting: bool = false # tiene ruta pero espera la condición del tramo actual
 var alive: bool = true

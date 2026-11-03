@@ -112,6 +112,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_ESCAPE:
 		pending_mode = ""
 		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_U:
+		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty():
+			pending_mode = "suppress"
+		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_J:
 		if world.phase == SimWorld.Phase.PLAN and selected_platoon() != null:
 			pending_mode = "bound"
@@ -247,6 +251,12 @@ func _right_pressed(screen: Vector2, direct: bool, append: bool) -> void:
 		var cells: Dictionary = _formation_cells(world.height_field.world_to_cell(hit as Vector3), Vector2.ZERO)
 		for id: int in cells:
 			world.order_scoot(id, cells[id])
+		return
+	if pending_mode == "suppress":
+		pending_mode = ""
+		var cell: Vector2i = world.height_field.world_to_cell(hit as Vector3)
+		for id: int in selected_ids:
+			world.order_suppress(id, cell)
 		return
 	if pending_mode == "bound":
 		pending_mode = ""
@@ -484,6 +494,9 @@ func _draw_paths() -> void:
 			_sector(segs, colors, u, u.fire_arc_dir, Config.FIRE_ARC_HALF_ANGLE_DEG, u.max_engage_m, COLOR_ENGAGE)
 		if u.order == Unit.Order.SCOOT and not u.scoot_fired and not u.path.is_empty():
 			_dashed(segs, colors, Vector2(u.path.back()), Vector2(u.return_cell), COLOR_SCOOT)
+		if u.order == Unit.Order.SUPPRESS:
+			_dashed(segs, colors, u.pos, Vector2(u.suppress_cell), COLOR_ATTACK)
+			_cross(segs, colors, Vector2(u.suppress_cell), COLOR_ATTACK)
 		if u.attack_target >= 0 and world.known_enemies[PLAYER_SIDE].has(u.attack_target):
 			var cell: Vector2i = world.known_enemies[PLAYER_SIDE][u.attack_target]["cell"]
 			_seg(segs, colors, start + Vector3.UP * 2.0, _ground(Vector2(cell)) + Vector3.UP * 2.0, COLOR_ATTACK)

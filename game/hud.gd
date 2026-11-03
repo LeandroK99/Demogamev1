@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
+	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -15,6 +15,7 @@ const ORDER_NAMES: Dictionary = {
 	Unit.Order.SCOOT: "disparar y replegarse",
 	Unit.Order.ASSAULT: "asaltar",
 	Unit.Order.WITHDRAW: "retirarse",
+	Unit.Order.SUPPRESS: "suprimir",
 }
 const ASPECT_NAMES: Array[String] = ["el frente", "el flanco", "la cola"]
 const RISK_NAMES: Array[String] = ["BAJO", "MEDIO", "ALTO"]
@@ -128,6 +129,9 @@ func _unit_text() -> String:
 	if input_controller.pending_mode == "scoot":
 		lines.append("Clic derecho: posición de tiro (Esc cancela)")
 		lines.append("")
+	elif input_controller.pending_mode == "suppress":
+		lines.append("Clic derecho: zona a suprimir (Esc cancela)")
+		lines.append("")
 	elif input_controller.pending_mode == "bound":
 		lines.append("Clic derecho: objetivo del avance por saltos (Esc cancela)")
 		lines.append("")
@@ -153,6 +157,16 @@ func _unit_text() -> String:
 		lines.append("Mira al %s" % compass(sel.heading))
 		if sel.is_infantry():
 			lines.append("Postura: %s" % ("cuerpo a tierra" if sel.prone else "de pie"))
+			var state: String = ""
+			if sel.broken:
+				state = " · QUEBRADA"
+			lines.append("Moral: %d%s" % [roundi(sel.morale), state])
+		var supp_state: String = ""
+		if world.is_pinned(sel):
+			supp_state = " · inmovilizada"
+		elif world.is_suppressed(sel):
+			supp_state = " · abotonado" if not sel.is_infantry() else " · suprimida"
+		lines.append("Supresión: %d%s" % [roundi(sel.suppression), supp_state])
 		var roe_text: String = ROE_NAMES.get(sel.roe, "?")
 		if sel.fire_arc_dir != Vector2.ZERO:
 			roe_text += ", arco al %s" % compass(sel.fire_arc_dir)

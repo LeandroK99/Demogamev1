@@ -50,6 +50,7 @@ var p_hit_max: float = Config.P_HIT_MAX
 var _exposure: Array[PackedFloat32Array] = []
 var _pathfinder_side: Array[int] = [-1, -1] # por tipo: bando cuya exposición está cargada en su pathfinder
 var ai: AICommander = null # IA del bando rojo (null = sin IA)
+var _forcing: bool = false # órdenes que da la propia simulación (una retirada por moral quebrada)
 var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
 
 
@@ -142,6 +143,21 @@ func start_plan() -> void:
 	invalidate_exposure()
 	if ai != null and not game_over:
 		ai.issue_orders(self)
+	_rout_broken()
+
+
+## Escuadras con la moral quebrada: se retiran solas (reemplaza la orden que tuvieran).
+func _rout_broken() -> void:
+	for u: Unit in units:
+		if u.alive and u.broken:
+			_forcing = true
+			order_withdraw(u.id)
+			_forcing = false
+
+
+## ¿La unidad acepta órdenes ahora? (viva, en PLAN y sin la moral quebrada)
+func _can_order(u: Unit) -> bool:
+	return u != null and u.alive and phase == Phase.PLAN and (not u.broken or _forcing)
 
 
 ## Espacio: arranca la ejecución del turno.
@@ -177,6 +193,8 @@ func update_detection() -> void:
 ## SPOT_RANGE_STATIONARY; quieto y con el casco oculto para el observador, SPOT_RANGE_HULLDOWN.
 func _can_spot(observer: Unit, target: Unit) -> bool:
 	var d: float = TerrainAnalysis.dist_m(observer.cell(), target.cell())
+	if not observer.is_infantry() and is_suppressed(observer):
+		d /= Config.TANK_BUTTONED_SPOT_FACTOR # abotonado: ve a menos distancia
 	if d > Config.MAX_RANGE:
 		return false
 	if not analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.center_h()):
@@ -248,7 +266,7 @@ func _route(u: Unit, from: Vector2i, to: Vector2i, covered: bool) -> Array[Vecto
 ## append = true: agrega un tramo desde el destino actual (waypoint) en vez de reemplazar la ruta.
 func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.ZERO, covered: bool = true, append: bool = false) -> bool:
 	var u: Unit = get_unit(unit_id)
-	if u == null or not u.alive or phase != Phase.PLAN:
+	if not _can_order(u):
 		return false
 	append = append and not u.path.is_empty()
 	var from: Vector2i = destination(u) if append else u.cell()
@@ -299,6 +317,11 @@ static func gate_signal(name: String) -> Dictionary:
 ## Cuando la otra unidad terminó su ruta (o murió).
 static func gate_unit(unit_id: int) -> Dictionary:
 	return {"type": "unit", "unit": unit_id}
+
+
+## Cuando esa unidad (propia o enemiga) está suprimida (o murió).
+static func gate_suppressed(unit_id: int) -> Dictionary:
+	return {"type": "suppressed", "unit": unit_id}
 
 
 ## Pone (o quita, con gate vacío) la condición del tramo leg (-1 = el último). Solo en PLAN.
@@ -355,6 +378,9 @@ func gate_met(u: Unit, gate: Dictionary) -> bool:
 			return not visible_enemies[u.side].is_empty()
 		"signal":
 			return signals[u.side].has(gate["name"])
+		"suppressed":
+			var target: Unit = get_unit(int(gate["unit"]))
+			return target == null or not target.alive or is_suppressed(target)
 		"all_signals":
 			for n: String in gate["names"]:
 				if not signals[u.side].has(n):
@@ -531,7 +557,7 @@ func order_assault(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector
 ## si no hay amenazas, WITHDRAW_RADIUS celdas hacia atrás.
 func order_withdraw(unit_id: int, target_cell: Vector2i = Vector2i(-1, -1)) -> bool:
 	var u: Unit = get_unit(unit_id)
-	if u == null or not u.alive or phase != Phase.PLAN:
+	if not _can_order(u):
 		return false
 	var threats: Array[Vector2i] = threats_for(u.side)
 	if not height_field.in_bounds(target_cell):
@@ -586,7 +612,7 @@ func _back_target(u: Unit) -> Vector2i:
 ## de ±OVERWATCH_HALF_ANGLE_DEG. Cualquier otra orden la cancela.
 func order_overwatch(unit_id: int, dir: Vector2) -> bool:
 	var u: Unit = get_unit(unit_id)
-	if u == null or not u.alive or phase != Phase.PLAN or dir.length() < 0.001:
+	if not _can_order(u) or dir.length() < 0.001:
 		return false
 	u.path.clear()
 	u.waypoints.clear()
@@ -677,7 +703,7 @@ static func in_overwatch_sector(u: Unit, at: Vector2) -> bool:
 func order_attack(unit_id: int, enemy_id: int) -> bool:
 	var u: Unit = get_unit(unit_id)
 	var enemy: Unit = get_unit(enemy_id)
-	if u == null or enemy == null or not u.alive or not enemy.alive or enemy.side == u.side:
+	if not _can_order(u) or enemy == null or not enemy.alive or enemy.side == u.side:
 		return false
 	if phase != Phase.PLAN or not known_enemies[u.side].has(enemy_id):
 		return false
@@ -796,7 +822,11 @@ func step() -> void:
 			u.moving = false
 			continue
 		u.waiting = false
+		if is_suppressed(u) and u.is_infantry():
+			u.moving = false # cuerpo a tierra, no avanza
+			continue
 		_advance(u, Config.TICK)
+	_update_suppression()
 	_update_posture()
 	tick_in_turn += 1
 	total_ticks += 1
@@ -808,6 +838,65 @@ func step() -> void:
 		_end_turn()
 
 
+func is_suppressed(u: Unit) -> bool:
+	return u.suppression >= Config.SUPPRESSED
+
+
+func is_pinned(u: Unit) -> bool:
+	return u.is_infantry() and u.suppression >= Config.PINNED
+
+
+## La supresión baja sola pasado un rato sin fuego; la infantería suprimida pierde moral.
+func _update_suppression() -> void:
+	for u: Unit in units:
+		if not u.alive:
+			continue
+		if float(total_ticks - u.last_suppressed_tick) * Config.TICK > Config.SUPP_DECAY_DELAY:
+			u.suppression = maxf(0.0, u.suppression - Config.SUPP_DECAY * Config.TICK)
+		if u.is_infantry() and is_suppressed(u):
+			_lose_morale(u, Config.MORALE_SUPP_DRAIN * Config.TICK)
+
+
+func _lose_morale(u: Unit, amount: float) -> void:
+	if not u.is_infantry():
+		return
+	u.morale = maxf(0.0, u.morale - amount)
+	if u.morale < Config.MORALE_BREAK:
+		u.broken = true
+
+
+## Supresión de un disparo con el arma w contra target (y la mitad a las unidades cercanas del mismo bando).
+func _suppress(target: Unit, w: int, hit: bool, factor: float = 1.0) -> void:
+	var amount: float = weapon_suppression(w) * factor * (Config.SUPP_HIT_MULT if hit else 1.0)
+	for u: Unit in units:
+		if not u.alive or u.side != target.side:
+			continue
+		var d: float = u.pos.distance_to(target.pos)
+		if u == target:
+			_add_suppression(u, amount)
+		elif d <= Config.SUPP_NEAR_RADIUS:
+			_add_suppression(u, amount * 0.5)
+
+
+func _add_suppression(u: Unit, amount: float) -> void:
+	u.suppression = minf(100.0, u.suppression + amount)
+	u.last_suppressed_tick = total_ticks
+	if u.is_infantry() and is_suppressed(u):
+		u.prone = true
+		u.still_time = maxf(u.still_time, Config.INF_PRONE_SECONDS)
+
+
+static func weapon_suppression(w: int) -> float:
+	match w:
+		Unit.Weapon.COAX:
+			return Config.SUPP_COAX
+		Unit.Weapon.RIFLES:
+			return Config.SUPP_RIFLES
+		Unit.Weapon.AT:
+			return Config.SUPP_AT
+	return Config.SUPP_CANNON
+
+
 ## Infantería: en movimiento va de pie; quieta INF_PRONE_SECONDS, cuerpo a tierra.
 func _update_posture() -> void:
 	for u: Unit in units:
@@ -816,6 +905,8 @@ func _update_posture() -> void:
 		if u.moving:
 			u.still_time = 0.0
 			u.prone = false
+		elif is_suppressed(u):
+			u.prone = true
 		else:
 			u.still_time += Config.TICK
 			u.prone = u.still_time >= Config.INF_PRONE_SECONDS - 0.0001
@@ -839,6 +930,13 @@ func _fire_slot(shooter: Unit, slot: int) -> void:
 		shooter.reload2_left = maxf(0.0, shooter.reload2_left - Config.TICK)
 		if shooter.reload2_left > 0.0 or (w == Unit.Weapon.AT and shooter.at_charges <= 0):
 			return
+	if is_pinned(shooter):
+		return
+	var anti_inf: bool = weapon_target_kind(w) == Unit.Kind.INFANTRY
+	if anti_inf and shooter.order == Unit.Order.SUPPRESS:
+		if roe_allows_fire(shooter):
+			_area_fire(shooter, slot, w)
+		return
 	var target: Unit = _pick_target(shooter, w)
 	if target == null:
 		return
@@ -855,16 +953,70 @@ func _fire_slot(shooter: Unit, slot: int) -> void:
 	target.last_fired_upon_tick = total_ticks
 	var hit: bool = rng.randf() < hit_probability(shooter, target, w)
 	if hit:
-		target.hp -= 1
-		if target.hp <= 0:
-			target.alive = false
-			target.moving = false
-			target.path.clear()
+		_damage(target)
+	_suppress(target, w, hit)
 	shooter.overwatch_ready = false
 	if shooter.order == Unit.Order.SCOOT and not shooter.scoot_fired:
 		_start_scoot_return(shooter, target)
 	shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit,
 		"aspect": aspect_of(target, shooter.pos), "weapon": w})
+
+
+## Un impacto: un hombre menos (con su golpe a la moral) o un impacto de cañón.
+func _damage(target: Unit) -> void:
+	target.hp -= 1
+	_lose_morale(target, Config.MORALE_PER_CASUALTY)
+	if target.hp <= 0:
+		target.alive = false
+		target.moving = false
+		target.path.clear()
+
+
+## Fuego de área de la orden SUPPRESS: bate la zona aunque no haya blanco visible.
+## Suprime a todo enemigo en SUPPRESS_AREA_RADIUS y casi no causa bajas.
+func _area_fire(shooter: Unit, slot: int, w: int) -> void:
+	if not can_suppress_at(shooter, shooter.suppress_cell):
+		return
+	if slot == 0:
+		shooter.reload_left = weapon_reload(w)
+	else:
+		shooter.reload2_left = weapon_reload(w)
+	shooter.last_fire_tick = total_ticks
+	var center: Vector2 = Vector2(shooter.suppress_cell)
+	for u: Unit in units:
+		if not u.alive or u.side == shooter.side or u.pos.distance_to(center) > Config.SUPPRESS_AREA_RADIUS:
+			continue
+		known_enemies[u.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
+		if u.is_infantry() and rng.randf() < hit_probability(shooter, u, w) * Config.SUPPRESS_AREA_HIT_FACTOR:
+			_damage(u)
+		_add_suppression(u, weapon_suppression(w) * Config.SUPPRESS_AREA_SUPP)
+	shot_events.append({"shooter": shooter.id, "target": -1, "cell": shooter.suppress_cell, "hit": false,
+		"aspect": Aspect.FRONT, "weapon": w})
+
+
+## ¿Puede batir la zona? Alcance del arma antipersonal y línea de visión al suelo de la zona.
+func can_suppress_at(u: Unit, cell: Vector2i) -> bool:
+	var w: int = u.weapon(0) if u.is_infantry() else u.weapon(1)
+	return height_field.in_bounds(cell) and TerrainAnalysis.dist_m(u.cell(), cell) <= weapon_range(w) \
+		and analysis.los(u.cell(), u.eye_h(), cell, 1.0)
+
+
+## Orden SUPPRESS: quieta, batiendo la zona alrededor de cell con su arma antipersonal
+## (fusiles o coaxial). El cañón del tanque sigue tirando a tanques. Solo en PLAN.
+func order_suppress(unit_id: int, cell: Vector2i) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if not _can_order(u) or not can_suppress_at(u, cell):
+		return false
+	u.path.clear()
+	u.waypoints.clear()
+	u.moving = false
+	u.attack_target = -1
+	u.reversing = false
+	u.final_heading = Vector2.ZERO
+	_face(u, Vector2(cell))
+	u.suppress_cell = cell
+	u.order = Unit.Order.SUPPRESS
+	return true
 
 
 ## ¿Contra qué tipo de unidad sirve el arma?
@@ -1033,9 +1185,14 @@ func hit_probability(shooter: Unit, target: Unit, weapon: int = Unit.Weapon.CANN
 	return minf(p_hit_base * f_dist * f_hull * f_move * f_armor, p_hit_max)
 
 
-## Escuadra diezmada: tira peor.
+## Escuadra diezmada o suprimida: tira peor.
 static func _weak_factor(shooter: Unit) -> float:
-	return Config.INF_WEAK_FACTOR if shooter.is_infantry() and shooter.hp <= Config.INF_WEAK_MEN else 1.0
+	var f: float = 1.0
+	if shooter.is_infantry() and shooter.hp <= Config.INF_WEAK_MEN:
+		f *= Config.INF_WEAK_FACTOR
+	if shooter.is_infantry() and shooter.suppression >= Config.SUPPRESSED:
+		f *= Config.SUPPRESSED_FIRE_FACTOR
+	return f
 
 
 ## Probabilidad de que un tirador quieto en shooter_cell impacte a un blanco en target_cell
@@ -1130,6 +1287,11 @@ func _check_victory() -> void:
 
 func _end_turn() -> void:
 	_age_smoke()
+	for u: Unit in units:
+		if u.alive and u.is_infantry() and not is_suppressed(u):
+			u.morale = minf(100.0, u.morale + Config.MORALE_RECOVER_PER_TURN)
+			if u.broken and u.morale >= Config.MORALE_RALLY:
+				u.broken = false
 	update_detection()
 	if turn >= Config.MAX_TURNS:
 		var blue: int = alive_count(0)

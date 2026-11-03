@@ -85,7 +85,13 @@ func sync_from_sim(alpha: float = 1.0) -> void:
 	_place(prev_pos.lerp(unit.pos, alpha))
 	rotation.y = atan2(-unit.heading.x, -unit.heading.y)
 	if _label != null:
-		_label.text = "%d" % unit.hp
+		var mark: String = ""
+		if unit.broken:
+			mark = " !"
+		elif unit.suppression >= Config.SUPPRESSED:
+			mark = " ▼"
+		_label.text = "%d%s" % [unit.hp, mark]
+		_label.modulate = Color.WHITE.lerp(Color(1.0, 0.35, 0.2), clampf(unit.suppression / 100.0, 0.0, 1.0))
 		_hull.scale.y = 0.5 if unit.prone else 1.0
 
 

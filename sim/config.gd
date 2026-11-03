@@ -77,6 +77,28 @@ const WALL_LEN_MIN: int = 5
 const WALL_LEN_MAX: int = 10
 const PIT_COUNT: int = 25
 
+# --- Supresión y moral ---
+const SUPP_CANNON: float = 30.0 # supresión por disparo recibido, según el arma
+const SUPP_COAX: float = 25.0
+const SUPP_RIFLES: float = 20.0
+const SUPP_AT: float = 30.0
+const SUPP_HIT_MULT: float = 1.5 # si además impacta
+const SUPP_NEAR_RADIUS: float = 2.0 # celdas: las unidades del blanco a esta distancia reciben la mitad
+const SUPP_DECAY: float = 5.0 # por segundo, pasados SUPP_DECAY_DELAY sin fuego
+const SUPP_DECAY_DELAY: float = 2.0
+const SUPPRESSED: float = 50.0 # desde acá la escuadra no avanza, tira a la mitad y se tira al suelo
+const PINNED: float = 85.0 # desde acá no tira
+const SUPPRESSED_FIRE_FACTOR: float = 0.5
+const TANK_BUTTONED_SPOT_FACTOR: float = 0.5 # tanque con supresión alta (abotonado): ve a esta fracción
+const MORALE_PER_CASUALTY: float = 8.0
+const MORALE_SUPP_DRAIN: float = 1.0 # por segundo mientras está suprimida
+const MORALE_RECOVER_PER_TURN: float = 10.0 # al terminar el turno sin estar suprimida
+const MORALE_BREAK: float = 25.0 # por debajo, se quiebra
+const MORALE_RALLY: float = 40.0 # quebrada, se recupera al llegar a esto
+const SUPPRESS_AREA_RADIUS: float = 3.0 # celdas: zona que bate la orden suprimir
+const SUPPRESS_AREA_SUPP: float = 0.7 # fracción de la supresión del arma que recibe cada unidad en la zona
+const SUPPRESS_AREA_HIT_FACTOR: float = 0.2 # el fuego de área casi no mata
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3

@@ -60,6 +60,15 @@ func add_shot(shooter: Unit, target: Unit, hit: bool, aspect: int = SimWorld.Asp
 		_flashes.append({"node": flash, "left": FLASH_SECONDS})
 
 
+## Fuego de área (suprimir): trazadoras repartidas sobre la zona.
+func add_area_shot(shooter: Unit, cell: Vector2i) -> void:
+	var center: Vector3 = height_field.cell_to_world(cell)
+	var r: float = Config.SUPPRESS_AREA_RADIUS * Config.CELL_SIZE
+	for i: int in 4:
+		var to: Vector3 = center + Vector3(randf_range(-r, r), randf_range(0.0, 1.0), randf_range(-r, r))
+		_tracers.append({"from": _point(shooter, shooter.eye_h()), "to": to, "left": TRACER_SECONDS * 0.5})
+
+
 func _process(delta: float) -> void:
 	for f: Dictionary in _flashes:
 		f["left"] = float(f["left"]) - delta
