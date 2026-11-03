@@ -94,7 +94,8 @@ static func _steer(bm: BuildingMap, s: Soldier, target: Vector2) -> Vector2:
 			return target
 		s.route = bm.route(s.pos, target)
 		s.route_goal = target
-	while not s.route.is_empty() and s.pos.distance_to(s.route[0]) <= Config.ROUTE_ARRIVE_M:
+	while s.route.size() > 1 and s.pos.distance_to(s.route[0]) <= Config.ROUTE_ARRIVE_M:
+		s.pos = s.route[0] # se pone justo en el punto: desde ahí el tramo siguiente no corta esquinas
 		s.route.remove_at(0)
 	s.unreachable = s.route.is_empty() and bm.crosses(s.pos, target)
 	if s.route.is_empty():
@@ -405,6 +406,24 @@ static func _blocks_eye(w: SimWorld, p: Vector2, eye_h: float, threat: Vector2) 
 ## taken: puntos ya elegidos por la escuadra (se respeta SOLDIER_COVER_SPACING).
 func choose_cover(w: SimWorld, u: Unit, s: Soldier, threat: Vector2, taken: Array[Vector2]) -> void:
 	var center: Vector2 = u.slot_pos_m(s.index)
+	var bm: BuildingMap = w.buildings
+	var home: int = bm.house_at_m(u.pos_m()) if bm != null else -1
+	if s.post_pos.x >= 0.0 and s.post_pos.distance_to(center) <= Config.SOLDIER_COVER_SEARCH_M * 2.0:
+		# Puesto fijo (la ametralladora en su aspillera)
+		s.has_cover = true
+		s.cover_pos = s.post_pos
+		s.protected = true
+		s.can_fire = true
+		s.cover_posture = Soldier.Posture.PRONE
+		s.cover_threat = threat
+		s.has_fire_pos = false
+		s.peeking = false
+		taken.append(s.cover_pos)
+		return
+	if home >= 0:
+		# Adentro de una casa: se busca lugar en la misma casa
+		var rr: Rect2 = bm.rect_m(home).grow(-MicroCover.MICRO_M * 1.5)
+		center = Vector2(clampf(center.x, rr.position.x, rr.end.x), clampf(center.y, rr.position.y, rr.end.y))
 	var r: float = u.mind.cover_m if u.mind != null else Config.SOLDIER_COVER_SEARCH_M
 	var w_fire: float = Config.SOLDIER_COVER_W_FIRE_MG if s.role == Soldier.Role.MG else Config.SOLDIER_COVER_W_FIRE
 	var c0: Vector2i = MicroCover.cell_of(center)
@@ -424,10 +443,14 @@ func choose_cover(w: SimWorld, u: Unit, s: Soldier, threat: Vector2, taken: Arra
 				continue
 			if s.avoid_pos.x >= 0.0 and p.distance_to(s.avoid_pos) < Config.MG_DISPLACE_MIN_M:
 				continue # ahí ya la ubicaron
+			if bm != null and (not bm.walkable_m(p) or bm.house_at_m(p) != home):
+				continue # en una pared, o en otra casa (o afuera, si la escuadra está adentro)
 			var ev: Dictionary = evaluate_spot(w, p, threat)
 			var base: float = (Config.SOLDIER_COVER_W_PROTECT if ev["protected"] else 0.0) \
 				+ (Config.SOLDIER_COVER_W_CONCEAL if concealed(w, p, threat) else 0.0) \
 				- Config.SOLDIER_COVER_W_DIST * d / r
+			if home >= 0 and bm.deep_m(p):
+				base += Config.ROOM_DEEP_W # al fondo del cuarto: tira sin delatarse
 			ev["pos"] = p
 			ev["base"] = base
 			ev["score"] = base + (w_fire if ev["fire"] else 0.0)
@@ -668,6 +691,8 @@ static func head_of(w: SimWorld, s: Soldier) -> float:
 static func soldier_spot_range(w: SimWorld, u: Unit, s: Soldier) -> float:
 	var fired: bool = float(w.total_ticks - s.last_fire_tick) * Config.TICK < Config.FIRE_REVEAL_SECONDS
 	if fired:
+		if w.buildings != null and not s.moving and w.buildings.deep_m(s.pos):
+			return Config.ROOM_DEEP_FIRE_SPOT_M # desde el fondo del cuarto el fogonazo casi no sale
 		return Config.INF_SPOT_MOVING
 	if (s.moving or u.moving) and SimWorld.effective_pace(u) not in [Unit.Pace.CAUTIOUS, Unit.Pace.CRAWL] and s.posture != Soldier.Posture.PRONE:
 		return Config.INF_SPOT_MOVING
@@ -862,6 +887,23 @@ func _enemy_within(u: Unit, meters: float) -> bool:
 		if Vector2(u.mind.contacts[id]["pos"]).distance_to(u.pos_m()) <= meters:
 			return true
 	return false
+
+
+## Defensa de una casa (fase 63): la ametralladora de una escuadra adentro de una casa abre una
+## aspillera hacia la amenaza y se pone al fondo, detrás de ella.
+func prepare_house(w: SimWorld, u: Unit, threat: Vector2) -> void:
+	if w.buildings == null:
+		return
+	var h: int = w.buildings.house_at_m(u.pos_m())
+	if h < 0:
+		return
+	var post: Vector2 = w.buildings.cut_loophole(h, threat)
+	if post.x < 0.0:
+		return
+	for s: Soldier in u.soldiers:
+		if s.role == Soldier.Role.MG:
+			s.post_pos = post
+			s.has_cover = false
 
 
 ## Al tomar una posición (llegó al final de un asalto, o al objetivo de la loma): reparte la munición

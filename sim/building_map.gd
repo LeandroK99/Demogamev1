@@ -6,7 +6,7 @@ extends RefCounted
 ## al interior desde más arriba del techo lo atraviesa: se corta. Los soldados caminan por el piso,
 ## las puertas y los boquetes, nunca a través de una pared o una ventana (A* a 1 m).
 
-enum Type { NONE, FLOOR, WALL, DOOR, WINDOW, BREACH }
+enum Type { NONE, FLOOR, WALL, DOOR, WINDOW, BREACH, LOOPHOLE }
 
 var size: int = 0 # micro-celdas por lado
 var types: PackedByteArray = PackedByteArray()
@@ -41,7 +41,11 @@ func set_type(c: Vector2i, t: int) -> void:
 
 
 static func walkable_type(t: int) -> bool:
-	return t != Type.WALL and t != Type.WINDOW
+	return t != Type.WALL and t != Type.WINDOW and t != Type.LOOPHOLE
+
+
+static func is_opening(t: int) -> bool:
+	return t == Type.WINDOW or t == Type.DOOR or t == Type.BREACH or t == Type.LOOPHOLE
 
 
 func walkable_m(p_m: Vector2) -> bool:
@@ -100,6 +104,8 @@ static func opening(t: int) -> Vector2:
 			return Vector2(0.0, Config.DOOR_H)
 		Type.BREACH:
 			return Vector2(Config.BREACH_RUBBLE_H, Config.DOOR_H)
+		Type.LOOPHOLE:
+			return Vector2(Config.LOOPHOLE_LOW_H, Config.LOOPHOLE_TOP_H)
 		Type.WALL:
 			return Vector2(Config.BUILDING_H, Config.BUILDING_H)
 	return Vector2(0.0, Config.BUILDING_H) # piso: abierto por debajo del techo
@@ -223,6 +229,65 @@ func pull_out(p: Vector2, anchor: Vector2) -> Vector2:
 	if t_min > 1.0:
 		return p
 	return anchor + d * t_min - d.normalized() * MicroCover.MICRO_M * 0.7
+
+
+## Distancia (metros) de p a la abertura más cercana (ventana, puerta, boquete, aspillera), hasta
+## 3 m; INF si no hay.
+func opening_dist_m(p: Vector2) -> float:
+	var c: Vector2i = MicroCover.cell_of(p)
+	var best: float = INF
+	for dy: int in range(-3, 4):
+		for dx: int in range(-3, 4):
+			var q: Vector2i = c + Vector2i(dx, dy)
+			if is_opening(type_at(q)):
+				best = minf(best, MicroCover.center_m(q).distance_to(p))
+	return best
+
+
+## ¿p está adentro de una casa, al fondo del cuarto (lejos de puertas y ventanas)?
+func deep_m(p: Vector2) -> bool:
+	return type_at_m(p) == Type.FLOOR and opening_dist_m(p) >= Config.ROOM_DEEP_M
+
+
+## Rectángulo (metros) de la casa i.
+func rect_m(i: int) -> Rect2:
+	return _rects_m[i]
+
+
+## Aspillera (fase 63): abre un agujero bajo en la pared de la casa i que mira hacia threat, lo más
+## cerca del eje centro-amenaza, lejos de esquinas, puertas y ventanas. Devuelve el punto (metros)
+## del lado de adentro, ROOM_DEEP_M detrás del agujero, o (-1, -1) si no pudo.
+func cut_loophole(i: int, threat: Vector2) -> Vector2:
+	var r: Rect2i = houses[i]
+	var center: Vector2 = _rects_m[i].get_center()
+	var to: Vector2 = (threat - center).normalized()
+	var best: Vector2i = Vector2i(-1, -1)
+	var best_score: float = -INF
+	for y: int in range(r.position.y, r.end.y):
+		for x: int in range(r.position.x, r.end.x):
+			var c: Vector2i = Vector2i(x, y)
+			var edge_x: bool = x == r.position.x or x == r.end.x - 1
+			var edge_y: bool = y == r.position.y or y == r.end.y - 1
+			if (edge_x and edge_y) or type_at(c) != Type.WALL or not (edge_x or edge_y):
+				continue
+			var near_opening: bool = false
+			for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				if is_opening(type_at(c + o)):
+					near_opening = true
+			if near_opening:
+				continue
+			var off: Vector2 = MicroCover.center_m(c) - center
+			var score: float = off.normalized().dot(to) * 10.0 - absf(off.normalized().cross(to)) * off.length()
+			if score > best_score:
+				best_score = score
+				best = c
+	if best.x < 0:
+		return Vector2(-1.0, -1.0)
+	set_type(best, Type.LOOPHOLE)
+	var out: Vector2 = MicroCover.center_m(best)
+	var inward: Vector2 = (center - out)
+	inward = Vector2(signf(inward.x), 0.0) if (best.x == r.position.x or best.x == r.end.x - 1) else Vector2(0.0, signf(inward.y))
+	return out + inward * (Config.ROOM_DEEP_M + 0.5)
 
 
 ## Punto caminable más cercano a p (hasta 3 m); p si ya lo es.

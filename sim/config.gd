@@ -502,7 +502,7 @@ const BREACH_RUBBLE_H: float = 0.3 # escombros al pie de un boquete
 const BUILDING_LOS_STEP: float = 0.5 # metros entre muestras de la línea de visión dentro de una casa
 const BUILDING_WALK_STEP: float = 0.4 # ... y del camino recto de un soldado
 const ROUTE_REPLAN_M: float = 2.0 # el destino del soldado se corrió esto: rehace la ruta por adentro
-const ROUTE_ARRIVE_M: float = 0.4 # llegó a un punto de su ruta
+const ROUTE_ARRIVE_M: float = 0.35 # llegó a un punto de su ruta (se lo pone justo ahí y sigue)
 
 # --- El pueblo (fase 61) ---
 const TOWN_RADIUS_CELLS: int = 14 # el pueblo ocupa este medio lado (celdas) alrededor de la plaza, aplanado
@@ -525,3 +525,10 @@ const FACADE_HOUSE_COST: float = 0.5 # costo extra de la ruta de infantería por
 const FACADE_OPEN_COST: float = 2.0 # ... por el medio de la calle (a 2 o 3 celdas de una fachada)
 const STREET_SMOKE_WAIT_SECONDS: float = 3.0 # tira humo y espera a que tape antes de cruzar
 const STREET_WAIT_MAX_SECONDS: float = 30.0 # calle batida y sin humo: espera esto y después cruza igual
+
+# --- Tirar desde adentro (fase 63) ---
+const ROOM_DEEP_M: float = 1.8 # a esto o más de la abertura más cercana: tira desde el fondo del cuarto
+const ROOM_DEEP_FIRE_SPOT_M: float = 60.0 # ... y al disparar se lo detecta hasta acá (en vez de 250 m)
+const ROOM_DEEP_W: float = 1.5 # peso de estar al fondo al elegir dónde ponerse adentro
+const LOOPHOLE_LOW_H: float = 0.2 # la aspillera: un agujero en la pared de esta altura...
+const LOOPHOLE_TOP_H: float = 0.7 # ... a esta

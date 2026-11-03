@@ -45,6 +45,9 @@ func setup(bm: BuildingMap, hf: HeightField, rig: CameraRTS) -> void:
 						_box(st, p, ground, Config.WINDOW_TOP_H, Config.BUILDING_H, m)
 					BuildingMap.Type.DOOR:
 						_box(st, p, ground, Config.DOOR_H, Config.BUILDING_H, m)
+					BuildingMap.Type.LOOPHOLE:
+						_box(st, p, ground, 0.0, Config.LOOPHOLE_LOW_H, m)
+						_box(st, p, ground, Config.LOOPHOLE_TOP_H, Config.BUILDING_H, m)
 					BuildingMap.Type.BREACH:
 						_box(st, p, ground, 0.0, Config.BREACH_RUBBLE_H, m)
 						_box(st, p, ground, Config.DOOR_H, Config.BUILDING_H, m)

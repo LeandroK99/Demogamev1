@@ -194,6 +194,7 @@ func _setup_pueblo(sim_seed: int) -> void:
 			var u: Unit = units[id]
 			u.pos = Vector2(ai.anchors[id])
 			u.snap_soldiers()
+			inf.prepare_house(self, u, Vector2(objective_cell().x, height_field.size - 1) * Config.CELL_SIZE)
 
 
 ## ¿El escenario tiene un objetivo a ocupar (la cresta, la plaza)?
