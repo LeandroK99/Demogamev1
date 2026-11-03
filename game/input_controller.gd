@@ -157,7 +157,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_I:
 		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty() and world.buildings != null:
-			pending_mode = "breach"
+			pending_mode = "clear" if key.shift_pressed else "breach"
 		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_M:
 		_mission_at(get_viewport().get_mouse_position(), key.shift_pressed)
@@ -287,6 +287,12 @@ func _right_pressed(screen: Vector2, direct: bool, append: bool) -> void:
 		var at: Vector2 = Vector2((hit as Vector3).x, (hit as Vector3).z)
 		for id: int in selected_ids:
 			world.order_breach(id, at)
+		return
+	if pending_mode == "clear":
+		pending_mode = ""
+		var at_c: Vector2 = Vector2((hit as Vector3).x, (hit as Vector3).z)
+		for id: int in selected_ids:
+			world.order_clear(id, at_c)
 		return
 	if pending_mode == "assault":
 		pending_mode = ""

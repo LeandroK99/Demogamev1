@@ -70,6 +70,10 @@ var buildings: BuildingMap = null # casas a 1 m (fase 60); null = sin
 var facade: PackedByteArray = PackedByteArray() # por celda: distancia (celdas) a una casa, hasta FACADE_MAX (fase 62); 255 lejos
 var inf: InfantrySim = InfantrySim.new() # los soldados de las escuadras
 var minds: MindSim = MindSim.new() # la autonomía de las escuadras
+var cqb: CqbSim = CqbSim.new() # combate adentro de las casas (fases 66–71)
+var cleared_rooms: Dictionary = {} # cuarto -> bando que lo limpió
+var cleared_houses: Dictionary = {} # casa -> bando que la limpió
+var _rooms: RoomMap = null
 ## Radio: lo que las escuadras deciden por su cuenta. {tick, turn, side, unit, text}, el último al final.
 var radio_log: Array[Dictionary] = []
 ## Decisiones propias tomadas en la partida (nombre de la opción -> cantidad), para el banco IA contra IA.
@@ -104,6 +108,11 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 		mc.generate(sim_seed, cm)
 		set_micro(mc)
 		_deploy_loma()
+		if Config.LOMA_RED_PREPARED:
+			for u: Unit in units:
+				if u.side == 1 and u.is_infantry():
+					for so: Soldier in u.soldiers:
+						so.prepared = true # el rojo defiende preparado: arranca en pozos
 	elif scenario == Scenario.PUEBLO:
 		_setup_pueblo(sim_seed)
 	else:
@@ -150,7 +159,8 @@ func _deploy_loma() -> void:
 			var c: Vector2i = _nearest_walkable(Vector2i(x, y), kind)
 			var u: Unit = add_unit(side, Vector2(c), kind)
 			if kind == Unit.Kind.INFANTRY:
-				u.mind.quality = Config.MIND_LOMA_QUALITY[i % Config.MIND_LOMA_QUALITY.size()]
+				var q: Array[int] = Config.LOMA_RED_QUALITY if side == 1 else Config.MIND_LOMA_QUALITY
+				u.mind.quality = q[i % q.size()]
 				inf_ids.append(u.id)
 			else:
 				tank_ids.append(u.id)
@@ -195,6 +205,10 @@ func _setup_pueblo(sim_seed: int) -> void:
 			u.pos = Vector2(ai.anchors[id])
 			u.snap_soldiers()
 			inf.prepare_house(self, u, Vector2(objective_cell().x, height_field.size - 1) * Config.CELL_SIZE)
+			cqb.defend_house(self, u)
+			for s: Soldier in u.soldiers:
+				if s.task_pos.x >= 0.0:
+					s.pos = s.task_pos # arrancan en sus puestos
 
 
 ## Abrir un boquete (fase 65) en la pared más cercana a at_m. Un tanque lo abre de un cañonazo
@@ -228,6 +242,38 @@ func order_breach(unit_id: int, at_m: Vector2) -> bool:
 	u.order = Unit.Order.BREACH
 	u.breach_m = MicroCover.center_m(c)
 	u.breach_time = 0.0
+	return true
+
+
+## Limpiar la casa (fase 70) que está en at_m (o la más cercana): la escuadra va a la puerta más
+## cercana y la limpia cuarto por cuarto. Sin puertas ni boquetes no se puede. Solo en PLAN.
+func order_clear(unit_id: int, at_m: Vector2) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if not _can_order(u) or buildings == null or not u.is_infantry():
+		return false
+	var h: int = CqbSim.house_near(buildings, at_m)
+	if h < 0:
+		return false
+	var rm: RoomMap = rooms()
+	var best: int = -1
+	var best_d: float = INF
+	for p: int in rm.street_portals(h):
+		var d: float = (rm.portals[p]["center"] as Vector2).distance_to(u.pos_m())
+		if d < best_d:
+			best_d = d
+			best = p
+	if best < 0:
+		return false
+	var c: Vector2 = rm.portals[best]["center"]
+	var stand: Vector2 = c + (rm.portals[best]["n"] as Vector2) * Config.CQB_APPROACH_M
+	var cell: Vector2i = _nearest_walkable(Vector2i((stand / Config.CELL_SIZE).round()), Unit.Kind.INFANTRY)
+	if cell != u.cell():
+		if not order_move(unit_id, cell):
+			return false
+	else:
+		_new_intent(u)
+	CqbSim.start_clear(self, u, h, best) # va como MOVE; al llegar se apila (orden CLEAR)
+	u.clear["stand"] = stand
 	return true
 
 
@@ -319,6 +365,15 @@ func set_micro(mc: MicroCover) -> void:
 
 ## Casas (fase 60): cortan la vista y las balas, los soldados entran por las puertas y el tanque
 ## no pasa por encima.
+## Cuartos de las casas (se rehacen si cambiaron las casas, por ejemplo con un boquete).
+func rooms() -> RoomMap:
+	if buildings == null:
+		return null
+	if _rooms == null or _rooms.version != buildings.version:
+		_rooms = RoomMap.build(buildings)
+	return _rooms
+
+
 func set_buildings(bm: BuildingMap) -> void:
 	buildings = bm
 	analysis.buildings = bm
@@ -433,6 +488,9 @@ func _can_order(u: Unit) -> bool:
 
 ## Orden nueva del jugador (o del comandante): la escuadra deja lo que hacía por su cuenta.
 func _new_intent(u: Unit) -> void:
+	if _autonomous == 0:
+		cqb.abort_clear(self, u, "")
+		CqbSim.stop_defense(u)
 	if _autonomous == 0 and u.mind != null:
 		u.mind.reset(total_ticks)
 		for s: Soldier in u.soldiers:
@@ -1304,6 +1362,7 @@ func step() -> void:
 			if pl != null:
 				pl.monitor(self)
 	minds.update(self)
+	cqb.update(self)
 	for u: Unit in units:
 		if not u.alive or u.path.is_empty():
 			u.waiting = false
@@ -1334,6 +1393,8 @@ func step() -> void:
 	inf.update_evac(self)
 	inf.update_ammo(self)
 	inf.update_grenades(self)
+	if buildings != null:
+		cqb.update_reflex(self)
 	inf.update_formations(self)
 	inf.update_digging(self)
 	inf.update_surrender(self)
@@ -1910,7 +1971,8 @@ func objective_holder() -> int:
 	var present: Array[bool] = [false, false]
 	var center: Vector2 = Vector2(objective_cell())
 	for u: Unit in units:
-		if u.alive and u.is_infantry() and not u.broken and u.pos.distance_to(center) <= objective_radius():
+		if u.alive and u.is_infantry() and not u.broken and not u.surrendered and u.ok_count() > 0 \
+				and u.pos.distance_to(center) <= objective_radius():
 			present[u.side] = true
 	if present[0] and present[1]:
 		return DRAW

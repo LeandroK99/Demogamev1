@@ -45,6 +45,7 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | R / Shift+R | Reiniciar con la misma semilla / con un mapa nuevo |
 | L | Cambiar de escenario: tanques (la demo original), la loma (infantería y un tanque por bando) o el pueblo |
 | I y clic derecho | Abrir un boquete en la pared de una casa: el tanque le tira (a 300 m, con línea de tiro); la escuadra va, pone su carga de demolición (una por escuadra) y la vuela a los 8 s |
+| Shift+I y clic derecho | Limpiar la casa: la escuadra va a la puerta más cercana y la limpia cuarto por cuarto (ver "El pueblo") |
 | O | Mostrar u ocultar los techos (con la cámara cerca se ocultan solos) |
 | U y clic derecho | Suprimir: la unidad se queda quieta batiendo esa zona con fusiles o coaxial, aunque no vea a nadie. Casi no mata, pero suprime a todo lo que haya ahí. Esc cancela |
 
@@ -87,6 +88,9 @@ Con **L** (o `-- --pueblo`) llegás al pueblo: doce casas alrededor de una plaza
 - **Tirar desde adentro:** el que tira desde el fondo de un cuarto se delata mucho menos que el que se asoma a la ventana. El rojo abre una aspillera baja para su ametralladora.
 - **Esquinas:** antes de doblar una esquina ciega, dos soldados la "cortan como una torta": avanzan en arco de a poco, uno de pie y otro agachado, y ven lo que hay detrás antes de exponerse enteros. El resto espera.
 - **Tanque e infantería:** un tanque solo pegado a las casas recibe más del antitanque (×1,5); con infantería propia a 30 m, la mitad.
+- **Limpiar la casa (Shift+I):** la escuadra recorre los cuartos en orden, cada uno desde uno ya limpio. Cuatro soldados se apilan al costado de la puerta (nunca delante), uno tira una granada al fondo del cuarto y entran apenas explota: el 1 cruza a la esquina del lado contrario, el 2 engancha la del lado del apilado y el 3 y el 4 van a los puntos intermedios. Nadie se queda en la puerta. En un pasillo van en serpentina, con el último mirando atrás. Los demás quedan de seguridad en los cuartos ya limpios. Cada cuarto limpio se pinta del color del bando y la casa entera lleva una franja en el techo. Sin puertas, abrí un boquete primero.
+- **Tiro reflejo:** a menos de 8 m, el que tiene el arma lista (entrando o apostado) tira en un cuarto de segundo; caminando tarda más, y aturdido por una granada, mucho más. Casi siempre gana el que reacciona primero.
+- **Defensa roja:** cada escuadra roja se reparte por los cuartos de su casa (nunca todos en uno), agachados lejos de la puerta y apuntándole. Si entra un enemigo a un cuarto, los que lo defendían se repliegan al de al lado.
 
 Ganás si destruís a los 4 rojos. Si se llega al turno 12, gana el bando con más tanques vivos.
 
@@ -114,10 +118,14 @@ godot --headless --path . --script res://tests/harness_loma.gd -- 6
 godot --headless --path . --script res://tests/harness_loma.gd -- 6 12 peloton
 # ... en el pueblo
 godot --headless --path . --script res://tests/harness_loma.gd -- 6 12 pueblo
+# Rendimiento del pueblo
+godot --headless --path . --script res://tests/bench_loma.gd -- pueblo
 
 # Smoke test del pueblo
 godot --headless --path . --quit-after 3000 -- --pueblo --autoplay
 ```
+
+Último ajuste (fase 72), con el banco IA contra IA: en la loma el azul gana 6 de 8 semillas y empata 2; en el pueblo el rojo gana 4 de 6. Por tick, sin contar el de fin de turno (cuando la IA planifica y recalcula la exposición, que tarda alrededor de un segundo): loma 1,9 ms, pueblo 3,7 ms.
 
 ## Estructura
 

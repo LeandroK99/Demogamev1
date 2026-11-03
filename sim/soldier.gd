@@ -65,6 +65,8 @@ var sector_dir: Vector2 = Vector2.ZERO
 var sector_half_deg: float = 0.0
 var fpl_dir: Vector2 = Vector2.ZERO
 var dig_time: float = 0.0 # segundos cavando en su lugar (fase 57)
+var next_cover_tick: int = 0 # si no encontró cobertura, no vuelve a buscar hasta este tick (fase 72)
+var prepared: bool = false # el defensor tuvo tiempo: su primer lugar ya tiene pozo (fase 72)
 var bursts_here: int = 0 # ráfagas desde su posición actual (la ametralladora cambia de lugar)
 var avoid_pos: Vector2 = Vector2(-1.0, -1.0) # posición que dejó por estar ubicada
 var route: PackedVector2Array = PackedVector2Array() # con casas: puntos por los que va (fase 60)
@@ -76,6 +78,15 @@ var task_posture: int = -1 # ... y en esta postura (-1 = la de siempre)
 var post_pos: Vector2 = Vector2(-1.0, -1.0) # puesto fijo (la ametralladora en la aspillera, fase 63)
 var unreachable: bool = false # no hay ruta a su lugar: la escuadra no lo espera
 var marksman: bool = false # tirador selecto (fase 54): fusil con mira, ve y tira más lejos
+## CQB (fases 66–71)
+var cqb_role: int = -1 # 0 a 3: el 1 a 4 del equipo que entra al cuarto (-1 = no entra)
+var cqb_fast: bool = false # se apila o entra a CQB_SPEED
+var cqb_start_tick: int = 0 # entrando: arranca en este tick (uno detrás del otro)
+var cqb_post: bool = false # defensor apostado en su cuarto, apuntando a la puerta
+var defend_room: int = -1 # cuarto que defiende
+var reflex_key: int = -1 # enemigo a menos de CQB_REFLEX_M que tiene a la vista (clave de soldado)
+var reflex_tick: int = 0 # ... y cuándo le tira
+var next_look_tick: int = 0 # sin blanco a tiro: vuelve a buscar en este tick (ahorra líneas de visión)
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:

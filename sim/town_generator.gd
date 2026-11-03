@@ -51,8 +51,10 @@ static func _house(bm: BuildingMap, rng: RandomNumberGenerator, cm: Vector2i, q:
 	# a veces una de atrás
 	var mx: int = sz.x / 2
 	var my: int = sz.y / 2
+	var corridor: bool = sz.x >= Config.TOWN_CORRIDOR_M.x and sz.y >= Config.TOWN_CORRIDOR_M.y
 	if door.x != 0:
-		doors.append(to_world.call(o + Vector2i(0, maxi(1, my - 2))))
+		# Con pasillo, la puerta del costado da al pasillo
+		doors.append(to_world.call(o + Vector2i(0, my - 1 if corridor else maxi(1, my - 2))))
 		if rng.randf() < Config.TOWN_BACK_DOOR_P:
 			doors.append(to_world.call(o + Vector2i(sz.x - 1, mini(sz.y - 2, my + 2))))
 	else:
@@ -75,6 +77,9 @@ static func _house(bm: BuildingMap, rng: RandomNumberGenerator, cm: Vector2i, q:
 		if not near_door:
 			free_windows.append(wnd)
 	bm.add_house(rect, doors, free_windows)
+	if corridor:
+		_corridor_house(bm, rng, to_world, o, sz, mx, my)
+		return
 	# Paredes interiores con pasos de 1 m: hasta cuatro cuartos, todos comunicados
 	var split_x: bool = sz.x >= Config.TOWN_SPLIT_M
 	var split_y: bool = sz.y >= Config.TOWN_SPLIT_M
@@ -90,6 +95,20 @@ static func _house(bm: BuildingMap, rng: RandomNumberGenerator, cm: Vector2i, q:
 		for x: int in range(1, sz.x - 1):
 			if not gaps.has(x):
 				bm.set_type(to_world.call(o + Vector2i(x, my)), BuildingMap.Type.WALL)
+
+
+## Casa grande con pasillo (fase 69): un pasillo de 2 m a lo largo (filas my - 1 y my) con un cuarto
+## a cada lado de cada mitad; cada cuarto da al pasillo por un paso de 1 m.
+static func _corridor_house(bm: BuildingMap, rng: RandomNumberGenerator, to_world: Callable, o: Vector2i,
+		sz: Vector2i, mx: int, my: int) -> void:
+	for wy: int in [my - 2, my + 1]:
+		var gaps: Array[int] = [rng.randi_range(1, mx - 1), rng.randi_range(mx + 1, sz.x - 2)]
+		for x: int in range(1, sz.x - 1):
+			if not gaps.has(x):
+				bm.set_type(to_world.call(o + Vector2i(x, wy)), BuildingMap.Type.WALL)
+	for y: int in range(1, sz.y - 1):
+		if y < my - 2 or y > my + 1:
+			bm.set_type(to_world.call(o + Vector2i(mx, y)), BuildingMap.Type.WALL)
 
 
 ## Lleva el terreno a la altura media dentro de radius celdas del centro, con una transición de

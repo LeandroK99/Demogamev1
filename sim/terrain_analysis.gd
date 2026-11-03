@@ -74,6 +74,8 @@ func los_m(a: Vector2, a_h: float, b: Vector2, b_h: float) -> bool:
 	var dist: float = d.length()
 	if dist < 0.01:
 		return true
+	if buildings != null and buildings.blocks(hf, a, ha, b, hb):
+		return false # primero las casas: en el pueblo cortan casi todo y es más barato
 	var step_m: float = Config.LOS_STEP * Config.CELL_SIZE
 	var t_step: float = step_m / dist
 	var t: float = t_step
@@ -103,8 +105,6 @@ func los_m(a: Vector2, a_h: float, b: Vector2, b_h: float) -> bool:
 				if o > 0.0 and ha + (hb - ha) * tt < hf.height_at(p * inv_cell) + o:
 					return false
 				s += Config.MICRO_LOS_STEP
-	if buildings != null and buildings.blocks(hf, a, ha, b, hb):
-		return false
 	if smoke.is_empty():
 		return true
 	return not _smoke_blocks(a * inv_cell, d * inv_cell, ha, hb - ha)

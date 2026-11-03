@@ -8,7 +8,7 @@ enum Kind { TANK, INFANTRY }
 ## tira con la suya: fusil, ametralladora (MG, en ráfagas) o antitanque.
 enum Weapon { CANNON, COAX, RIFLES, AT, MG, GRENADE }
 
-enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW, SUPPRESS, BREACH }
+enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW, SUPPRESS, BREACH, CLEAR }
 ## Reglas de fuego: libre, solo si te dispararon hace poco, o retener.
 enum Roe { FREE, RETURN_FIRE, HOLD }
 ## Ritmo de marcha: normal, rápido (más veloz, tira peor) o cauto (lento, se detecta como si estuviera quieto).
@@ -55,6 +55,8 @@ var smoke_charges: int = Config.SMOKE_CHARGES
 var breach_charges: int = Config.BREACH_CHARGES # cargas de demolición (infantería, fase 65)
 var breach_m: Vector2 = Vector2(-1.0, -1.0) # orden BREACH: la pared a abrir (metros)
 var breach_time: float = 0.0 # segundos poniendo la carga
+var clear: Dictionary = {} # orden "limpiar la casa" en curso (fase 70, ver CqbSim)
+var defend_house: int = -1 # casa que defiende cuarto por cuarto (fase 71)
 var shots_received: int = 0 # disparos recibidos (impacten o no)
 var roe: int = Roe.FREE # reglas de fuego; duran hasta que se cambien (no las borra otra orden)
 var fire_arc_dir: Vector2 = Vector2.ZERO # centro del arco de tiro (cero = sin arco)
