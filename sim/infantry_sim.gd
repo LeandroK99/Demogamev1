@@ -57,13 +57,15 @@ func move_soldiers(w: SimWorld) -> void:
 				s.moving = false # herido, clavado, recién tirado al suelo o base de fuego: se queda donde está
 				continue
 			var target: Vector2 = u.slot_pos_m(s.index)
-			if s.care_target >= 0:
+			if s.task_pos.x >= 0.0:
+				target = s.task_pos
+			elif s.care_target >= 0:
 				target = u.soldiers[s.care_target].pos # va a atender al herido
 			elif s.has_cover and not u.moving:
 				target = s.fire_pos if s.peeking else s.cover_pos
 			target = Vector2(clampf(target.x, 0.0, limit), clampf(target.y, 0.0, limit))
 			if w.buildings != null:
-				if s.care_target < 0 and not (s.has_cover and not u.moving):
+				if s.care_target < 0 and s.task_pos.x < 0.0 and not (s.has_cover and not u.moving):
 					target = w.buildings.pull_out(target, u.pos_m()) # su lugar cae en una casa ajena: afuera
 					s.slot_goal = target
 					s.has_slot_goal = true
@@ -88,19 +90,20 @@ func move_soldiers(w: SimWorld) -> void:
 ## a 1 m (por las puertas y los boquetes) y devuelve el próximo punto de esa ruta.
 static func _steer(bm: BuildingMap, s: Soldier, target: Vector2) -> Vector2:
 	target = bm.nearest_walkable_m(target)
+	if not bm.crosses(s.pos, target):
+		s.route.clear() # derecho se llega: sin ruta
+		s.unreachable = false
+		return target
 	if s.route.is_empty() or s.route_goal.distance_to(target) > Config.ROUTE_REPLAN_M:
-		if not bm.crosses(s.pos, target):
-			s.route.clear()
-			return target
 		s.route = bm.route(s.pos, target)
 		s.route_goal = target
+	elif not bm.crosses(s.route[s.route.size() - 1], target):
+		s.route[s.route.size() - 1] = target # el destino se corrió poco: se corre el final de la ruta
 	while s.route.size() > 1 and s.pos.distance_to(s.route[0]) <= Config.ROUTE_ARRIVE_M:
 		s.pos = s.route[0] # se pone justo en el punto: desde ahí el tramo siguiente no corta esquinas
 		s.route.remove_at(0)
-	s.unreachable = s.route.is_empty() and bm.crosses(s.pos, target)
-	if s.route.is_empty():
-		return s.pos if s.unreachable else target
-	return s.route[0]
+	s.unreachable = s.route.is_empty()
+	return s.pos if s.unreachable else s.route[0]
 
 
 ## Dispersión: cada soldado elige un corrimiento de hasta JITTER_M de su lugar, prefiriendo quedar
@@ -631,7 +634,9 @@ func update_postures(w: SimWorld) -> void:
 		var cautious: bool = SimWorld.effective_pace(u) == Unit.Pace.CAUTIOUS
 		var crawl: bool = SimWorld.effective_pace(u) == Unit.Pace.CRAWL
 		for s: Soldier in u.soldiers:
-			if not s.is_ok() or (crawl and s.moving):
+			if s.task_posture >= 0 and s.is_ok() and s.suppression < Config.SUPPRESSED:
+				s.posture = s.task_posture # alto y bajo en la esquina
+			elif not s.is_ok() or (crawl and s.moving):
 				s.posture = Soldier.Posture.PRONE # reptando, cuerpo a tierra
 			elif s.suppression >= Config.SUPPRESSED:
 				s.posture = Soldier.Posture.PRONE
@@ -671,8 +676,8 @@ func begin_detection(w: SimWorld) -> void:
 		for k: int in want:
 			obs.append(ok[(_round * want + k) % ok.size()])
 		for s: Soldier in ok:
-			if s.marksman and not obs.has(s):
-				obs.append(s) # el tirador selecto siempre mira, con su mira
+			if (s.marksman or s.task_pos.x >= 0.0) and not obs.has(s):
+				obs.append(s) # el tirador selecto siempre mira, con su mira; los de la esquina, también
 		_observers[u.id] = obs
 
 

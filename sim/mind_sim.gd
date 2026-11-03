@@ -235,6 +235,7 @@ func score_options(w: SimWorld, u: Unit) -> Dictionary:
 	_score_rescue(w, u, s)
 	_score_near_ambush(w, u, s)
 	_score_cross(w, u, s)
+	_score_corner(w, u, s)
 	return s
 
 
@@ -403,6 +404,163 @@ func _act_street(w: SimWorld, u: Unit, far: Vector2i) -> void:
 				m.data["phase"] = "done"
 				m.rushing = false
 				switch_to(w, u, SquadMind.Option.FOLLOW)
+
+
+## --- Cortar la torta (fase 64) ---
+## En marcha por el pueblo con contacto posible: si la ruta dobla una esquina ciega (una casa tapa
+## lo que viene), la escuadra se para a CORNER_TRIGGER_M y dos tiradores, uno parado y otro
+## agachado, se abren en arco alrededor de la esquina de a poco: ven lo que hay del otro lado
+## antes de exponerse enteros. Si aparece un enemigo, se quedan ahí (el drill de contacto sigue);
+## si está limpio, la escuadra sigue.
+
+func _score_corner(w: SimWorld, u: Unit, s: Dictionary) -> void:
+	var m: SquadMind = u.mind
+	if m.option == SquadMind.Option.CORNER:
+		if str(m.data.get("phase", "")) == "slice":
+			s[SquadMind.Option.CORNER] = Config.CORNER_SCORE + 1.0
+		return
+	if w.buildings == null or m.option not in [SquadMind.Option.FOLLOW, SquadMind.Option.BOUND] or u.path.is_empty() \
+			or u.order not in [Unit.Order.MOVE, Unit.Order.HULLDOWN]:
+		return
+	if m.technique == SquadMind.Technique.TRAVEL or w.fired_upon_within(u, Config.DANGER_FIRED_SECONDS):
+		return
+	var corner: Dictionary = blind_corner(w, u)
+	if corner.is_empty():
+		return
+	var key: int = _cross_key(Vector2i((Vector2(corner["k"]) / 2.0).round())) - 500000
+	if m.reacted.has(key):
+		return
+	corner["key"] = key
+	m.corner = corner
+	s[SquadMind.Option.CORNER] = Config.CORNER_SCORE
+
+
+## Esquina ciega adelante: la ruta dobla (CORNER_TURN_DEG o más) pegada a la esquina de una casa,
+## y lo que hay pasando la esquina no se ve desde donde está la escuadra. Devuelve {k: la esquina
+## (metros, un poco afuera), a: dirección hacia la escuadra, h: hacia lo que no se ve, o: hacia
+## afuera de la casa}, o vacío.
+static func blind_corner(w: SimWorld, u: Unit) -> Dictionary:
+	var bm: BuildingMap = w.buildings
+	var from: Vector2 = u.pos_m()
+	var cells: Array[Vector2i] = [u.cell()]
+	for k: int in mini(u.path.size(), Config.CORNER_LOOK_CELLS + 2):
+		cells.append(u.path[k])
+	for k: int in range(1, cells.size() - 1):
+		var prev: Vector2 = Vector2(cells[k - 1])
+		var cur: Vector2 = Vector2(cells[k])
+		var nxt: Vector2 = Vector2(cells[mini(k + 2, cells.size() - 1)])
+		var din: Vector2 = cur - prev
+		var dout: Vector2 = nxt - cur
+		if din.length() < 0.5 or dout.length() < 0.5 or rad_to_deg(absf(din.angle_to(dout))) < Config.CORNER_TURN_DEG:
+			continue
+		var cur_m: Vector2 = cur * Config.CELL_SIZE
+		if cur_m.distance_to(from) > Config.CORNER_TRIGGER_M:
+			return {}
+		# La esquina de casa más cercana a la vuelta
+		var best: Vector2 = Vector2(-1.0, -1.0)
+		var center: Vector2 = Vector2.ZERO
+		var best_d: float = Config.CORNER_NEAR_M
+		for i: int in bm.houses.size():
+			var r: Rect2 = bm.rect_m(i)
+			for q: Vector2 in [r.position, Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), r.end]:
+				if q.distance_to(cur_m) < best_d:
+					best_d = q.distance_to(cur_m)
+					best = q
+					center = r.get_center()
+		if best.x < 0.0:
+			continue
+		var o: Vector2 = (best - center).normalized()
+		var k_out: Vector2 = best + o * 0.7
+		# Lo que hay pegado a la pared pasando la esquina
+		var beyond: Vector2 = k_out + dout.normalized() * Config.CORNER_R_M * 2.0
+		if w.analysis.los_m(from, Config.SOLDIER_EYE_STAND, beyond, Config.SOLDIER_EYE_STAND):
+			continue # se ve lo que viene: no es ciega
+		return {"k": k_out, "a": (from - k_out).normalized(), "h": (beyond - k_out).normalized(), "o": o}
+	return {}
+
+
+static func _segment_hits_rect(a: Vector2, b: Vector2, r: Rect2) -> bool:
+	var span: Vector2 = BuildingMap._clip(r, a, b - a)
+	return span.x <= span.y
+
+
+func _start_corner(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	m.reacted[int(m.corner["key"])] = true
+	m.data["corner"] = m.corner
+	m.data["phase"] = "slice"
+	m.data["step"] = 0
+	m.data["next_tick"] = w.total_ticks
+	m.data["contacts0"] = m.contacts.keys()
+	m.hold = true
+	# Los dos de punta: los primeros fusileros en condiciones (ni el jefe ni la ametralladora)
+	var picked: Array[int] = []
+	for s: Soldier in u.soldiers:
+		if s.is_ok() and s.role in [Soldier.Role.RIFLE, Soldier.Role.AT] and picked.size() < 2:
+			picked.append(s.index)
+	m.data["slicers"] = picked
+	for k: int in picked.size():
+		u.soldiers[picked[k]].task_posture = Soldier.Posture.STAND if k == 0 else Soldier.Posture.CROUCH
+	_place_slicers(u, 0)
+
+
+## Pone a los dos en el paso i del arco: del lado de la escuadra (a) pasando por afuera (o) hasta
+## lo que no se veía (h).
+func _place_slicers(u: Unit, i: int) -> void:
+	var m: SquadMind = u.mind
+	var c: Dictionary = m.data["corner"]
+	var k: Vector2 = c["k"]
+	var a: Vector2 = c["a"]
+	var h: Vector2 = c["h"]
+	var o: Vector2 = c["o"]
+	# Ángulo de a a h por el lado de o
+	var total: float = a.angle_to(h)
+	var mid: float = a.angle_to(o)
+	if signf(total) != signf(mid) or absf(mid) > absf(total):
+		total = total - signf(total) * TAU
+	var t: float = float(i) / float(Config.CORNER_STEPS)
+	var dir: Vector2 = a.rotated(total * t)
+	var slicers: Array = m.data["slicers"]
+	for j: int in slicers.size():
+		var s: Soldier = u.soldiers[int(slicers[j])]
+		s.task_pos = k + dir * (Config.CORNER_R_M + 0.8 * float(j)) # el bajo adelante, el alto detrás
+		s.hold_pos = false
+	for s: Soldier in u.soldiers:
+		if not slicers.has(s.index):
+			s.hold_pos = s.is_ok() # el resto espera
+
+
+func _act_corner(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	if str(m.data.get("phase", "")) != "slice":
+		return
+	for id: int in m.contacts:
+		if not (m.data["contacts0"] as Array).has(id):
+			m.data["phase"] = "contact" # apareció alguien del otro lado: se quedan ahí
+			w.radio(u, "¡contacto en la esquina!")
+			return
+	if w.total_ticks < int(m.data["next_tick"]):
+		return
+	var slicers: Array = m.data["slicers"]
+	for j: int in slicers.size():
+		var s: Soldier = u.soldiers[int(slicers[j])]
+		if s.is_ok() and s.pos.distance_to(s.task_pos) > Config.SOLDIER_ARRIVE_M * 2.0:
+			return # todavía llegando a su punto
+	var step: int = int(m.data["step"]) + 1
+	if step > Config.CORNER_STEPS:
+		m.data["phase"] = "clear"
+		switch_to(w, u, SquadMind.Option.FOLLOW)
+		return
+	m.data["step"] = step
+	m.data["next_tick"] = w.total_ticks + roundi(Config.CORNER_STEP_SECONDS / Config.TICK)
+	_place_slicers(u, step)
+
+
+func _end_corner(u: Unit) -> void:
+	for s: Soldier in u.soldiers:
+		s.task_pos = Vector2(-1.0, -1.0)
+		s.task_posture = -1
+		s.hold_pos = false
 
 
 ## --- Emboscada cercana (fase 52) ---
@@ -903,6 +1061,8 @@ func _enter(w: SimWorld, u: Unit, opt: int) -> void:
 			_start_near_ambush(w, u)
 		SquadMind.Option.CROSS:
 			_start_cross(w, u)
+		SquadMind.Option.CORNER:
+			_start_corner(w, u)
 		SquadMind.Option.BREAK_CONTACT:
 			throw_smoke_toward(w, u, w.inf.threat_point(w, u))
 			w.begin_autonomous()
@@ -927,6 +1087,8 @@ func _exit(w: SimWorld, u: Unit, opt: int) -> void:
 			_release_teams(u)
 		SquadMind.Option.CROSS:
 			_release_teams(u)
+		SquadMind.Option.CORNER:
+			_end_corner(u)
 		SquadMind.Option.RESCUE:
 			_release_teams(u)
 			for s: Soldier in u.soldiers:
@@ -963,6 +1125,8 @@ func _announce(opt: int) -> String:
 			return "¡emboscada! ¡al asalto!"
 		SquadMind.Option.CROSS:
 			return "zona abierta: seguridad y cruzamos de a un equipo"
+		SquadMind.Option.CORNER:
+			return "esquina: cortamos la torta"
 	return SquadMind.OPTION_NAMES[opt]
 
 
@@ -973,6 +1137,8 @@ func act(w: SimWorld, u: Unit) -> void:
 			_act_bound(w, u)
 		SquadMind.Option.CROSS:
 			_act_cross(w, u)
+		SquadMind.Option.CORNER:
+			_act_corner(w, u)
 
 
 ## --- Orden del jugador ---

@@ -520,8 +520,8 @@ const TOWN_OBJECTIVE_RADIUS: float = 5.0 # celdas: la plaza que hay que ocupar
 const TOWN_RED_TANK_BACK: int = 22 # celdas detrás de la plaza donde espera el tanque rojo
 
 # --- Calles (fase 62) ---
-const FACADE_MAX: int = 3 # celdas: hasta acá se mide la distancia a la casa más cercana
-const FACADE_HOUSE_COST: float = 0.5 # costo extra de la ruta de infantería por adentro de una casa
+const FACADE_MAX: int = 5 # celdas: hasta acá se mide la distancia a la casa más cercana (dentro de esto, lejos de una fachada cuesta)
+const FACADE_HOUSE_COST: float = 4.0 # costo extra de la ruta de infantería por adentro de una casa (se rodea salvo que no haya otra)
 const FACADE_OPEN_COST: float = 2.0 # ... por el medio de la calle (a 2 o 3 celdas de una fachada)
 const STREET_SMOKE_WAIT_SECONDS: float = 3.0 # tira humo y espera a que tape antes de cruzar
 const STREET_WAIT_MAX_SECONDS: float = 30.0 # calle batida y sin humo: espera esto y después cruza igual
@@ -532,3 +532,13 @@ const ROOM_DEEP_FIRE_SPOT_M: float = 60.0 # ... y al disparar se lo detecta hast
 const ROOM_DEEP_W: float = 1.5 # peso de estar al fondo al elegir dónde ponerse adentro
 const LOOPHOLE_LOW_H: float = 0.2 # la aspillera: un agujero en la pared de esta altura...
 const LOOPHOLE_TOP_H: float = 0.7 # ... a esta
+
+# --- Esquinas (fase 64) ---
+const CORNER_LOOK_CELLS: int = 5 # mira hasta esto adelante en la ruta si hay una esquina ciega
+const CORNER_TRIGGER_M: float = 14.0 # a esto de la esquina se para a cortar la torta
+const CORNER_R_M: float = 3.0 # radio del arco alrededor de la esquina
+const CORNER_STEPS: int = 6 # pasos del arco
+const CORNER_STEP_SECONDS: float = 0.8 # cada cuánto se corre un paso
+const CORNER_SCORE: float = 2.6
+const CORNER_TURN_DEG: float = 40.0 # la ruta dobla al menos esto...
+const CORNER_NEAR_M: float = 10.0 # ... a menos de esto de la esquina de una casa
