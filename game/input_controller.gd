@@ -58,6 +58,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
 			_order_move(mb.position)
 		return
+	var key: InputEventKey = event as InputEventKey
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_H:
+		# H: hull-down para las seleccionadas (solo en PLAN)
+		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty():
+			world.order_hulldown(selected_ids)
+		return
 	var mm: InputEventMouseMotion = event as InputEventMouseMotion
 	if mm != null and _dragging and mm.position.distance_to(_drag_start) >= DRAG_MIN_PX:
 		var r: Rect2 = Rect2(_drag_start, Vector2.ZERO).expand(mm.position)

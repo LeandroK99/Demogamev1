@@ -34,10 +34,14 @@ var moving_shooter_factor: float = Config.MOVING_SHOOTER_FACTOR
 # Exposición por bando (índice = side); vacía = sin calcular
 var _exposure: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array()]
 var _pathfinder_side: int = -1 # bando cuya exposición está cargada en el pathfinder
+var ai: AICommander = null # IA del bando rojo (null = sin IA)
 
 
 ## Si hf es null se genera el terreno procedural con la semilla.
-func _init(sim_seed: int = Config.SEED, hf: HeightField = null) -> void:
+## with_ai: si el bando rojo lo maneja AICommander (los tests pueden apagarlo).
+func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = true) -> void:
+	if with_ai:
+		ai = AICommander.new(1)
 	rng.seed = sim_seed
 	if hf == null:
 		hf = HeightField.new()
@@ -79,11 +83,13 @@ func threats_for(side: int) -> Array[Vector2i]:
 	return out
 
 
-## Al entrar en PLAN: se descarta la exposición vieja (se recalcula al pedirla).
-## La IA roja dará sus órdenes acá (fase 5).
+## Al entrar en PLAN: se descarta la exposición vieja (se recalcula al pedirla)
+## y la IA roja da sus órdenes.
 func start_plan() -> void:
 	phase = Phase.PLAN
 	invalidate_exposure()
+	if ai != null and not game_over:
+		ai.issue_orders(self)
 
 
 ## Espacio: arranca la ejecución del turno.
@@ -143,6 +149,58 @@ func order_move(unit_id: int, target_cell: Vector2i) -> bool:
 	u.order = Unit.Order.MOVE
 	u.moving = not path.is_empty()
 	return true
+
+
+## Orden HULLDOWN para un grupo: cada unidad va al mejor candidato contra las amenazas
+## conocidas, sin repetir celdas ni quedar a menos de HULLDOWN_MIN_SEPARATION de otra.
+## Sin amenazas: avanza NO_THREAT_ADVANCE celdas hacia el centro por la ruta más cubierta.
+## already_reserved: celdas ya ocupadas por otras unidades (por ejemplo, las que quedan en HOLD).
+func order_hulldown(unit_ids: Array[int], already_reserved: Array[Vector2i] = []) -> void:
+	var reserved: Array[Vector2i] = already_reserved.duplicate()
+	for id: int in unit_ids:
+		var u: Unit = get_unit(id)
+		if u == null or not u.alive or phase != Phase.PLAN:
+			continue
+		var threats: Array[Vector2i] = threats_for(u.side)
+		var target: Vector2i = u.cell()
+		if threats.is_empty():
+			target = _advance_target(u.cell())
+		else:
+			var cands: Array[Dictionary] = analysis.hulldown_candidates(u.cell(), threats, Config.HULLDOWN_RADIUS)
+			for c: Dictionary in cands:
+				var cell: Vector2i = c["cell"]
+				if pathfinder.is_walkable(cell) and is_free(cell, reserved):
+					target = cell
+					break
+		if order_move(u.id, target):
+			reserved.append(target)
+			u.order = Unit.Order.HULLDOWN
+
+
+## ¿Está la celda a >= HULLDOWN_MIN_SEPARATION de todas las reservadas?
+static func is_free(cell: Vector2i, reserved: Array[Vector2i]) -> bool:
+	for r: Vector2i in reserved:
+		if Vector2(cell).distance_to(Vector2(r)) < Config.HULLDOWN_MIN_SEPARATION:
+			return false
+	return true
+
+
+## Celda transitable a NO_THREAT_ADVANCE celdas de from en dirección al centro del mapa.
+func _advance_target(from: Vector2i) -> Vector2i:
+	var center: Vector2 = Vector2(height_field.size, height_field.size) * 0.5
+	var to_center: Vector2 = center - Vector2(from)
+	var dist: float = minf(float(Config.NO_THREAT_ADVANCE), to_center.length())
+	var dir: Vector2 = to_center.normalized()
+	for back: int in roundi(dist) + 1:
+		var c: Vector2i = Vector2i((Vector2(from) + dir * (dist - back)).round())
+		if pathfinder.is_walkable(c):
+			return c
+	return from
+
+
+## Destino actual de una unidad (su celda si no tiene ruta).
+func destination(u: Unit) -> Vector2i:
+	return u.path.back() if not u.path.is_empty() else u.cell()
 
 
 ## Avanza un tick: movimiento, detección (cada DETECTION_INTERVAL_TICKS), combate, fin de turno.
