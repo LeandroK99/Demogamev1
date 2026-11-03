@@ -121,6 +121,10 @@ func sync_from_sim(alpha: float = 1.0) -> void:
 		elif unit.suppression >= Config.SUPPRESSED:
 			mark = " ▼"
 		_label.text = "%d%s" % [unit.hp, mark]
+		if unit.mind != null and unit.side == player_side and world != null:
+			var intent: String = unit.mind.intent_short(world.total_ticks)
+			if intent != "":
+				_label.text += "\n" + intent # lo que decidió por su cuenta
 		_label.modulate = Color.WHITE.lerp(Color(1.0, 0.35, 0.2), clampf(unit.suppression / 100.0, 0.0, 1.0))
 
 
@@ -154,7 +158,10 @@ func _sync_soldiers(alpha: float) -> void:
 			shown = _mode != Display.HIDDEN and _mode != Display.GHOST
 		mi.visible = shown
 		if _mode == Display.NORMAL:
-			mi.material_override = _mat_normal if s.is_ok() else (_mat_wounded if s.state == Soldier.State.WOUNDED else _mat_dead)
+			var hurt: bool = s.state == Soldier.State.WOUNDED or s.state == Soldier.State.EVACUATING
+			mi.material_override = _mat_normal if s.is_ok() else (_mat_wounded if hurt else _mat_dead)
+		if s.state == Soldier.State.EVACUATED:
+			mi.visible = false # ya salió del campo
 		else:
 			mi.material_override = _mat_dead
 

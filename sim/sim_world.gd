@@ -19,6 +19,9 @@ var units: Array[Unit] = []
 var platoons: Array[Platoon] = [] # uno por bando (índice = side)
 var _bound_count: int = 0 # para nombrar las señales de los avances por saltos
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+## Azar de la autonomía (error de los contactos, demoras de radio, ruido de las decisiones). Aparte
+## del de combate para que pensar no cambie la secuencia de los dados; también con semilla.
+var mind_rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var turn: int = 1
 var tick_in_turn: int = 0
 var total_ticks: int = 0 # ticks desde el comienzo de la partida
@@ -58,6 +61,12 @@ var _forcing: bool = false # órdenes que da la propia simulación (una retirada
 var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
 var micro: MicroCover = null # microcobertura a 1 m (piedras, cráteres, pircas); null = sin ella
 var inf: InfantrySim = InfantrySim.new() # los soldados de las escuadras
+var minds: MindSim = MindSim.new() # la autonomía de las escuadras
+## Radio: lo que las escuadras deciden por su cuenta. {tick, turn, side, unit, text}, el último al final.
+var radio_log: Array[Dictionary] = []
+## Decisiones propias tomadas en la partida (nombre de la opción -> cantidad), para el banco IA contra IA.
+var decision_counts: Dictionary = {}
+var _autonomous: int = 0 # > 0: órdenes que se da la propia escuadra (valen en la ejecución)
 
 
 ## Si hf es null se genera el terreno procedural con la semilla.
@@ -67,6 +76,7 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 	if with_ai:
 		ai = AICommander.new(1)
 	rng.seed = sim_seed
+	mind_rng.seed = sim_seed * 7919 + 17
 	if hf == null:
 		hf = HeightField.new()
 		hf.generate(sim_seed)
@@ -130,6 +140,7 @@ func _deploy_loma() -> void:
 			var c: Vector2i = _nearest_walkable(Vector2i(x, y), kind)
 			var u: Unit = add_unit(side, Vector2(c), kind)
 			if kind == Unit.Kind.INFANTRY:
+				u.mind.quality = Config.MIND_LOMA_QUALITY[i % Config.MIND_LOMA_QUALITY.size()]
 				inf_ids.append(u.id)
 			else:
 				tank_ids.append(u.id)
@@ -216,9 +227,75 @@ func _rout_broken() -> void:
 			_forcing = false
 
 
-## ¿La unidad acepta órdenes ahora? (viva, en PLAN y sin la moral quebrada)
+## ¿La unidad acepta órdenes ahora? (viva, en PLAN y sin la moral quebrada; las que se da la
+## propia escuadra valen también en la ejecución)
 func _can_order(u: Unit) -> bool:
-	return u != null and u.alive and phase == Phase.PLAN and (not u.broken or _forcing)
+	return u != null and u.alive and (phase == Phase.PLAN or _autonomous > 0) and (not u.broken or _forcing)
+
+
+## Orden nueva del jugador (o del comandante): la escuadra deja lo que hacía por su cuenta.
+func _new_intent(u: Unit) -> void:
+	if _autonomous == 0 and u.mind != null:
+		u.mind.reset(total_ticks)
+		for s: Soldier in u.soldiers:
+			s.hold_pos = false # ningún equipo queda clavado como base de fuego
+			s.suppress_m = Vector2(-1.0, -1.0)
+			s.drag_target = -1
+			s.dragged = false
+
+
+func begin_autonomous() -> void:
+	_autonomous += 1
+
+
+func end_autonomous() -> void:
+	_autonomous -= 1
+
+
+## Orden del comandante (la IA del bando) en plena ejecución: manda sobre lo que la escuadra
+## hacía por su cuenta. assault: asalto directo en vez de marcha cubierta.
+func command_move(unit_id: int, target: Vector2i, assault: bool = false) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive:
+		return false
+	_new_intent(u)
+	begin_autonomous()
+	var ok: bool = order_assault(unit_id, target) if assault else order_move(unit_id, target)
+	end_autonomous()
+	return ok
+
+
+## La escuadra piensa ya (tests y eventos).
+func mind_think_now(u: Unit) -> void:
+	minds.think(self, u)
+
+
+## Mensaje de radio de una escuadra.
+func radio(u: Unit, text: String) -> void:
+	radio_log.append({"tick": total_ticks, "turn": turn, "side": u.side, "unit": u.id, "text": text})
+	if radio_log.size() > Config.RADIO_LOG_MAX:
+		radio_log.pop_front()
+
+
+## Rehace la ruta de u desde donde está pasando por esos tramos (con sus condiciones y señales).
+func reroute_through(u: Unit, wps: Array[Dictionary]) -> bool:
+	var path: Array[Vector2i] = []
+	var kept: Array[Dictionary] = []
+	var from: Vector2i = u.cell()
+	for wp: Dictionary in wps:
+		var to: Vector2i = wp["cell"]
+		if to == from:
+			continue
+		var leg: Array[Vector2i] = _route(u, from, to, not bool(wp.get("direct", false)))
+		if leg.is_empty():
+			continue
+		path.append_array(leg)
+		kept.append(wp)
+		from = to
+	u.path = path
+	u.waypoints = kept
+	u.moving = not path.is_empty()
+	return u.moving
 
 
 ## Espacio: arranca la ejecución del turno.
@@ -265,6 +342,7 @@ func update_detection(full: bool = true) -> void:
 				known_enemies[side][enemy.id] = {"cell": enemy.cell(), "last_seen_turn": turn}
 		visible_enemies[side] = vis
 		inf.visible_soldiers[side] = vis_s
+	minds.on_detection(self)
 
 
 ## Detección de un tanque por otro: LOS al centro del blanco y distancia dentro del alcance de
@@ -342,6 +420,7 @@ func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.Z
 	var u: Unit = get_unit(unit_id)
 	if not _can_order(u):
 		return false
+	_new_intent(u)
 	append = append and not u.path.is_empty()
 	var from: Vector2i = destination(u) if append else u.cell()
 	if from == target_cell and append:
@@ -621,6 +700,51 @@ func set_formation(unit_id: int, f: int) -> bool:
 
 
 ## Ritmo de una unidad (solo en PLAN). Dura hasta que se cambie.
+## Orden de evacuar (en PLAN): cada herido sale hacia el borde propio con un camillero (un fusilero
+## o el proveedor, el más cercano); a los EVAC_SECONDS los dos dejan el campo. Siempre queda al
+## menos uno en condiciones. Devuelve cuántos heridos evacúa.
+func order_evacuate(unit_id: int) -> int:
+	var u: Unit = get_unit(unit_id)
+	if not _can_order(u) or not u.is_infantry():
+		return 0
+	var n: int = 0
+	for t: Soldier in u.soldiers:
+		if t.state != Soldier.State.WOUNDED or u.ok_count() <= 1:
+			continue
+		var bearer: Soldier = null
+		var best_d: float = INF
+		for s: Soldier in u.soldiers:
+			if s.is_ok() and s.role in [Soldier.Role.RIFLE, Soldier.Role.ASSISTANT] and s.pos.distance_to(t.pos) < best_d:
+				bearer = s
+				best_d = s.pos.distance_to(t.pos)
+		if bearer == null:
+			break
+		for s: Soldier in [t, bearer]:
+			s.state = Soldier.State.EVACUATING
+			s.evac_left = Config.EVAC_SECONDS
+			s.evac_wounded = s == t
+			s.care_target = -1
+			s.drag_target = -1
+			s.has_cover = false
+		bearer.pos = t.pos + Vector2(0.6, 0.0)
+		n += 1
+	u.hp = u.ok_count()
+	if n > 0:
+		radio(u, "evacuamos %d herido%s" % [n, "" if n == 1 else "s"])
+	return n
+
+
+## Autonomía de una escuadra (en cualquier fase). Bajarla a estricta la hace volver a la orden.
+func set_autonomy(unit_id: int, autonomy: int) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or u.mind == null:
+		return false
+	u.mind.autonomy = autonomy
+	if not SquadMind.allowed(autonomy, u.mind.option):
+		minds.switch_to(self, u, SquadMind.Option.FOLLOW)
+	return true
+
+
 func set_pace(unit_id: int, pace: int) -> bool:
 	var u: Unit = get_unit(unit_id)
 	if u == null or not u.alive or phase != Phase.PLAN:
@@ -714,6 +838,7 @@ func order_overwatch(unit_id: int, dir: Vector2) -> bool:
 	var u: Unit = get_unit(unit_id)
 	if not _can_order(u) or dir.length() < 0.001:
 		return false
+	_new_intent(u)
 	u.path.clear()
 	u.waypoints.clear()
 	u.moving = false
@@ -759,7 +884,7 @@ func _start_scoot_return(u: Unit, target: Unit) -> void:
 ## Aparece en el acto (en PLAN) y dura SMOKE_TURNS turnos; la exposición se recalcula.
 func order_smoke(unit_id: int, cell: Vector2i) -> bool:
 	var u: Unit = get_unit(unit_id)
-	if u == null or not u.alive or phase != Phase.PLAN or u.smoke_charges <= 0:
+	if u == null or not u.alive or (phase != Phase.PLAN and _autonomous == 0) or u.smoke_charges <= 0:
 		return false
 	if not height_field.in_bounds(cell) or not can_smoke_at(u, cell):
 		return false
@@ -775,6 +900,40 @@ func order_smoke(unit_id: int, cell: Vector2i) -> bool:
 	_next_smoke_id += 1
 	invalidate_exposure()
 	return true
+
+
+## Granada de humo de mano de una escuadra: una nube chica en at_m que dura INF_SMOKE_SECONDS
+## (vale también en la ejecución).
+func hand_smoke(u: Unit, at_m: Vector2) -> bool:
+	if u == null or not u.alive or u.smoke_charges <= 0:
+		return false
+	var limit: float = float(height_field.size - 1)
+	var c: Vector2 = at_m / Config.CELL_SIZE
+	c = Vector2(clampf(c.x, 0.0, limit), clampf(c.y, 0.0, limit))
+	u.smoke_charges -= 1
+	smoke_clouds.append({
+		"id": _next_smoke_id,
+		"center": c,
+		"radius": Config.INF_SMOKE_RADIUS,
+		"top_h": height_field.height_at(c) + Config.INF_SMOKE_HEIGHT,
+		"turns_left": 1000000,
+		"ticks_left": roundi(Config.INF_SMOKE_SECONDS / Config.TICK),
+		"side": u.side,
+	})
+	_next_smoke_id += 1
+	invalidate_exposure()
+	return true
+
+
+## Las nubes de mano se van por tiempo.
+func _tick_smoke() -> void:
+	for i: int in range(smoke_clouds.size() - 1, -1, -1):
+		var cloud: Dictionary = smoke_clouds[i]
+		if cloud.has("ticks_left"):
+			cloud["ticks_left"] = int(cloud["ticks_left"]) - 1
+			if int(cloud["ticks_left"]) <= 0:
+				smoke_clouds.remove_at(i)
+				invalidate_exposure()
 
 
 func can_smoke_at(u: Unit, cell: Vector2i) -> bool:
@@ -808,6 +967,7 @@ func order_attack(unit_id: int, enemy_id: int) -> bool:
 	if phase != Phase.PLAN or not known_enemies[u.side].has(enemy_id):
 		return false
 	if _can_see(u, enemy, enemy.center_h()) and visible_enemies[u.side].has(enemy_id):
+		_new_intent(u)
 		u.path.clear()
 		u.moving = false
 		u.final_heading = Vector2.ZERO
@@ -913,6 +1073,9 @@ func step() -> void:
 	if game_over:
 		return
 	_update_attackers()
+	if ai != null and phase == Phase.EXECUTE and total_ticks % Config.AI_MONITOR_TICKS == 0:
+		ai.monitor(self)
+	minds.update(self)
 	for u: Unit in units:
 		if not u.alive or u.path.is_empty():
 			u.waiting = false
@@ -925,6 +1088,9 @@ func step() -> void:
 		if u.is_infantry() and inf.halted(u):
 			u.moving = false # la mayoría suprimida: cuerpo a tierra, no avanza
 			continue
+		if u.mind != null and (u.mind.hold or u.mind.is_disorganized(total_ticks)):
+			u.moving = false # la escuadra decidió frenar o cayó el jefe (ver MindSim)
+			continue
 		if u.is_infantry() and inf.lagging(u):
 			u.moving = true # el ancla espera a los rezagados
 			continue
@@ -934,6 +1100,11 @@ func step() -> void:
 	_update_suppression()
 	_update_posture()
 	inf.update_postures(self)
+	inf.update_peeks(self)
+	inf.update_wounded(self)
+	inf.update_care(self)
+	inf.update_evac(self)
+	_tick_smoke()
 	tick_in_turn += 1
 	total_ticks += 1
 	if tick_in_turn % Config.DETECTION_INTERVAL_TICKS == 0:
@@ -1074,6 +1245,7 @@ func _fire_slot(shooter: Unit, slot: int) -> void:
 	shooter.last_fire_tick = total_ticks
 	# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
 	known_enemies[target.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
+	minds.flash(self, target, shooter, shooter.pos_m())
 	target.shots_received += 1
 	target.last_fired_upon_tick = total_ticks
 	var hit: bool = rng.randf() < hit_probability(shooter, target, w)
@@ -1105,6 +1277,8 @@ func damage_soldier(u: Unit, s: Soldier) -> void:
 	inf.hit_soldier(self, u, s)
 	if was_ok:
 		_lose_morale(u, Config.MORALE_PER_CASUALTY + (Config.MORALE_LEADER_LOSS if s.role == Soldier.Role.LEADER else 0.0))
+		if s.role == Soldier.Role.LEADER and u.mind != null:
+			minds.on_leader_lost(self, u)
 	_check_dead(u)
 
 
@@ -1130,6 +1304,7 @@ func _area_fire(shooter: Unit, slot: int, w: int) -> void:
 		if not u.alive or u.side == shooter.side or u.pos.distance_to(center) > Config.SUPPRESS_AREA_RADIUS:
 			continue
 		known_enemies[u.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
+		minds.flash(self, u, shooter, shooter.pos_m())
 		if u.is_infantry() and rng.randf() < hit_probability(shooter, u, w) * Config.SUPPRESS_AREA_HIT_FACTOR:
 			_damage(u)
 		_add_suppression(u, weapon_suppression(w) * Config.SUPPRESS_AREA_SUPP)
@@ -1150,6 +1325,7 @@ func order_suppress(unit_id: int, cell: Vector2i) -> bool:
 	var u: Unit = get_unit(unit_id)
 	if not _can_order(u) or not can_suppress_at(u, cell):
 		return false
+	_new_intent(u)
 	u.path.clear()
 	u.waypoints.clear()
 	u.moving = false
@@ -1239,6 +1415,11 @@ func roe_allows_fire(u: Unit) -> bool:
 
 
 ## ¿Recibió un disparo en los últimos ROE_RETURN_FIRE_SECONDS?
+## ¿Le tiraron en los últimos seconds segundos?
+func fired_upon_within(u: Unit, seconds: float) -> bool:
+	return float(total_ticks - u.last_fired_upon_tick) * Config.TICK < seconds
+
+
 func fired_upon_recently(u: Unit) -> bool:
 	return float(total_ticks - u.last_fired_upon_tick) * Config.TICK < Config.ROE_RETURN_FIRE_SECONDS
 

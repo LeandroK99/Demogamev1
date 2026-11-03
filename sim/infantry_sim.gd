@@ -17,7 +17,8 @@ static func soldier_key(unit_id: int, index: int) -> int:
 ## ¿Algún soldado de la escuadra quedó lejos de su lugar? Entonces el ancla lo espera.
 func lagging(u: Unit) -> bool:
 	for s: Soldier in u.soldiers:
-		if s.is_ok() and s.suppression < Config.PINNED and s.pos.distance_to(u.slot_pos_m(s.index)) > Config.SOLDIER_LAG_M:
+		if s.is_ok() and s.suppression < Config.PINNED and not s.hold_pos \
+				and s.pos.distance_to(u.slot_pos_m(s.index)) > Config.SOLDIER_LAG_M:
 			return true
 	return false
 
@@ -32,17 +33,24 @@ func move_soldiers(w: SimWorld) -> void:
 		var speed: float = w.speed_at(u.cell(), Unit.Kind.INFANTRY) * SimWorld.pace_speed_factor(SimWorld.effective_pace(u))
 		var step_m: float = speed * Config.SOLDIER_CATCHUP * Config.TICK
 		for s: Soldier in u.soldiers:
-			if not s.is_ok() or s.suppression >= Config.PINNED:
-				s.moving = false # herido o clavado: se queda donde está
+			if s.drag_target >= 0 and s.is_ok() and s.suppression < Config.PINNED:
+				_drag(w, u, s, speed)
 				continue
-			var target: Vector2 = s.cover_pos if s.has_cover and not u.moving else u.slot_pos_m(s.index)
+			if not s.is_ok() or s.suppression >= Config.PINNED or s.dive_until > w.total_ticks or s.hold_pos:
+				s.moving = false # herido, clavado, recién tirado al suelo o base de fuego: se queda donde está
+				continue
+			var target: Vector2 = u.slot_pos_m(s.index)
+			if s.care_target >= 0:
+				target = u.soldiers[s.care_target].pos # va a atender al herido
+			elif s.has_cover and not u.moving:
+				target = s.fire_pos if s.peeking else s.cover_pos
 			target = Vector2(clampf(target.x, 0.0, limit), clampf(target.y, 0.0, limit))
 			var d: Vector2 = target - s.pos
 			var dist: float = d.length()
 			if dist > Config.SOLDIER_TELEPORT_M:
 				s.pos = target # la escuadra fue reubicada (escenarios y tests): los soldados van con ella
 				continue
-			if dist <= Config.SOLDIER_ARRIVE_M:
+			if dist <= Config.SOLDIER_ARRIVE_M or (s.care_target >= 0 and dist <= Config.CARE_REACH_M * 0.8):
 				s.moving = false
 				if not u.moving:
 					s.heading = u.heading
@@ -50,6 +58,50 @@ func move_soldiers(w: SimWorld) -> void:
 			s.moving = true
 			s.heading = d / dist
 			s.pos += d / dist * minf(step_m, dist)
+
+
+## Rescate: el rescatista va hasta el herido y lo arrastra a DRAG_SPEED hasta drag_dest.
+func _drag(_w: SimWorld, u: Unit, s: Soldier, speed: float) -> void:
+	var t: Soldier = u.soldiers[s.drag_target]
+	var to_w: Vector2 = t.pos - s.pos
+	if to_w.length() > Config.CARE_REACH_M:
+		s.moving = true
+		s.heading = to_w.normalized()
+		s.pos += to_w.normalized() * minf(speed * Config.SOLDIER_CATCHUP * Config.TICK, to_w.length())
+		return
+	var d: Vector2 = s.drag_dest - t.pos
+	if d.length() <= Config.SOLDIER_ARRIVE_M:
+		t.dragged = false
+		s.drag_target = -1 # llegó: ahora lo atienden
+		s.moving = false
+		return
+	t.dragged = true
+	s.moving = true
+	var step: Vector2 = d.normalized() * minf(Config.DRAG_SPEED * Config.TICK, d.length())
+	t.pos += step
+	s.pos = t.pos - d.normalized() * 0.6
+	s.heading = -d.normalized() # tira de él caminando hacia atrás
+
+
+## Evacuación: el herido y su camillero van hacia el borde propio; a los EVAC_SECONDS salen del campo.
+func update_evac(w: SimWorld) -> void:
+	var limit: float = float(w.height_field.size - 1) * Config.CELL_SIZE
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		var back: Vector2 = Vector2(0.0, 1.0) if u.side == 0 else Vector2(0.0, -1.0)
+		for s: Soldier in u.soldiers:
+			if s.state != Soldier.State.EVACUATING:
+				continue
+			s.pos += back * Config.EVAC_SPEED * Config.TICK
+			s.pos = Vector2(clampf(s.pos.x, 0.0, limit), clampf(s.pos.y, 0.0, limit))
+			s.heading = back
+			s.evac_left -= Config.TICK
+			if s.evac_left <= 0.0:
+				s.state = Soldier.State.EVACUATED
+				if s.evac_wounded:
+					u.morale = minf(100.0, u.morale + Config.MORALE_EVAC) # el herido quedó en buenas manos
+					w.radio(u, "soldado %d evacuado" % (s.index + 1))
 
 
 ## Soldado en condiciones al azar (para un impacto en la escuadra sin soldado elegido). null si no hay.
@@ -64,15 +116,111 @@ func random_ok(w: SimWorld, u: Unit) -> Soldier:
 ## Un impacto en un soldado: herido (SOLDIER_WOUND_P) o muerto; un herido que recibe otro, muere.
 ## Actualiza los hombres de la escuadra (hp = soldiers en condiciones).
 func hit_soldier(w: SimWorld, u: Unit, s: Soldier) -> void:
-	if s.state == Soldier.State.DEAD:
+	if s.state == Soldier.State.DEAD or s.state == Soldier.State.EVACUATED:
 		return
 	if s.state == Soldier.State.OK and w.rng.randf() < Config.SOLDIER_WOUND_P:
 		s.state = Soldier.State.WOUNDED
+		s.stabilized = false
+		# Azar del sistema médico aparte del de combate (no cambia los dados de los tiros)
+		s.bleed_left = w.mind_rng.randf_range(Config.BLEED_MIN_SECONDS, Config.BLEED_MAX_SECONDS)
 	else:
 		s.state = Soldier.State.DEAD
 	s.posture = Soldier.Posture.PRONE
 	s.moving = false
 	u.hp = u.ok_count()
+
+
+## --- Heridos ---
+
+## Cada tick: los heridos sin estabilizar se desangran (y a la escuadra se le va la moral); al
+## llegar a cero, mueren.
+func update_wounded(w: SimWorld) -> void:
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		for s: Soldier in u.soldiers:
+			if not s.is_bleeding():
+				continue
+			s.bleed_left -= Config.TICK
+			w._lose_morale(u, Config.MORALE_BLEEDING_DRAIN * Config.TICK)
+			if s.bleed_left <= 0.0:
+				s.state = Soldier.State.DEAD
+				w._lose_morale(u, Config.MORALE_BLED_OUT)
+				w.radio(u, "perdimos al soldado %d, se desangró" % (s.index + 1))
+
+
+## Escuadras detenidas: el médico (o, sin médico, el fusilero más cercano) va al herido que se
+## desangra más rápido y lo estabiliza en MEDIC_STABILIZE_SECONDS (BUDDY_STABILIZE_SECONDS). Uno por
+## vez. En marcha o clavado, lo deja.
+func update_care(w: SimWorld) -> void:
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		var carer: Soldier = null
+		for s: Soldier in u.soldiers:
+			if s.care_target >= 0:
+				carer = s
+		if u.moving:
+			if carer != null:
+				_stop_care(carer)
+			continue
+		if carer != null:
+			var t: Soldier = u.soldiers[carer.care_target]
+			if not carer.is_ok() or carer.suppression >= Config.PINNED or not t.is_bleeding():
+				_stop_care(carer)
+				carer = null
+			else:
+				_care(w, u, carer, t)
+				continue
+		var target: Soldier = _worst_wounded(u)
+		if target == null:
+			continue
+		carer = caregiver(u, target)
+		if carer != null:
+			carer.care_target = target.index
+			carer.care_time = 0.0
+
+
+func _care(w: SimWorld, u: Unit, carer: Soldier, t: Soldier) -> void:
+	if carer.pos.distance_to(t.pos) > Config.CARE_REACH_M:
+		return # todavía va para allá
+	carer.care_time += Config.TICK
+	var need: float = Config.MEDIC_STABILIZE_SECONDS if carer.role == Soldier.Role.MEDIC else Config.BUDDY_STABILIZE_SECONDS
+	if carer.care_time >= need:
+		t.stabilized = true
+		_stop_care(carer)
+		w.radio(u, "soldado %d estabilizado" % (t.index + 1))
+
+
+static func _stop_care(s: Soldier) -> void:
+	s.care_target = -1
+	s.care_time = 0.0
+
+
+## El herido que se desangra más rápido (null si no hay).
+static func _worst_wounded(u: Unit) -> Soldier:
+	var best: Soldier = null
+	for s: Soldier in u.soldiers:
+		if s.is_bleeding() and not s.dragged and (best == null or s.bleed_left < best.bleed_left):
+			best = s
+	return best
+
+
+## Quién lo atiende: el médico si está entero y no clavado; si no, el fusilero o proveedor más cercano.
+static func caregiver(u: Unit, t: Soldier) -> Soldier:
+	var best: Soldier = null
+	var best_d: float = INF
+	for s: Soldier in u.soldiers:
+		if not s.is_ok() or s.suppression >= Config.PINNED or s.drag_target >= 0:
+			continue
+		if s.role == Soldier.Role.MEDIC:
+			return s
+		if s.role in [Soldier.Role.RIFLE, Soldier.Role.ASSISTANT]:
+			var d: float = s.pos.distance_to(t.pos)
+			if d < best_d:
+				best = s
+				best_d = d
+	return best
 
 
 ## --- Cobertura ---
@@ -85,6 +233,11 @@ static func ground_offset(w: SimWorld, p: Vector2) -> float:
 ## Punto (en metros) contra el que se cubre la escuadra: el centro de las amenazas conocidas
 ## o, si no hay, uno adelante en su rumbo.
 func threat_point(w: SimWorld, u: Unit) -> Vector2:
+	if u.mind != null and not u.mind.contacts.is_empty():
+		var acc: Vector2 = Vector2.ZERO
+		for id: int in u.mind.contacts:
+			acc += u.mind.contacts[id]["pos"]
+		return acc / float(u.mind.contacts.size()) # lo que sabe la propia escuadra
 	var threats: Array[Vector2i] = w.threats_for(u.side)
 	if threats.is_empty():
 		return u.pos_m() + u.heading * Config.SOLDIER_NO_THREAT_M
@@ -151,7 +304,7 @@ static func _blocks_eye(w: SimWorld, p: Vector2, eye_h: float, threat: Vector2) 
 ## taken: puntos ya elegidos por la escuadra (se respeta SOLDIER_COVER_SPACING).
 func choose_cover(w: SimWorld, u: Unit, s: Soldier, threat: Vector2, taken: Array[Vector2]) -> void:
 	var center: Vector2 = u.slot_pos_m(s.index)
-	var r: float = Config.SOLDIER_COVER_SEARCH_M
+	var r: float = u.mind.cover_m if u.mind != null else Config.SOLDIER_COVER_SEARCH_M
 	var w_fire: float = Config.SOLDIER_COVER_W_FIRE_MG if s.role == Soldier.Role.MG else Config.SOLDIER_COVER_W_FIRE
 	var c0: Vector2i = MicroCover.cell_of(center)
 	var ri: int = ceili(r / MicroCover.MICRO_M)
@@ -213,6 +366,56 @@ func choose_cover(w: SimWorld, u: Unit, s: Soldier, threat: Vector2, taken: Arra
 	s.cover_posture = best["posture"]
 	s.cover_threat = threat
 	taken.append(s.cover_pos)
+	_choose_fire_pos(w, s, threat, cands)
+
+
+## Reflejo "asomar y tirar": si desde su cobertura no tiene tiro, busca cerca (a REFLEX_PEEK_RADIUS_M)
+## un punto desde el que sí lo tenga; ahí se asoma por turnos (ver update_peeks).
+func _choose_fire_pos(w: SimWorld, s: Soldier, threat: Vector2, cands: Array[Dictionary]) -> void:
+	s.has_fire_pos = false
+	s.peeking = false
+	if s.can_fire:
+		return
+	var near: Array[Dictionary] = []
+	for ev: Dictionary in cands:
+		var p: Vector2 = ev["pos"]
+		if bool(ev["fire"]) and p.distance_to(s.cover_pos) <= Config.REFLEX_PEEK_RADIUS_M:
+			near.append(ev)
+	near.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return (a["pos"] as Vector2).distance_to(s.cover_pos) < (b["pos"] as Vector2).distance_to(s.cover_pos))
+	for k: int in mini(near.size(), Config.REFLEX_PEEK_LOS_CHECKS):
+		var p: Vector2 = near[k]["pos"]
+		var post: int = near[k]["posture"]
+		var eye: float = Config.SOLDIER_EYE_CROUCH if post == Soldier.Posture.CROUCH else Config.SOLDIER_EYE_PRONE
+		if w.analysis.los_m(p, eye + ground_offset(w, p), threat, 1.0):
+			s.has_fire_pos = true
+			s.fire_pos = p
+			s.fire_posture = post
+			s.peek_tick = w.total_ticks + roundi(Config.REFLEX_PEEK_HIDE_SECONDS / Config.TICK * 0.5) + s.index * 3
+			return
+
+
+## Los que tienen desde dónde asomar se turnan: un rato asomados tirando, otro a cubierto. Si la
+## escuadra no conoce amenazas, o el soldado está suprimido, se queda a cubierto.
+func update_peeks(w: SimWorld) -> void:
+	var now: int = w.total_ticks
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		var threats: bool = not w.threats_for(u.side).is_empty() if not u.moving else false
+		for s: Soldier in u.soldiers:
+			if not s.peeking and not s.has_fire_pos:
+				continue
+			if not s.is_ok() or not s.has_cover or not s.has_fire_pos or u.moving or not threats \
+					or s.suppression >= Config.SUPPRESSED:
+				if s.peeking:
+					s.peeking = false
+					s.peek_tick = now + roundi(Config.REFLEX_PEEK_HIDE_SECONDS / Config.TICK)
+				continue
+			if now >= s.peek_tick:
+				s.peeking = not s.peeking
+				var secs: float = Config.REFLEX_PEEK_FIRE_SECONDS if s.peeking else Config.REFLEX_PEEK_HIDE_SECONDS
+				s.peek_tick = now + roundi(secs / Config.TICK)
 
 
 static func _spaced(p: Vector2, taken: Array[Vector2]) -> bool:
@@ -240,6 +443,8 @@ func update_cover(w: SimWorld) -> void:
 				continue
 			if s.has_cover and _threat_moved(u, s, threat):
 				s.has_cover = false
+			if s.has_cover and _cover_flanked(w, s):
+				s.has_cover = false # cubierta inválida: le tiran desde donde no lo protege
 			if s.has_cover:
 				taken.append(s.cover_pos)
 			else:
@@ -248,7 +453,25 @@ func update_cover(w: SimWorld) -> void:
 			continue
 		pending.sort_custom(func(a: Soldier, b: Soldier) -> bool: return _cover_priority(a) < _cover_priority(b))
 		for s: Soldier in pending:
-			choose_cover(w, u, s, threat, taken)
+			choose_cover(w, u, s, _incoming_threat(w, s, threat), taken)
+
+
+## ¿Le tiraron hace poco desde una dirección muy distinta a la de su cobertura, y ahí no lo protege?
+func _cover_flanked(w: SimWorld, s: Soldier) -> bool:
+	if float(w.total_ticks - s.incoming_tick) * Config.TICK > Config.REFLEX_INCOMING_SECONDS:
+		return false
+	var a: Vector2 = s.cover_threat - s.pos
+	var b: Vector2 = s.incoming_from - s.pos
+	if a.length() < 0.01 or b.length() < 0.01 or absf(a.angle_to(b)) <= deg_to_rad(Config.SOLDIER_COVER_REEVAL_DEG):
+		return false
+	return not is_protected_from(w, s, s.incoming_from)
+
+
+## Contra qué se cubre un soldado: de donde le vienen tirando, si fue hace poco; si no, la amenaza de la escuadra.
+static func _incoming_threat(w: SimWorld, s: Soldier, threat: Vector2) -> Vector2:
+	if float(w.total_ticks - s.incoming_tick) * Config.TICK <= Config.REFLEX_INCOMING_SECONDS:
+		return s.incoming_from
+	return threat
 
 
 static func _cover_priority(s: Soldier) -> int:
@@ -282,8 +505,12 @@ func update_postures(w: SimWorld) -> void:
 				s.posture = Soldier.Posture.PRONE
 			elif s.moving:
 				s.posture = Soldier.Posture.CROUCH if cautious else Soldier.Posture.STAND
+			elif s.care_target >= 0 and not s.moving:
+				s.posture = Soldier.Posture.CROUCH # agachado sobre el herido
+			elif s.dive_until > w.total_ticks:
+				s.posture = Soldier.Posture.PRONE # se tiró al suelo
 			elif s.has_cover:
-				s.posture = s.cover_posture
+				s.posture = s.fire_posture if s.peeking else s.cover_posture
 			else:
 				s.posture = Soldier.Posture.PRONE if u.prone else Soldier.Posture.CROUCH
 
@@ -333,7 +560,7 @@ static func soldier_spot_range(w: SimWorld, u: Unit, s: Soldier) -> float:
 	if (s.moving or u.moving) and SimWorld.effective_pace(u) != Unit.Pace.CAUTIOUS and s.posture != Soldier.Posture.PRONE:
 		return Config.INF_SPOT_MOVING
 	var f: float = 1.0 - w.cover_at(Vector2i((s.pos / Config.CELL_SIZE).round())) * Config.COVER_SPOT_FACTOR
-	if s.protected and not s.moving:
+	if s.protected and not s.moving and not s.peeking:
 		f *= Config.SOLDIER_PROTECTED_SPOT_FACTOR
 	var base: float = Config.INF_SPOT_PRONE if s.posture == Soldier.Posture.PRONE else Config.INF_SPOT_STILL
 	return base * f
@@ -428,8 +655,8 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 		return
 	var area: bool = u.order == Unit.Order.SUPPRESS
 	for s: Soldier in u.soldiers:
-		if not s.is_ok() or s.reload_left > 0.0 or s.suppression >= Config.PINNED:
-			continue
+		if not s.is_ok() or s.reload_left > 0.0 or s.suppression >= Config.PINNED or s.care_target >= 0:
+			continue # el que atiende a un herido no tira
 		if s.role == Soldier.Role.AT and not area and u.at_charges > 0 and u.reload2_left <= 0.0:
 			var tank: Unit = _pick_tank(w, u, s)
 			if tank != null:
@@ -444,6 +671,10 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), SimWorld.weapon_range(wpn), s.index)
 		if not t.is_empty():
 			_shoot(w, u, s.pos, eye_of(w, s), s, t["unit"], t["soldier"], wpn)
+		elif s.suppress_m.x >= 0.0:
+			var cell: Vector2i = Vector2i((s.suppress_m / Config.CELL_SIZE).round())
+			if w.can_suppress_at(u, cell):
+				_area_shot(w, u, s, wpn, cell) # base de fuego: bate el contacto aunque no lo vea
 
 
 ## Coaxial de un tanque: ráfaga al soldado enemigo visible más cercano que ve desde su óptica.
@@ -551,6 +782,7 @@ func _shoot(w: SimWorld, su: Unit, from: Vector2, eye: float, s: Soldier, tu: Un
 	su.overwatch_ready = false
 	# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
 	w.known_enemies[tu.side][su.id] = {"cell": su.cell(), "last_seen_turn": w.turn}
+	w.minds.flash(w, tu, su, from)
 	tu.shots_received += 1
 	tu.last_fired_upon_tick = w.total_ticks
 	var hit: bool = false
@@ -574,7 +806,7 @@ func _burst(w: SimWorld, su: Unit, moving: bool, from: Vector2, eye: float, side
 		if not tu.alive or tu.side != side or not tu.is_infantry() or tu.pos_m().distance_to(at) > Config.SOLDIER_LAG_M * 4.0:
 			continue
 		for t: Soldier in tu.soldiers:
-			if t.state == Soldier.State.DEAD or t.pos.distance_to(at) > Config.SOLDIER_BURST_M:
+			if t.state == Soldier.State.DEAD or t.state == Soldier.State.EVACUATED or t.pos.distance_to(at) > Config.SOLDIER_BURST_M:
 				continue
 			if w.rng.randf() < soldier_hit_p(w, su, moving, from, eye, tu, t, wpn, false, ss) * factor:
 				w.damage_soldier(tu, t)
@@ -584,23 +816,26 @@ func _burst(w: SimWorld, su: Unit, moving: bool, from: Vector2, eye: float, side
 
 ## Orden SUPPRESS: cada tiro (o ráfaga) cae en un punto al azar de la zona; suprime a las escuadras
 ## enemigas de la zona y casi no mata.
-func _area_shot(w: SimWorld, u: Unit, s: Soldier, wpn: int) -> void:
-	if not w.can_suppress_at(u, u.suppress_cell):
+func _area_shot(w: SimWorld, u: Unit, s: Soldier, wpn: int, cell: Vector2i = Vector2i(-1, -1)) -> void:
+	if cell.x < 0:
+		cell = u.suppress_cell
+	if not w.can_suppress_at(u, cell):
 		return
 	s.reload_left = (Config.SOLDIER_RIFLE_RELOAD if wpn == Unit.Weapon.RIFLES else SimWorld.weapon_reload(wpn)) * w.rng.randf_range(0.75, 1.25)
 	s.last_fire_tick = w.total_ticks
 	u.last_fire_tick = w.total_ticks
 	var r: float = Config.SUPPRESS_AREA_RADIUS * Config.CELL_SIZE
-	var center: Vector2 = Vector2(u.suppress_cell) * Config.CELL_SIZE
+	var center: Vector2 = Vector2(cell) * Config.CELL_SIZE
 	var at: Vector2 = center + Vector2(w.rng.randf_range(-r, r), w.rng.randf_range(-r, r))
 	var eye: float = eye_of(w, s)
 	for tu: Unit in w.units:
 		if not tu.alive or tu.side == u.side or tu.pos_m().distance_to(center) > r + Config.SOLDIER_LAG_M:
 			continue
 		w.known_enemies[tu.side][u.id] = {"cell": u.cell(), "last_seen_turn": w.turn}
+		w.minds.flash(w, tu, u, s.pos)
 		w._add_suppression(tu, SimWorld.weapon_suppression(wpn) * Config.SUPPRESS_AREA_SUPP * Config.SOLDIER_SHOT_SUPP_SCALE)
 	_burst(w, u, s.moving, s.pos, eye, 1 - u.side, at, wpn, Config.SUPPRESS_AREA_HIT_FACTOR, s)
-	w.shot_events.append({"shooter": u.id, "target": -1, "cell": u.suppress_cell, "hit": false,
+	w.shot_events.append({"shooter": u.id, "target": -1, "cell": cell, "hit": false,
 		"aspect": SimWorld.Aspect.FRONT, "weapon": wpn, "from_m": s.pos, "from_h": eye, "to_m": at, "to_h": 0.5})
 
 
@@ -666,9 +901,14 @@ func suppress_at(w: SimWorld, side: int, at: Vector2, from: Vector2, wpn: int, h
 			if d > Config.SOLDIER_SUPP_NEAR_M:
 				continue
 			var a: float = amount if d < 0.5 else amount * 0.5
-			if is_protected_from(w, t, from):
+			var prot: bool = is_protected_from(w, t, from)
+			if prot:
 				a *= Config.SOLDIER_SUPP_COVER_FACTOR
 			add_soldier_suppression(w, t, a)
+			t.incoming_from = from
+			t.incoming_tick = w.total_ticks
+			if tu.moving and not prot and a >= Config.REFLEX_DIVE_SUPP:
+				t.dive_until = w.total_ticks + roundi(Config.REFLEX_DIVE_SECONDS / Config.TICK) # ¡al suelo!
 			touched = true
 		if touched:
 			tu.last_suppressed_tick = w.total_ticks

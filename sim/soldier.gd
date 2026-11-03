@@ -4,9 +4,10 @@ extends RefCounted
 ## el soldado tiene su posición en metros, su postura, su estado y su supresión.
 
 enum Posture { STAND, CROUCH, PRONE }
-enum State { OK, WOUNDED, DEAD }
-## Jefe, fusilero, ametralladorista, proveedor y tirador antitanque.
-enum Role { LEADER, RIFLE, MG, ASSISTANT, AT }
+## Evacuando: herido (o camillero) que va hacia atrás; evacuado: fuera del campo.
+enum State { OK, WOUNDED, DEAD, EVACUATING, EVACUATED }
+## Jefe, fusilero, ametralladorista, proveedor, tirador antitanque y médico (reemplaza a un fusilero).
+enum Role { LEADER, RIFLE, MG, ASSISTANT, AT, MEDIC }
 
 var index: int = 0 # dentro de la escuadra (0 = jefe)
 var role: int = Role.RIFLE
@@ -25,16 +26,50 @@ var suppression: float = 0.0 # 0..100
 var last_suppressed_tick: int = -1000000
 var reload_left: float = 0.0
 var last_fire_tick: int = -1000000
+## Reflejos (fase 37)
+var incoming_from: Vector2 = Vector2.ZERO # de dónde vino el último tiro que le cayó cerca (metros)
+var incoming_tick: int = -1000000
+var dive_until: int = -1000000 # se tiró al suelo bajo fuego en marcha: quieto hasta este tick
+var has_fire_pos: bool = false # su cobertura no tiene tiro: punto cercano desde el que asoma
+var fire_pos: Vector2 = Vector2.ZERO
+var fire_posture: int = Posture.PRONE
+var peeking: bool = false # está asomado en fire_pos
+var peek_tick: int = 0 # tick en que cambia entre asomarse y volver a cubierto
+## Equipos de fuego (fase 41): 0 = A (base de fuego: ametralladora y 2, 4, 6), 1 = B (maniobra: jefe, AT, 5, 7, 8).
+var team: int = 0
+var hold_pos: bool = false # se queda donde está (base de fuego mientras el otro equipo avanza)
+var suppress_m: Vector2 = Vector2(-1.0, -1.0) # sin blanco a la vista, bate este punto (negativo = nada)
+## Sistema médico (fases 45–47)
+var bleed_left: float = 0.0 # herido sin estabilizar: segundos hasta morir desangrado
+var stabilized: bool = false # herido estabilizado: ya no se desangra
+var care_target: int = -1 # índice del herido de su escuadra que está atendiendo (-1 = ninguno)
+var care_time: float = 0.0 # segundos que lleva atendiéndolo
+var drag_target: int = -1 # rescate: índice del herido que va a buscar y arrastrar a cubierto
+var drag_dest: Vector2 = Vector2.ZERO # adónde lo arrastra
+var dragged: bool = false # herido al que están arrastrando
+var evac_left: float = 0.0 # evacuando: segundos hasta salir del campo
+var evac_wounded: bool = false # evacuando: es el herido (si no, el camillero)
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
 	index = p_index
 	role = p_role
 	pos = p_pos
+	team = team_of(p_index)
+
+
+## Equipo de fuego del soldado i.
+static func team_of(i: int) -> int:
+	return 0 if i in [1, 2, 4, 6] else 1
 
 
 func is_ok() -> bool:
 	return state == State.OK
+
+
+## Herido que se está desangrando.
+func is_bleeding() -> bool:
+	return state == State.WOUNDED and not stabilized
 
 
 ## Altura del ojo sobre el terreno según la postura.
@@ -78,4 +113,6 @@ static func role_for(i: int) -> int:
 			return Role.ASSISTANT
 		3:
 			return Role.AT
+		Config.MEDIC_INDEX:
+			return Role.MEDIC
 	return Role.RIFLE

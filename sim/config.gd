@@ -117,6 +117,17 @@ const AI_INF_AMBUSH_RANGE: float = 150.0 # metros: la escuadra roja no abre fueg
 const AI_INF_POSITION_RADIUS: int = 6 # celdas para buscar cobertura alrededor de la escuadra
 const AI_INF_W_COVER: float = 3.0 # puntaje de la cobertura al elegir posición
 const AI_INF_W_VIEW: float = 2.0 # puntaje de ver hacia adelante (o a las amenazas)
+const AI_DEPTH_FORWARD: Vector2i = Vector2i(-6, 0) # defensa en profundidad de la loma: celdas desde el objetivo
+const AI_DEPTH_MAIN: Vector2i = Vector2i(6, -5) # (x al costado; y hacia atrás, del lado rojo)...
+const AI_DEPTH_RESERVE: Vector2i = Vector2i(0, -12)
+const AI_DEPTH_ANCHOR_SLACK: int = 3 # más lejos que esto de su lugar, la escuadra vuelve
+const AI_MONITOR_TICKS: int = 20 # durante la ejecución, el comandante rojo mira la situación cada 2 s
+const AI_PRESSED_SECONDS: float = 10.0 # adelantada frenada este tiempo (o diezmada): se repliega
+const AI_PRESSED_ENEMY_M: float = 50.0 # ... o con un enemigo a menos de esto
+const AI_REINFORCE_FIRED_SECONDS: float = 10.0 # una escuadra a la que le tiraron hace menos pide refuerzo
+const AI_FRESH_MEN: int = 5 # una escuadra con al menos estos hombres y poca supresión está fresca
+const AI_COUNTER_RADIUS: float = 12.0 # celdas: azules a esta distancia del objetivo cuentan para el contraataque
+const AI_COUNTER_FROM: float = 25.0 # celdas: la escuadra que contraataca está a menos de esto del objetivo
 const AI_INF_SUPPRESS_MAX: float = 30.0 # suprime una zona solo si su propia supresión es menor
 
 # --- Microcobertura (1 m) ---
@@ -193,6 +204,95 @@ const SOLDIER_SUPP_COVER_FACTOR: float = 0.6 # protegido, recibe esta fracción
 const SOLDIER_SUPP_HALT: float = 0.5 # con más de esta fracción de soldados suprimidos, la escuadra no avanza
 const MORALE_LEADER_LOSS: float = 10.0 # baja extra de moral si cae el jefe
 const SUPP_MG: float = 25.0 # supresión de una ráfaga de ametralladora
+
+# --- Autonomía de las escuadras ---
+const MIND_THINK_TICKS: int = 10 # ticks entre decisiones de una escuadra (jefe regular)
+const MIND_SWITCH_MARGIN: float = 0.5 # una opción nueva tiene que superar a la actual por esto
+const MIND_MIN_TICKS: int = 100 # una decisión propia dura al menos esto (10 s) salvo que deje de valer
+const MIND_FOLLOW_SCORE: float = 1.0 # puntaje de seguir la orden del jugador
+const MIND_AUTONOMY_BLUE: int = 1 # SquadMind.Autonomy.NORMAL
+const MIND_AUTONOMY_RED: int = 2 # SquadMind.Autonomy.HIGH
+const RADIO_LOG_MAX: int = 40 # mensajes de radio que se guardan
+const MIND_THINK_TICKS_VETERAN: int = 5 # un jefe veterano piensa cada medio segundo...
+const MIND_THINK_TICKS_GREEN: int = 20 # ... uno novato, cada dos
+const MIND_NOISE_VETERAN: float = 0.0 # error al puntuar las opciones (± esto)
+const MIND_NOISE_REGULAR: float = 0.1
+const MIND_NOISE_GREEN: float = 0.25
+const MIND_LOMA_QUALITY: Array[int] = [1, 0, 2] # calidad de las escuadras de la loma: regular, veterano, novato
+const LEADERLESS_MIN_SECONDS: float = 20.0 # cae el jefe: la escuadra queda desorganizada entre esto...
+const LEADERLESS_MAX_SECONDS: float = 30.0 # ... y esto, y después el segundo toma el mando
+const DRILL_SCORE: float = 3.0 # puntaje del drill de contacto
+const DRILL_FIRED_SECONDS: float = 3.0 # le tiraron hace menos que esto: contacto
+const DRILL_SPOT_M: float = 200.0 # ve a un enemigo nuevo a menos que esto: contacto
+const DRILL_COVER_M: float = 4.0 # en el drill, cada uno busca cobertura a esta distancia de su lugar
+const DRILL_CALM_SUPP: float = 25.0 # retoma la marcha con la supresión media por debajo de esto...
+const DRILL_CALM_SECONDS: float = 5.0 # ... durante este tiempo
+const RELOCATE_SCORE: float = 2.5 # puntaje base de reubicarse (más la fracción al descubierto)
+const RELOCATE_FIRED_SECONDS: float = 5.0 # solo si le tiraron hace menos que esto
+const RELOCATE_EXPOSED: float = 0.5 # fracción de soldados al descubierto desde la que se reubica
+const RELOCATE_RADIUS: int = 5 # celdas (20 m) para buscar una posición mejor
+const RELOCATE_W_DEFILADE: float = 3.0 # el terreno la tapa de la amenaza
+const RELOCATE_W_COVER: float = 2.0 # cobertura de la celda (bosque, muro, pozo)
+const RELOCATE_W_MICRO: float = 1.0 # hay microcobertura cerca
+const RELOCATE_MIN_GAIN: float = 1.0 # la nueva celda tiene que ser al menos esto mejor que la actual
+const AMBUSH_SCORE: float = 2.0
+const AMBUSH_FIRE_M: float = 100.0 # en emboscada retiene el fuego hasta que el enemigo esté a esto
+const AMBUSH_WATCH_M: float = 300.0 # contactos a menos de esto la ponen en emboscada
+const AMBUSH_QUIET_SECONDS: float = 30.0 # solo si no tiró ni le tiraron en este tiempo
+const BREAK_SCORE: float = 4.0 # romper el contacto
+const BREAK_MEN: int = 4 # con estos hombres o menos (o la moral baja) rompe el contacto
+const BREAK_MORALE: float = 40.0
+const BREAK_HALTED_SECONDS: float = 20.0 # o si lleva esto frenada por la supresión
+const BREAK_CALM_SECONDS: float = 10.0 # ya replegada, sin fuego este tiempo, deja de romper el contacto
+const BOUND_SCORE: float = 2.0 # avanzar por saltos de equipo
+const BOUND_CONTACT_M: float = 250.0 # con un contacto a menos de esto, avanza por saltos
+const BOUND_M: float = 25.0 # largo de cada salto del equipo que maniobra
+const FLANK_SCORE: float = 2.2
+const FLANK_BASE_M: float = 200.0 # otra escuadra propia tirando a menos de esto del contacto hace de base de fuego
+const FLANK_BASE_FIRED_SECONDS: float = 5.0 # ... si tiró hace menos que esto
+const FLANK_QUIET_SECONDS: float = 10.0 # flanquea solo si a ella no le tiraron en este tiempo
+const FLANK_MAX_M: float = 300.0 # contactos más lejos que esto no los flanquea
+const FLANK_OFFSET_M: float = 60.0 # el punto de flanqueo, a esto del contacto, de costado
+
+# --- Conocimiento de cada escuadra y radio ---
+const CONTACT_OWN_M: float = 150.0 # lo que la escuadra ve a menos de esto lo sabe en el acto y exacto
+const CONTACT_FLASH_ERROR: float = 0.1 # el fogonazo de un tirador que no ve: error de esta fracción de la distancia
+const CONTACT_FORGET_SECONDS: float = 60.0 # un contacto sin noticias nuevas se olvida
+const RADIO_DELAY_MIN: float = 3.0 # segundos que tarda un contacto en llegar por radio a otra escuadra
+const RADIO_DELAY_MAX: float = 5.0
+const RADIO_REPORT_SECONDS: float = 30.0 # un bando no vuelve a anunciar el mismo contacto antes de esto
+
+# --- Sistema médico ---
+const BLEED_MIN_SECONDS: float = 90.0 # un herido sin atender se desangra entre esto...
+const BLEED_MAX_SECONDS: float = 240.0 # ... y esto
+const MORALE_BLEEDING_DRAIN: float = 0.1 # por segundo y por herido que se desangra (la escuadra lo oye)
+const MORALE_BLED_OUT: float = 5.0 # baja de moral cuando uno se muere desangrado
+const MEDIC_INDEX: int = 8 # el soldado 9 es el médico (en lugar de un fusilero)
+const MEDIC_STABILIZE_SECONDS: float = 15.0 # lo que tarda el médico en estabilizar a un herido...
+const BUDDY_STABILIZE_SECONDS: float = 40.0 # ... y un compañero sin entrenamiento
+const CARE_REACH_M: float = 1.0 # a esta distancia del herido ya lo puede atender
+const RESCUE_SCORE: float = 3.5 # rescatar a un herido al descubierto
+const RESCUE_FIRED_SECONDS: float = 10.0 # solo bajo fuego reciente (si no, alcanza con atenderlo)
+const RESCUE_SEARCH_M: float = 10.0 # busca adónde arrastrarlo a esta distancia
+const DRAG_SPEED: float = 0.6 # m/s arrastrando a un herido
+const EVAC_SPEED: float = 0.8 # m/s del herido y el camillero hacia atrás
+const EVAC_SECONDS: float = 60.0 # a los que evacúan les toma esto salir del campo
+const MORALE_EVAC: float = 5.0 # la escuadra recupera moral por cada herido evacuado
+
+# --- Reflejos del soldado ---
+const REFLEX_DIVE_SUPP: float = 8.0 # un tiro que le suma esto en marcha y al descubierto lo tira al suelo
+const REFLEX_DIVE_SECONDS: float = 2.0 # ... por este tiempo
+const REFLEX_INCOMING_SECONDS: float = 4.0 # un tiro recibido cuenta para revisar la cobertura este tiempo
+const REFLEX_PEEK_RADIUS_M: float = 3.0 # busca desde dónde asomar a esta distancia de su cobertura
+const REFLEX_PEEK_LOS_CHECKS: int = 3 # líneas de visión para encontrar ese punto
+const REFLEX_PEEK_FIRE_SECONDS: float = 5.0 # asomado tirando
+const REFLEX_PEEK_HIDE_SECONDS: float = 6.0 # de vuelta a cubierto
+const INF_SMOKE_CHARGES: int = 2 # granadas de humo de mano por escuadra
+const INF_SMOKE_SUPPRESSED_SECONDS: float = 15.0 # frenada por la supresión este tiempo, tira humo
+const INF_SMOKE_DIST_M: float = 15.0 # metros hacia la amenaza donde cae la granada
+const INF_SMOKE_RADIUS: float = 2.0 # celdas
+const INF_SMOKE_HEIGHT: float = 4.0 # metros sobre el terreno
+const INF_SMOKE_SECONDS: float = 40.0 # lo que dura la nube de mano
 
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex

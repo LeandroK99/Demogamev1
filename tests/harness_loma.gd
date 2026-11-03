@@ -1,0 +1,56 @@
+extends SceneTree
+## Banco IA contra IA en La loma (no es un test): el azul avanza hacia la cresta con autonomía alta
+## y el rojo defiende con su comandante. Imprime ganador, bajas y decisiones por semilla y el total.
+## godot --headless --path . --script res://tests/harness_loma.gd -- [semillas] [turnos]
+func _initialize() -> void:
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	var seeds: int = int(args[0]) if args.size() > 0 else 20
+	var max_turns: int = int(args[1]) if args.size() > 1 else Config.MAX_TURNS
+	var wins: Array[int] = [0, 0, 0] # azul, rojo, empate
+	var decisions: Dictionary = {}
+	var men_left: Array[int] = [0, 0]
+	for k: int in seeds:
+		var w: SimWorld = SimWorld.new(1000 + k, null, true, SimWorld.Scenario.LOMA)
+		for u: Unit in w.units:
+			if u.side == 0 and u.mind != null:
+				u.mind.autonomy = SquadMind.Autonomy.HIGH
+		while not w.game_over and w.turn <= max_turns:
+			_blue_orders(w)
+			w.begin_execute()
+			while w.phase == SimWorld.Phase.EXECUTE and not w.game_over:
+				w.step()
+			if w.turn > max_turns:
+				break
+		var win: int = w.winner if w.game_over else w.objective_holder()
+		var slot: int = 2
+		if win == 0:
+			slot = 0
+		elif win == 1:
+			slot = 1
+		wins[slot] += 1
+		var men: Array[int] = [0, 0]
+		for u: Unit in w.units:
+			if u.alive and u.is_infantry():
+				men[u.side] += u.ok_count()
+		men_left[0] += men[0]
+		men_left[1] += men[1]
+		for key: String in w.decision_counts:
+			decisions[key] = int(decisions.get(key, 0)) + int(w.decision_counts[key])
+		print("semilla %d: %s  turno %d  hombres azul %d rojo %d" % [1000 + k, ["azul", "rojo", "empate"][slot], w.turn, men[0], men[1]])
+	print("TOTAL azul %d · rojo %d · empate %d · hombres promedio azul %.1f rojo %.1f" % [wins[0], wins[1], wins[2],
+		men_left[0] / float(seeds), men_left[1] / float(seeds)])
+	print("decisiones: %s" % str(decisions))
+	quit()
+
+
+## El azul: cada escuadra sin ruta va hacia la cresta (al costado del objetivo según su número); el tanque cubre.
+func _blue_orders(w: SimWorld) -> void:
+	var obj: Vector2i = w.objective_cell()
+	var i: int = 0
+	for u: Unit in w.units:
+		if u.side != 0 or not u.alive:
+			continue
+		if u.is_infantry():
+			if u.path.is_empty():
+				w.order_move(u.id, w._nearest_walkable(obj + Vector2i((i - 1) * 6, 0), Unit.Kind.INFANTRY))
+			i += 1

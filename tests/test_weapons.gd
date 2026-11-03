@@ -114,6 +114,7 @@ func test_squad_dies_at_zero_men() -> void:
 	var world: SimWorld = _world()
 	var sq: Unit = world.add_unit(1, Vector2(48, 56), Unit.Kind.INFANTRY)
 	sq.set_men(1)
+	sq.mind.autonomy = SquadMind.Autonomy.STRICT # que no rompa el contacto: el test es sobre las bajas
 	sq.reload_left = 1000.0
 	sq.reload2_left = 1000.0
 	sq.moving = true
