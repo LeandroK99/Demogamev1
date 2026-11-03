@@ -33,6 +33,7 @@ func test_squad_suppresses_hidden_infantry() -> void:
 	var sq: Unit = world.add_unit(1, Vector2(48, 30), Unit.Kind.INFANTRY)
 	var blue: Unit = world.add_unit(0, Vector2(48, 70), Unit.Kind.INFANTRY) # 160 m, no visible
 	blue.prone = true
+	blue.set_posture(Soldier.Posture.PRONE) # ni con la mira del tirador selecto se la ve
 	blue.still_time = 100.0
 	world.update_detection()
 	world.known_enemies[1][blue.id] = {"cell": blue.cell(), "last_seen_turn": world.turn}

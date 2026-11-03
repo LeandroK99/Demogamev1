@@ -33,6 +33,7 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | N | Formación de las escuadras seleccionadas: cuña → fila india → línea |
 | Z | Reglas de fuego (ROE) de los seleccionados: fuego libre → solo si le disparan → retener fuego |
 | C | Área de enganche: solo dispara dentro de un arco de ±45° hacia el cursor y hasta la distancia del cursor. Shift+C la quita |
+| M | Misión al pelotón de infantería: tomar el punto del cursor. El jefe de pelotón maniobra solo (ver abajo). Shift+M la cancela |
 | Espacio | Ejecutar el turno |
 | 1 | Overlay de exposición azul (verde = cubierto, rojo = visto por todos los enemigos conocidos) |
 | 2 | Mejores posiciones hull-down de la unidad seleccionada |
@@ -67,11 +68,12 @@ Con **L** cambiás al escenario de infantería. Cada bando tiene 3 escuadras de 
 - **Objetivo:** el círculo blanco sobre la cresta. Al llegar al turno 12, ganás si tenés infantería sin quebrar adentro y el rojo no; si los dos tienen, es empate; si no, gana el rojo. Destruir a todo el bando contrario también gana.
 - **Autonomía (Y):** cada escuadra decide sola cuando la situación cambia y lo avisa por radio (abajo a la izquierda); sobre su número aparece lo que está haciendo por su cuenta. Con autonomía **estricta** solo cumple tu orden. Con **normal** (la de arranque), ante el contacto reacciona unos 5 s (al suelo y fuego) y sigue por fuego y movimiento: el equipo de la ametralladora cubre y bate al enemigo mientras el otro avanza por parejas a carreras de 3 a 5 s, y se turnan; tira humo para cruzar. Solo se queda si la mayoría está clavada o perdió más de la mitad de los hombres. También se reubica si la castigan al descubierto, embosca y rescata heridos. Con **alta**, además flanquea si otra escuadra propia fija al enemigo (y después sigue hacia tu objetivo) y rompe el contacto solo si queda con 3 hombres o menos. La cuña no es perfecta: cada soldado anda corrido hasta 3,5 m de su lugar, arrimándose a rocas, arbustos y troncos.
 - **Campo abierto:** cada fusilero tiene munición (el panel muestra cuánta le queda a la escuadra) y el proveedor le pasa cintas a la ametralladora; asaltar, suprimir o ir a ritmo rápido gasta más. Contra un enemigo cubierto a menos de 30 m tiran granadas de mano, y el granadero (soldado 5) llega a 150 m. En marcha con la cuña, la escuadra se abre en terreno limpio, se cierra en el bosque o cerca de él, forma en línea para el asalto final y se escalona hacia un contacto de costado. Avanza en desplazamiento simple, con vigilancia (el equipo de la ametralladora va detrás) o por saltos, alternados o sucesivos bajo fuego. Si la emboscan a menos de 35 m, asalta; más lejos, se cubre y después avanza por fuego y movimiento. Clavada en marcha, sigue reptando; con X también podés ordenar reptar.
+- **El pelotón:** el tirador selecto (soldado 7) ve el doble quieto y tira a 500 m, primero al jefe, la ametralladora o el antitanque. Quieta, la escuadra reparte sectores de tiro (se ven al seleccionarla) y la ametralladora tiende su línea final rasante; tras varias ráfagas desde el mismo lugar, cambia de posición. Un claro entre bosques se cruza por equipos, uno cubriendo. Quieta un turno, cava pozos; al tomar una posición, redistribuye la munición. Con **M** el pelotón recibe una misión: se acerca con una escuadra de punta, la primera en contacto fija al enemigo y las otras flanquean y asaltan mientras la base corre el fuego. Una escuadra quebrada, acorralada y con el enemigo a 50 m se rinde.
 - **Reflejos:** bajo fuego en marcha y al descubierto, el soldado se tira al suelo; si le tiran desde donde su cobertura no lo protege, busca otra; si desde su cobertura no tiene tiro, se asoma por turnos desde un punto cercano.
 - **Lo que sabe cada escuadra:** lo que ve a 150 m lo sabe al momento; de un tirador que no ve, solo más o menos de dónde vino el fogonazo; lo que ven las demás le llega por radio en 3 a 5 s. Se cubre contra lo que sabe.
 - **Jefes:** veterano, regular o novato (piensa cada 0,5, 1 o 2 s y se equivoca más o menos al decidir). Si cae el jefe, la escuadra queda 20 a 30 s desorganizada y después manda el segundo, un escalón peor.
 - **Heridos:** un herido sin atender se desangra en 90 a 240 s y le baja la moral a la escuadra. Con la escuadra detenida, el médico lo estabiliza en 15 s (un compañero, en 40 s). **P** (en la planificación): evacuar a los heridos, cada uno con un camillero; a los 60 s salen del campo.
-- **IA roja:** defiende en profundidad: una escuadra adelantada en la cresta, la principal en la contrapendiente y una reserva atrás, con cobertura y vista a las rutas de acercamiento; no abre fuego a más de 150 m salvo que la ataquen y suprime la última posición conocida de tu infantería. Durante el turno, la adelantada se repliega si la aprietan, la reserva refuerza a la que está en contacto y, si tu infantería en la cresta queda diezmada o frenada, contraataca.
+- **IA roja:** defiende en profundidad: una escuadra adelantada en la cresta, la principal en la contrapendiente y una reserva atrás, con cobertura y vista a las rutas de acercamiento; no abre fuego a más de 150 m salvo que la ataquen y suprime la última posición conocida de tu infantería. Durante el turno, la adelantada se repliega si la aprietan, la reserva refuerza a la que está en contacto y, si tu infantería en la cresta queda diezmada o frenada, contraataca. Si tu infantería llega a la cresta sin haberse afirmado (sin pozos) y el rojo tiene tantas escuadras frescas cerca, contraatacan todas.
 - **Pelotón mixto:** con el pelotón seleccionado (doble clic), la infantería va al objetivo y el tanque se queda 48 m detrás, cubriéndola.
 
 Ganás si destruís a los 4 rojos. Si se llega al turno 12, gana el bando con más tanques vivos.
@@ -96,6 +98,8 @@ godot --headless --path . --script res://tests/bench_loma.gd
 
 # IA contra IA en la loma (semillas y turnos opcionales; unos 40 s por partida)
 godot --headless --path . --script res://tests/harness_loma.gd -- 6
+# ... con el azul por misión del pelotón
+godot --headless --path . --script res://tests/harness_loma.gd -- 6 12 peloton
 ```
 
 ## Estructura

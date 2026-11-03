@@ -332,27 +332,44 @@ func _monitor_reinforce(world: SimWorld) -> void:
 		return
 
 
-## Azules en el objetivo, todos débiles (diezmados o frenados): asalto de una escuadra fresca cercana (una vez).
+## Contraataque (una vez), con escuadras frescas cercanas al objetivo:
+## - azules en el objetivo, todos débiles (diezmados o frenados): asalta una;
+## - azules recién llegados, sin afirmarse (pocos en pozos) y el rojo con tantas frescas como
+##   ellos o más (fase 59): asaltan todas antes de que consoliden.
 func _monitor_counterattack(world: SimWorld) -> void:
 	if _counterattacked:
 		return
 	var obj: Vector2 = Vector2(world.objective_cell())
 	var blues: int = 0
+	var all_weak: bool = true
+	var dug: bool = false
 	for e: Unit in world.units:
 		if e.side == side or not e.alive or not e.is_infantry() or e.pos.distance_to(obj) > Config.AI_COUNTER_RADIUS:
 			continue
 		blues += 1
 		if e.ok_count() > Config.BREAK_MEN and not world.inf.halted(e):
-			return # hay uno entero: todavía no
+			all_weak = false
+		if InfantrySim.dug_fraction(world, e) >= Config.COUNTER_DUG_FRACTION:
+			dug = true
 	if blues == 0:
 		return
+	var fresh: Array[Unit] = []
 	for id: int in roles:
 		var u: Unit = world.units[id]
 		if u.alive and _fresh(world, u) and u.pos.distance_to(obj) <= Config.AI_COUNTER_FROM:
-			if world.command_move(id, world.objective_cell(), true):
-				_counterattacked = true
-				world.radio(u, "¡contraataque!")
-			return
+			fresh.append(u)
+	if fresh.is_empty():
+		return
+	var early: bool = not dug and fresh.size() >= blues
+	if not all_weak and not early:
+		return
+	var who: Array[Unit] = fresh.duplicate()
+	if all_weak or not early:
+		who = [fresh[0]]
+	for u: Unit in who:
+		if world.command_move(u.id, world.objective_cell(), true):
+			_counterattacked = true
+			world.radio(u, "¡contraataque antes de que se afirmen!" if early and not all_weak else "¡contraataque!")
 
 
 func _fresh(_world: SimWorld, u: Unit) -> bool:

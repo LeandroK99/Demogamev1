@@ -59,6 +59,15 @@ var ammo_carry: int = 0
 ## Granadas (fase 49): de mano, y las del fusil lanzagranadas si es el granadero.
 var grenades: int = 0
 var gl_rounds: int = 0
+## Sectores (fase 55): dirección y semiancho del sector del soldado (cero = sin sector); la
+## ametralladora tiene además su línea final de tiro rasante.
+var sector_dir: Vector2 = Vector2.ZERO
+var sector_half_deg: float = 0.0
+var fpl_dir: Vector2 = Vector2.ZERO
+var dig_time: float = 0.0 # segundos cavando en su lugar (fase 57)
+var bursts_here: int = 0 # ráfagas desde su posición actual (la ametralladora cambia de lugar)
+var avoid_pos: Vector2 = Vector2(-1.0, -1.0) # posición que dejó por estar ubicada
+var marksman: bool = false # tirador selecto (fase 54): fusil con mira, ve y tira más lejos
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
@@ -72,6 +81,7 @@ func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
 	grenades = 0 if p_role == Role.MG else Config.GRENADES_PER_SOLDIER
 	if p_index == Config.GRENADIER_INDEX:
 		gl_rounds = Config.GL_ROUNDS
+	marksman = p_index == Config.MARKSMAN_INDEX
 
 
 ## Equipo de fuego del soldado i.

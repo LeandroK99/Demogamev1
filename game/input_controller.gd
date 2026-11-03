@@ -155,6 +155,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_V:
 		_order_overwatch_at(get_viewport().get_mouse_position())
 		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_M:
+		_mission_at(get_viewport().get_mouse_position(), key.shift_pressed)
+		return
 	var mm: InputEventMouseMotion = event as InputEventMouseMotion
 	if mm != null and _rdragging:
 		_update_facing(mm.position)
@@ -320,6 +323,20 @@ func _order_overwatch_at(screen: Vector2) -> void:
 	for id: int in selected_ids:
 		var u: Unit = world.get_unit(id)
 		world.order_overwatch(id, at - u.pos)
+
+
+## M: misión al pelotón de infantería propio, tomar el punto del cursor (maniobra solo).
+## Shift+M: cancelar la misión.
+func _mission_at(screen: Vector2, cancel: bool) -> void:
+	if cancel:
+		world.cancel_mission(PLAYER_SIDE)
+		return
+	if world.phase != SimWorld.Phase.PLAN:
+		return
+	var hit: Variant = terrain_view.raycast(camera.project_ray_origin(screen), camera.project_ray_normal(screen))
+	if hit == null:
+		return
+	world.order_mission(PLAYER_SIDE, Vector2i((Vector2((hit as Vector3).x, (hit as Vector3).z) / Config.CELL_SIZE).round()))
 
 
 ## Z: siguiente ROE (libre -> solo si te disparan -> retener) para las seleccionadas,
@@ -533,6 +550,8 @@ func _draw_paths() -> void:
 			_sector(segs, colors, u, u.overwatch_dir, Config.OVERWATCH_HALF_ANGLE_DEG, Config.MAX_RANGE, COLOR_OVERWATCH)
 		if u.fire_arc_dir != Vector2.ZERO and selected_ids.has(u.id):
 			_sector(segs, colors, u, u.fire_arc_dir, Config.FIRE_ARC_HALF_ANGLE_DEG, u.max_engage_m, COLOR_ENGAGE)
+		if u.is_infantry() and selected_ids.has(u.id) and not u.moving:
+			_soldier_sectors(segs, colors, u)
 		if u.order == Unit.Order.SCOOT and not u.scoot_fired and not u.path.is_empty():
 			_dashed(segs, colors, Vector2(u.path.back()), Vector2(u.return_cell), COLOR_SCOOT)
 		if u.order == Unit.Order.SUPPRESS:
@@ -589,6 +608,20 @@ func _arrow(segs: PackedVector3Array, colors: PackedColorArray, at: Vector2, dir
 func _cross(segs: PackedVector3Array, colors: PackedColorArray, at: Vector2, color: Color) -> void:
 	for d: Vector2 in [Vector2(1.0, 1.0), Vector2(1.0, -1.0)]:
 		_seg(segs, colors, _ground(at - d), _ground(at + d), color)
+
+
+## Sectores de tiro de cada soldado de una escuadra quieta (bordes cortos) y la línea final de la ametralladora.
+func _soldier_sectors(segs: PackedVector3Array, colors: PackedColorArray, u: Unit) -> void:
+	for s: Soldier in u.soldiers:
+		if not s.is_ok() or s.sector_dir == Vector2.ZERO:
+			continue
+		var at: Vector2 = s.pos / Config.CELL_SIZE
+		if s.fpl_dir != Vector2.ZERO:
+			_seg(segs, colors, _ground(at), _ground(at + s.fpl_dir * Config.SOLDIER_MG_RANGE / Config.CELL_SIZE), COLOR_ATTACK)
+			continue
+		for side: float in [-1.0, 1.0]:
+			var edge: Vector2 = s.sector_dir.rotated(deg_to_rad(side * s.sector_half_deg))
+			_seg(segs, colors, _ground(at), _ground(at + edge * Config.SECTOR_DRAW_M / Config.CELL_SIZE), COLOR_ENGAGE)
 
 
 ## Abanico desde u.pos: dos bordes y el arco a range_m.

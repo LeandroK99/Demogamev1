@@ -17,6 +17,8 @@ var pathfinder: Pathfinder # el de los tanques (pathfinders[Unit.Kind.TANK])
 var pathfinders: Array[Pathfinder] = [] # uno por tipo de unidad (índice = Unit.Kind)
 var units: Array[Unit] = []
 var platoons: Array[Platoon] = [] # uno por bando (índice = side)
+## Misión de pelotón por bando (fase 58): null si el pelotón de infantería no tiene misión.
+var missions: Array[PlatoonLeader] = [null, null]
 var _bound_count: int = 0 # para nombrar las señales de los avances por saltos
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 ## Azar de la autonomía (error de los contactos, demoras de radio, ruido de las decisiones). Aparte
@@ -47,6 +49,7 @@ var shot_events: Array[Dictionary] = []
 ## Granadas en el aire: {at (metros), tick en que explota, side, unit, from}. blast_events: explosiones de este tick (para la vista).
 var grenades: Array[Dictionary] = []
 var blast_events: Array[Vector2] = []
+var dug_events: Array[Vector2] = [] # pozos de tirador recién cavados (para la vista)
 
 # Factores de combate (se pueden cambiar en tests)
 var p_hit_base: float = Config.P_HIT_BASE
@@ -218,6 +221,9 @@ func start_plan() -> void:
 	invalidate_exposure()
 	if ai != null and not game_over:
 		ai.issue_orders(self)
+	for pl: PlatoonLeader in missions:
+		if pl != null and not game_over:
+			pl.issue(self)
 	_rout_broken()
 
 
@@ -638,6 +644,23 @@ func _move_to_cells(cells: Dictionary, target: Vector2i, facing: Vector2, covere
 		if order_move(uid, cells[uid], facing, covered, append) or order_move(uid, target, facing, covered, append):
 			ok += 1
 	return ok
+
+
+## Misión al pelotón de infantería del bando (fase 58): tomar target. El pelotón maniobra solo
+## (ver PlatoonLeader). Solo en PLAN.
+func order_mission(side: int, target: Vector2i) -> bool:
+	if phase != Phase.PLAN or not height_field.in_bounds(target):
+		return false
+	var pl: PlatoonLeader = PlatoonLeader.new(side, target)
+	if pl.squads(self).is_empty():
+		return false
+	missions[side] = pl
+	pl.issue(self)
+	return true
+
+
+func cancel_mission(side: int) -> void:
+	missions[side] = null
 
 
 ## Orden al pelotón: se reparte entre las secciones (ver platoon_cells).
@@ -1087,6 +1110,10 @@ func step() -> void:
 	_update_attackers()
 	if ai != null and phase == Phase.EXECUTE and total_ticks % Config.AI_MONITOR_TICKS == 0:
 		ai.monitor(self)
+	if phase == Phase.EXECUTE and total_ticks % Config.AI_MONITOR_TICKS == 0:
+		for pl: PlatoonLeader in missions:
+			if pl != null:
+				pl.monitor(self)
 	minds.update(self)
 	for u: Unit in units:
 		if not u.alive or u.path.is_empty():
@@ -1119,6 +1146,8 @@ func step() -> void:
 	inf.update_ammo(self)
 	inf.update_grenades(self)
 	inf.update_formations(self)
+	inf.update_digging(self)
+	inf.update_surrender(self)
 	_tick_smoke()
 	tick_in_turn += 1
 	total_ticks += 1
@@ -1158,6 +1187,8 @@ func _lose_morale(u: Unit, amount: float) -> void:
 		return
 	u.morale = maxf(0.0, u.morale - amount)
 	if u.morale < Config.MORALE_BREAK:
+		if not u.broken:
+			u.broken_tick = total_ticks
 		u.broken = true
 
 
@@ -1295,6 +1326,17 @@ func damage_soldier(u: Unit, s: Soldier) -> void:
 		if s.role == Soldier.Role.LEADER and u.mind != null:
 			minds.on_leader_lost(self, u)
 	_check_dead(u)
+
+
+## La escuadra se rinde: fuera de combate (los soldados quedan, sin pelear).
+func surrender(u: Unit) -> void:
+	u.surrendered = true
+	u.alive = false
+	u.moving = false
+	u.path.clear()
+	u.waypoints.clear()
+	radio(u, "¡nos rendimos!")
+	decision_counts["se rinde"] = int(decision_counts.get("se rinde", 0)) + 1
 
 
 func _check_dead(u: Unit) -> void:

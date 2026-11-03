@@ -28,6 +28,7 @@ func update(w: SimWorld) -> void:
 				continue # sin jefe: cada uno se cubre donde está
 			_new_leader(w, u)
 		_smoke_reflex(w, u)
+		_check_arrival(w, u)
 		if w.total_ticks >= m.next_think_tick:
 			m.next_think_tick = w.total_ticks + think_interval(u)
 			_forget(w, u)
@@ -130,6 +131,19 @@ func _smoke_reflex(w: SimWorld, u: Unit) -> void:
 	m.halted_since = w.total_ticks # la próxima, otros 15 s después
 
 
+## Llegó al final de su ruta: si era un asalto, o llegó al objetivo de la loma, consolida.
+func _check_arrival(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	var has: bool = not u.path.is_empty()
+	if m.had_path and not has and m.is_following():
+		var at_objective: bool = w.scenario == SimWorld.Scenario.LOMA and u.pos.distance_to(Vector2(w.objective_cell())) <= Config.LOMA_OBJECTIVE_RADIUS
+		if m.path_order == Unit.Order.ASSAULT or at_objective:
+			w.inf.consolidate(w, u)
+	m.had_path = has
+	if has:
+		m.path_order = u.order # al llegar la orden pasa a NONE: se recuerda cuál era
+
+
 ## Clavada en marcha más de CRAWL_AFTER_SECONDS (autonomía normal o alta): sigue reptando hacia su
 ## destino en vez de quedarse quieta. No en la retirada ni si decidió frenar.
 func _crawl_reflex(w: SimWorld, u: Unit) -> void:
@@ -220,7 +234,85 @@ func score_options(w: SimWorld, u: Unit) -> Dictionary:
 	_score_flank(w, u, s)
 	_score_rescue(w, u, s)
 	_score_near_ambush(w, u, s)
+	_score_cross(w, u, s)
 	return s
+
+
+## --- Cruzar una zona de peligro (fase 56) ---
+## En marcha desde una cubierta, con el contacto posible y sin fuego encima: si la ruta cruza un claro
+## o un camino abierto de 16 a 60 m hasta otra cubierta, el equipo A queda de seguridad del lado
+## cercano, el B cruza con el ancla y se cubre del lado lejano, y después cruza A.
+
+func _score_cross(w: SimWorld, u: Unit, s: Dictionary) -> void:
+	var m: SquadMind = u.mind
+	if m.option == SquadMind.Option.CROSS:
+		if not u.path.is_empty() or str(m.data.get("phase", "B")) == "A":
+			s[SquadMind.Option.CROSS] = Config.DANGER_SCORE + 1.0
+		return
+	if m.option != SquadMind.Option.FOLLOW or u.path.is_empty() or u.order not in [Unit.Order.MOVE, Unit.Order.HULLDOWN]:
+		return
+	if m.technique == SquadMind.Technique.TRAVEL or w.fired_upon_within(u, Config.DANGER_FIRED_SECONDS):
+		return # sin contactos posibles cruza sin más; bajo fuego, por saltos
+	var far: Vector2i = danger_far_edge(w, u)
+	if far.x < 0 or m.reacted.has(_cross_key(far)):
+		return
+	m.target_cell = far
+	s[SquadMind.Option.CROSS] = Config.DANGER_SCORE
+
+
+static func _cross_key(c: Vector2i) -> int:
+	return -1000000 - (c.y * 4096 + c.x)
+
+
+static func _covered(w: SimWorld, c: Vector2i) -> bool:
+	return w.cover != null and w.cover.type_at(c) != CoverMap.Type.NONE
+
+
+## Primera celda cubierta del otro lado de un tramo abierto de la ruta que empieza ya delante de la
+## escuadra (que está en cubierta), si mide de DANGER_MIN_CELLS a DANGER_MAX_CELLS. (-1, -1) si no.
+static func danger_far_edge(w: SimWorld, u: Unit) -> Vector2i:
+	if not _covered(w, u.cell()):
+		return Vector2i(-1, -1)
+	var open: int = 0
+	for k: int in mini(u.path.size(), Config.DANGER_MAX_CELLS + 3):
+		var c: Vector2i = u.path[k]
+		if _covered(w, c):
+			if open >= Config.DANGER_MIN_CELLS:
+				return c
+			if open > 0:
+				return Vector2i(-1, -1) # un claro chico: se cruza sin más
+			continue
+		open += 1
+		if open > Config.DANGER_MAX_CELLS:
+			return Vector2i(-1, -1)
+	return Vector2i(-1, -1)
+
+
+func _start_cross(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	m.reacted[_cross_key(m.target_cell)] = true
+	m.data["phase"] = "B"
+	m.data["far"] = m.target_cell
+	m.hold = false
+	for s: Soldier in u.soldiers:
+		s.hold_pos = s.team == 0 and s.is_ok() # A: seguridad del lado cercano
+
+
+func _act_cross(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	if not m.data.has("phase"):
+		return
+	var far: Vector2i = m.data["far"]
+	if str(m.data["phase"]) == "B":
+		if u.cell() == far or not u.path.has(far):
+			m.data["phase"] = "A" # B del otro lado: se cubre y cruza A
+			m.hold = true
+			for s: Soldier in u.soldiers:
+				s.hold_pos = false
+	elif not w.inf.lagging(u):
+		m.data["phase"] = "done"
+		m.hold = false
+		switch_to(w, u, SquadMind.Option.FOLLOW)
 
 
 ## --- Emboscada cercana (fase 52) ---
@@ -719,6 +811,8 @@ func _enter(w: SimWorld, u: Unit, opt: int) -> void:
 			_start_rescue(w, u)
 		SquadMind.Option.NEAR_AMBUSH:
 			_start_near_ambush(w, u)
+		SquadMind.Option.CROSS:
+			_start_cross(w, u)
 		SquadMind.Option.BREAK_CONTACT:
 			throw_smoke_toward(w, u, w.inf.threat_point(w, u))
 			w.begin_autonomous()
@@ -740,6 +834,8 @@ func _exit(w: SimWorld, u: Unit, opt: int) -> void:
 			if _nearest_contact_m(u) <= Config.AMBUSH_FIRE_M or w.fired_upon_within(u, 1.0):
 				w.radio(u, "¡fuego!")
 		SquadMind.Option.BOUND:
+			_release_teams(u)
+		SquadMind.Option.CROSS:
 			_release_teams(u)
 		SquadMind.Option.RESCUE:
 			_release_teams(u)
@@ -775,6 +871,8 @@ func _announce(opt: int) -> String:
 			return "¡herido al descubierto! humo, cobertura y lo sacamos"
 		SquadMind.Option.NEAR_AMBUSH:
 			return "¡emboscada! ¡al asalto!"
+		SquadMind.Option.CROSS:
+			return "zona abierta: seguridad y cruzamos de a un equipo"
 	return SquadMind.OPTION_NAMES[opt]
 
 
@@ -783,6 +881,8 @@ func act(w: SimWorld, u: Unit) -> void:
 	match u.mind.option:
 		SquadMind.Option.BOUND:
 			_act_bound(w, u)
+		SquadMind.Option.CROSS:
+			_act_cross(w, u)
 
 
 ## --- Orden del jugador ---

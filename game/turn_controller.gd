@@ -76,6 +76,9 @@ func _process(delta: float) -> void:
 	for at: Vector2 in world.blast_events:
 		fx.add_blast_m(at)
 	world.blast_events.clear()
+	for at: Vector2 in world.dug_events:
+		fx.add_pit_m(at)
+	world.dug_events.clear()
 	var alpha: float = clampf(_accum / Config.TICK, 0.0, 1.0) if world.phase == SimWorld.Phase.EXECUTE else 1.0
 	_apply_fog(alpha)
 

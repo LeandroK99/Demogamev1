@@ -443,3 +443,52 @@ const NEAR_AMBUSH_DONE_M: float = 6.0 # llegó a la posición del emboscador
 # --- Reptar (fase 53) ---
 const PACE_CRAWL_SPEED: float = 0.2 # multiplicador de velocidad reptando (0,3 m/s)
 const CRAWL_AFTER_SECONDS: float = 3.0 # clavada en marcha este tiempo, la escuadra sigue reptando
+
+# --- Tirador selecto (fase 54) ---
+const MARKSMAN_INDEX: int = 6 # el soldado 7 lleva fusil con mira (equipo A)
+const MARKSMAN_RANGE: float = 500.0
+const MARKSMAN_P_HIT: float = 0.2 # por tiro contra un blanco quieto de pie y al descubierto, a quemarropa
+const MARKSMAN_MOVING_FACTOR: float = 0.4 # contra un blanco en marcha
+const MARKSMAN_RELOAD: float = 4.0 # segundos entre tiros (apunta)
+const MARKSMAN_SPOT_FACTOR: float = 2.0 # con la mira ve a esto por el alcance normal
+const MARKSMAN_PRIORITY: float = 0.25 # jefes y ametralladoras cuentan como así de cerca al elegir blanco
+
+# --- Sectores, línea final y cambio de posición (fase 55) ---
+const SECTOR_FRONT_DEG: float = 120.0 # frente que se reparten los soldados de una escuadra quieta
+const SECTOR_OVERLAP_DEG: float = 10.0 # cada sector se pisa con el vecino
+const SECTOR_OUT_RANK: float = 3.0 # un blanco fuera de su sector cuenta como así de más lejos
+const SECTOR_RETHINK_DEG: float = 20.0 # se reparten de nuevo si la amenaza se corre más que esto
+const SECTOR_DRAW_M: float = 40.0 # largo de los sectores en el mapa
+const FPL_ANGLE_DEG: float = 25.0 # la línea final de la ametralladora cruza el frente oblicua
+const FPL_WIDTH_M: float = 2.0 # tiro rasante: barre a los que están a esto de la línea
+const FPL_GRAZE_FACTOR: float = 0.3 # a cada uno de ellos, esta fracción del impacto de la ráfaga
+const FPL_RANK: float = 0.5 # la ametralladora prefiere blancos sobre su línea
+const MG_DISPLACE_BURSTS: int = 3 # ráfagas desde el mismo lugar ya ubicada (le tiraron): se mueve
+const MG_DISPLACE_FIRED_SECONDS: float = 5.0 # "ya la ubicaron": le tiraron hace menos que esto
+const MG_DISPLACE_MIN_M: float = 3.0 # la nueva posición, al menos a esto de la anterior
+
+# --- Cruzar una zona de peligro (fase 56) ---
+const DANGER_MIN_CELLS: int = 4 # tramo abierto entre dos cubiertas de al menos esto (16 m)...
+const DANGER_MAX_CELLS: int = 15 # ... y a lo sumo esto (60 m): un claro, un camino
+const DANGER_SCORE: float = 2.5
+const DANGER_FIRED_SECONDS: float = 10.0 # bajo fuego no: ahí avanza por saltos
+
+# --- Pozos de tirador y consolidar (fase 57) ---
+const DIG_SECONDS: float = 45.0 # quieto en su lugar este tiempo (un turno), el soldado cava un pozo
+const DIG_MAX_SUPP: float = 50.0 # suprimido no cava
+
+# --- Pelotón como un cuerpo y misión (fase 58) ---
+const PLT_CONTACT_M: float = 300.0 # un contacto así de cerca de una escuadra del pelotón: la traba como base
+const PLT_FIRED_SECONDS: float = 10.0 # ... o que le hayan tirado hace menos que esto
+const PLT_FOLLOW_CELLS: int = 10 # las otras escuadras van esto detrás de la de punta
+const PLT_SHIFT_M: float = 60.0 # el asalto a esto del enemigo: el apoyo levanta el fuego
+const PLT_SHIFT_BEYOND_M: float = 50.0 # ... y lo corre más allá del objetivo
+const PLT_FLANK_ARRIVE_CELLS: int = 3 # la maniobra llegó a su puesto de flanco
+const PLT_FIX_MAX_SECONDS: float = 90.0 # flanqueando más que esto: asaltan desde donde estén
+const PLT_ASSAULT_MAX_SECONDS: float = 135.0 # asaltando más que esto: todos al objetivo
+
+# --- Contraataque local y rendición (fase 59) ---
+const COUNTER_DUG_FRACTION: float = 0.5 # el atacante en el objetivo con menos de esto en pozos: todavía no se afirmó
+const SURRENDER_ENEMY_M: float = 50.0 # quebrada, con el enemigo a menos de esto...
+const SURRENDER_AFTER_SECONDS: float = 8.0 # ... quebrada hace más de esto ...
+# ... y sin ruta de repliegue (clavada o sin camino): se rinde

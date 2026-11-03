@@ -64,7 +64,8 @@ func test_observers_are_leader_plus_rotating() -> void:
 	for r: int in 4:
 		world.inf.begin_detection(world)
 		var obs: Array = world.inf._observers[sq.id]
-		assert_eq(obs.size(), Config.SOLDIER_OBSERVERS, "tres observadores")
+		assert_eq(obs.size(), Config.SOLDIER_OBSERVERS + (0 if obs.slice(0, Config.SOLDIER_OBSERVERS).any(func(o: Soldier) -> bool: return o.marksman) else 1), "tres observadores (más el tirador selecto)")
+		assert_true(obs.any(func(o: Soldier) -> bool: return o.marksman), "el tirador selecto siempre mira")
 		assert_eq((obs[0] as Soldier).role, Soldier.Role.LEADER, "el jefe siempre mira")
 		for o: Soldier in obs:
 			seen[o.index] = true

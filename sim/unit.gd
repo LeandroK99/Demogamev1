@@ -44,6 +44,8 @@ var suppression: float = 0.0 # 0..100: sube con el fuego recibido, aunque no imp
 var last_suppressed_tick: int = -1000000 # tick global de la última vez que la suprimieron
 var morale: float = 100.0 # 0..100 (solo infantería): baja con bajas y supresión
 var broken: bool = false # moral quebrada: se repliega sola e ignora órdenes hasta recuperarse
+var broken_tick: int = -1 # tick global en que se quebró
+var surrendered: bool = false # se rindió (fase 59): fuera de combate, como si no estuviera
 var suppress_cell: Vector2i = Vector2i.ZERO # orden SUPPRESS: centro de la zona a batir
 var still_time: float = 0.0 # segundos quieta (la infantería se tira cuerpo a tierra)
 var waiting: bool = false # tiene ruta pero espera la condición del tramo actual
@@ -64,6 +66,7 @@ var formation: int = Formation.WEDGE # la que eligió el jugador
 var shape: int = Formation.WEDGE
 var spread: float = 1.0
 var echelon_side: float = 1.0 # 1 = escalón a la derecha, -1 a la izquierda
+var sector_threat: Vector2 = Vector2.ZERO # dirección de la amenaza con la que se repartieron los sectores
 var trail_m: float = 0.0 # desplazamiento con vigilancia: metros extra que el equipo A va detrás
 ## Infantería: la cabeza de la escuadra (autonomía, ver MindSim). null en los tanques.
 var mind: SquadMind = null
