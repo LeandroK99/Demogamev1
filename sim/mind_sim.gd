@@ -663,7 +663,7 @@ func _exit(w: SimWorld, u: Unit, opt: int) -> void:
 					u.soldiers[s.drag_target].dragged = false
 				s.drag_target = -1
 		SquadMind.Option.FLANK:
-			m.saved = {} # en el flanco se queda: de ahí tira
+			pass # desde el flanco retoma la orden: sigue hacia el objetivo
 		SquadMind.Option.BREAK_CONTACT:
 			m.saved = {} # replegada: no vuelve a meterse donde la estaban castigando
 			u.path.clear()
