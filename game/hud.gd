@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
+	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma)"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -15,6 +15,7 @@ const ORDER_NAMES: Dictionary = {
 	Unit.Order.SCOOT: "disparar y replegarse",
 	Unit.Order.ASSAULT: "asaltar",
 	Unit.Order.WITHDRAW: "retirarse",
+	Unit.Order.SUPPRESS: "suprimir",
 }
 const ASPECT_NAMES: Array[String] = ["el frente", "el flanco", "la cola"]
 const RISK_NAMES: Array[String] = ["BAJO", "MEDIO", "ALTO"]
@@ -85,9 +86,13 @@ func _style(label: Label, size: int) -> void:
 func _process(_delta: float) -> void:
 	var phase_text: String = "PLANIFICAR (Espacio: ejecutar)"
 	if world.phase == SimWorld.Phase.EXECUTE:
-		phase_text = "EJECUTANDO %d / %d s" % [world.tick_in_turn / 10, roundi(Config.TURN_SECONDS)]
-	_status.text = "Turno %d / %d · %s · ×%d\nAzules vivos: %d · Rojos vivos: %d · Semilla %d" % [
-		world.turn, Config.MAX_TURNS, phase_text, roundi(turn_controller.speed()),
+		phase_text = "EJECUTANDO %d / %d s" % [world.tick_in_turn / 10, roundi(world.ticks_per_turn * Config.TICK)]
+	var scen: String = "Tanques"
+	if world.scenario == SimWorld.Scenario.LOMA:
+		var holders: Dictionary = {0: "azul", 1: "rojo", SimWorld.DRAW: "en disputa", SimWorld.NO_WINNER: "nadie"}
+		scen = "La loma (cresta: %s)" % holders.get(world.objective_holder(), "?")
+	_status.text = "%s · Turno %d / %d · %s · ×%d\nAzules vivos: %d · Rojos vivos: %d · Semilla %d" % [
+		scen, world.turn, Config.MAX_TURNS, phase_text, roundi(turn_controller.speed()),
 		world.alive_count(0), world.alive_count(1), map_seed]
 	_unit_info.text = _unit_text()
 	if world.game_over:
@@ -98,6 +103,10 @@ func _process(_delta: float) -> void:
 		elif world.winner != SimWorld.DRAW:
 			result = "DERROTA"
 		_banner.text = "%s\nR: jugar de nuevo · Shift+R: mapa nuevo" % result
+
+
+static func unit_name(u: Unit) -> String:
+	return "Escuadra" if u.is_infantry() else "Tanque"
 
 
 static func gate_text(gate: Dictionary) -> String:
@@ -128,6 +137,9 @@ func _unit_text() -> String:
 	if input_controller.pending_mode == "scoot":
 		lines.append("Clic derecho: posición de tiro (Esc cancela)")
 		lines.append("")
+	elif input_controller.pending_mode == "suppress":
+		lines.append("Clic derecho: zona a suprimir (Esc cancela)")
+		lines.append("")
 	elif input_controller.pending_mode == "bound":
 		lines.append("Clic derecho: objetivo del avance por saltos (Esc cancela)")
 		lines.append("")
@@ -141,14 +153,28 @@ func _unit_text() -> String:
 		var plt: Platoon = world.platoon_of(sel.id)
 		if input_controller.selected_platoon() != null:
 			lines.append("Pelotón completo (%d tanques)" % input_controller.selected_ids.size())
-		lines.append("Tanque %d · sección %s" % [sel.id + 1, Platoon.section_letter(plt.section_of(sel.id) if plt != null else -1)])
-		lines.append("Vida: %d / %d" % [sel.hp, Config.TANK_HP])
+		lines.append("%s %d · sección %s" % [unit_name(sel), sel.id + 1, Platoon.section_letter(plt.section_of(sel.id) if plt != null else -1)])
+		lines.append("%s: %d / %d" % ["Hombres" if sel.is_infantry() else "Vida", sel.hp, sel.max_hp()])
 		lines.append("Recarga: %s" % ("lista" if sel.reload_left <= 0.0 else "%.1f s" % sel.reload_left))
 		var order_text: String = ORDER_NAMES.get(sel.order, "?")
+		if sel.is_infantry() and sel.order == Unit.Order.HULLDOWN:
+			order_text = "tomar posición"
 		if sel.order == Unit.Order.ATTACK and sel.attack_target >= 0:
 			order_text += " (rojo %d)" % (sel.attack_target - Config.UNITS_PER_SIDE + 1)
 		lines.append("Orden: %s" % order_text)
 		lines.append("Mira al %s" % compass(sel.heading))
+		if sel.is_infantry():
+			lines.append("Postura: %s" % ("cuerpo a tierra" if sel.prone else "de pie"))
+			var state: String = ""
+			if sel.broken:
+				state = " · QUEBRADA"
+			lines.append("Moral: %d%s" % [roundi(sel.morale), state])
+		var supp_state: String = ""
+		if world.is_pinned(sel):
+			supp_state = " · inmovilizada"
+		elif world.is_suppressed(sel):
+			supp_state = " · abotonado" if not sel.is_infantry() else " · suprimida"
+		lines.append("Supresión: %d%s" % [roundi(sel.suppression), supp_state])
 		var roe_text: String = ROE_NAMES.get(sel.roe, "?")
 		if sel.fire_arc_dir != Vector2.ZERO:
 			roe_text += ", arco al %s" % compass(sel.fire_arc_dir)
@@ -177,10 +203,13 @@ func _unit_text() -> String:
 				aspect = ", muestra %s" % ASPECT_NAMES[int(risk["worst_aspect"])]
 			lines.append("Impactos esperados: %.1f%s" % [float(risk["expected_hits"]), aspect])
 			lines.append("RIESGO %s" % RISK_NAMES[int(risk["level"])])
-		lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
+		if sel.is_infantry():
+			lines.append("Antitanque: %d / %d" % [sel.at_charges, Config.INF_AT_CHARGES])
+		else:
+			lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
 		lines.append("")
 	lines.append("Disparos recibidos")
 	for u: Unit in world.units:
 		if u.side == PLAYER_SIDE:
-			lines.append("Tanque %d: %d%s" % [u.id + 1, u.shots_received, "" if u.alive else " (destruido)"])
+			lines.append("%s %d: %d%s" % [unit_name(u), u.id + 1, u.shots_received, "" if u.alive else " (destruido)"])
 	return "\n".join(lines)

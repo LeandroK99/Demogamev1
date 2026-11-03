@@ -4,13 +4,17 @@ extends RefCounted
 ## Ciclo WeGo: PLAN (se aceptan órdenes) -> EXECUTE (ticks_per_turn ticks) -> PLAN ...
 
 enum Phase { PLAN, EXECUTE }
+## TANKS: la demo original (4 tanques por bando, sin cobertura). LOMA: infantería y un tanque
+## por bando, con cobertura; el rojo defiende la cresta central.
+enum Scenario { TANKS, LOMA }
 enum Aspect { FRONT, FLANK, REAR }
 const NO_WINNER: int = -1
 const DRAW: int = 2
 
 var height_field: HeightField
 var analysis: TerrainAnalysis
-var pathfinder: Pathfinder
+var pathfinder: Pathfinder # el de los tanques (pathfinders[Unit.Kind.TANK])
+var pathfinders: Array[Pathfinder] = [] # uno por tipo de unidad (índice = Unit.Kind)
 var units: Array[Unit] = []
 var platoons: Array[Platoon] = [] # uno por bando (índice = side)
 var _bound_count: int = 0 # para nombrar las señales de los avances por saltos
@@ -45,15 +49,19 @@ var moving_shooter_factor: float = Config.MOVING_SHOOTER_FACTOR
 var armor_enabled: bool = true
 var p_hit_max: float = Config.P_HIT_MAX
 
-# Exposición por bando (índice = side); vacía = sin calcular
-var _exposure: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array()]
-var _pathfinder_side: int = -1 # bando cuya exposición está cargada en el pathfinder
+# Exposición por bando y tipo (índice = side * 2 + kind); vacía = sin calcular
+var _exposure: Array[PackedFloat32Array] = []
+var _pathfinder_side: Array[int] = [-1, -1] # por tipo: bando cuya exposición está cargada en su pathfinder
 var ai: AICommander = null # IA del bando rojo (null = sin IA)
+var scenario: int = Scenario.TANKS
+var _forcing: bool = false # órdenes que da la propia simulación (una retirada por moral quebrada)
+var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
 
 
 ## Si hf es null se genera el terreno procedural con la semilla.
 ## with_ai: si el bando rojo lo maneja AICommander (los tests pueden apagarlo).
-func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = true) -> void:
+func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = true, p_scenario: int = Scenario.TANKS) -> void:
+	scenario = p_scenario
 	if with_ai:
 		ai = AICommander.new(1)
 	rng.seed = sim_seed
@@ -63,8 +71,18 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 	height_field = hf
 	analysis = TerrainAnalysis.new(hf)
 	analysis.smoke = smoke_clouds
-	pathfinder = Pathfinder.new(hf)
-	_deploy()
+	pathfinders = [Pathfinder.new(hf), Pathfinder.new(hf, Config.INF_MAX_SLOPE)]
+	pathfinder = pathfinders[Unit.Kind.TANK]
+	invalidate_exposure()
+	if scenario == Scenario.LOMA:
+		ticks_per_turn = roundi(Config.LOMA_TURN_SECONDS / Config.TICK)
+		var cm: CoverMap = CoverMap.new(hf.size)
+		cm.generate(sim_seed)
+		cm.add_ridge_forest(hf)
+		set_cover(cm)
+		_deploy_loma()
+	else:
+		_deploy()
 	update_detection()
 	start_plan()
 
@@ -87,6 +105,67 @@ func _deploy() -> void:
 				secs.append(PackedInt32Array())
 			secs[secs.size() - 1].append(side * Config.UNITS_PER_SIDE + i)
 		platoons.append(Platoon.new(side, side, secs))
+
+
+## La loma: por bando, LOMA_SQUADS escuadras y LOMA_TANKS tanques. El azul al sur;
+## el rojo detrás de la cresta central. Pelotón con dos secciones: infantería y tanques.
+func _deploy_loma() -> void:
+	var n: int = height_field.size
+	var count: int = Config.LOMA_SQUADS + Config.LOMA_TANKS
+	var first_x: int = n / 2 - (count - 1) * Config.LOMA_SQUAD_SPACING / 2
+	for side: int in 2:
+		var inf_ids: PackedInt32Array = PackedInt32Array()
+		var tank_ids: PackedInt32Array = PackedInt32Array()
+		for i: int in count:
+			var kind: int = Unit.Kind.INFANTRY if i < Config.LOMA_SQUADS else Unit.Kind.TANK
+			var x: int = first_x + i * Config.LOMA_SQUAD_SPACING
+			var y: int = n - 1 - Config.DEPLOY_EDGE_MARGIN
+			if side == 1:
+				y = roundi(height_field.ridge_center_y(float(x))) - Config.LOMA_RED_BEHIND_CREST
+			var c: Vector2i = _nearest_walkable(Vector2i(x, y), kind)
+			var u: Unit = add_unit(side, Vector2(c), kind)
+			if kind == Unit.Kind.INFANTRY:
+				inf_ids.append(u.id)
+			else:
+				tank_ids.append(u.id)
+		var secs: Array[PackedInt32Array] = [inf_ids, tank_ids]
+		platoons.append(Platoon.new(side, side, secs))
+
+
+## Celda transitable para el tipo más cercana a c (c si ya lo es).
+func _nearest_walkable(c: Vector2i, kind: int) -> Vector2i:
+	var pf: Pathfinder = pathfinders[kind]
+	for r: int in 12:
+		for dy: int in range(-r, r + 1):
+			for dx: int in range(-r, r + 1):
+				var t: Vector2i = c + Vector2i(dx, dy)
+				if maxi(absi(dx), absi(dy)) == r and pf.is_walkable(t):
+					return t
+	return c
+
+
+## Activa la cobertura fina: la línea de visión, los pathfinders y la exposición la usan.
+func set_cover(cm: CoverMap) -> void:
+	cover = cm
+	analysis.cover = cm
+	var costs: PackedFloat32Array = PackedFloat32Array()
+	costs.resize(height_field.size * height_field.size)
+	for i: int in costs.size():
+		costs[i] = Config.FOREST_TANK_PATH_COST if cm != null and cm.types[i] == CoverMap.Type.FOREST else 0.0
+	pathfinders[Unit.Kind.TANK].set_extra_cost(costs)
+	invalidate_exposure()
+
+
+## Cobertura de la celda para la infantería (0 sin cobertura).
+func cover_at(c: Vector2i) -> float:
+	return cover.cover_at(c) if cover != null else 0.0
+
+
+## Agrega una unidad (escenarios y tests). No la mete en ningún pelotón.
+func add_unit(side: int, pos: Vector2, kind: int = Unit.Kind.TANK) -> Unit:
+	var u: Unit = Unit.new(units.size(), side, pos, kind)
+	units.append(u)
+	return u
 
 
 func get_unit(unit_id: int) -> Unit:
@@ -114,6 +193,21 @@ func start_plan() -> void:
 	invalidate_exposure()
 	if ai != null and not game_over:
 		ai.issue_orders(self)
+	_rout_broken()
+
+
+## Escuadras con la moral quebrada: se retiran solas (reemplaza la orden que tuvieran).
+func _rout_broken() -> void:
+	for u: Unit in units:
+		if u.alive and u.broken:
+			_forcing = true
+			order_withdraw(u.id)
+			_forcing = false
+
+
+## ¿La unidad acepta órdenes ahora? (viva, en PLAN y sin la moral quebrada)
+func _can_order(u: Unit) -> bool:
+	return u != null and u.alive and phase == Phase.PLAN and (not u.broken or _forcing)
 
 
 ## Espacio: arranca la ejecución del turno.
@@ -149,10 +243,14 @@ func update_detection() -> void:
 ## SPOT_RANGE_STATIONARY; quieto y con el casco oculto para el observador, SPOT_RANGE_HULLDOWN.
 func _can_spot(observer: Unit, target: Unit) -> bool:
 	var d: float = TerrainAnalysis.dist_m(observer.cell(), target.cell())
+	if not observer.is_infantry() and is_suppressed(observer):
+		d /= Config.TANK_BUTTONED_SPOT_FACTOR # abotonado: ve a menos distancia
 	if d > Config.MAX_RANGE:
 		return false
-	if not analysis.los(observer.cell(), Config.EYE_H, target.cell(), Config.CENTER_H):
+	if not analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.center_h()):
 		return false
+	if target.is_infantry():
+		return d <= infantry_spot_range(target)
 	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
 		return true
 	if d <= Config.SPOT_RANGE_HULLDOWN:
@@ -160,7 +258,17 @@ func _can_spot(observer: Unit, target: Unit) -> bool:
 	if d > Config.SPOT_RANGE_STATIONARY:
 		return false
 	# Quieto entre los dos alcances: solo si se le ve el casco
-	return analysis.los(observer.cell(), Config.EYE_H, target.cell(), Config.HULL_H)
+	return analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.profile_h())
+
+
+## Alcance de detección de una escuadra según lo que hace.
+func infantry_spot_range(target: Unit) -> float:
+	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
+		return Config.INF_SPOT_MOVING
+	var f_cover: float = 1.0 - cover_at(target.cell()) * Config.COVER_SPOT_FACTOR
+	if target.prone:
+		return Config.INF_SPOT_PRONE * f_cover
+	return Config.INF_SPOT_STILL * f_cover
 
 
 func recently_fired(u: Unit) -> bool:
@@ -171,29 +279,32 @@ func recently_fired(u: Unit) -> bool:
 ## el blanco tiene que ser visible para el bando).
 func _can_see(observer: Unit, target: Unit, target_h: float) -> bool:
 	return TerrainAnalysis.dist_m(observer.cell(), target.cell()) <= Config.MAX_RANGE \
-		and analysis.los(observer.cell(), Config.EYE_H, target.cell(), target_h)
+		and analysis.los(observer.cell(), observer.eye_h(), target.cell(), target_h)
 
 
-## Exposición del bando (se calcula la primera vez que se pide).
-func exposure_for(side: int) -> PackedFloat32Array:
-	if _exposure[side].is_empty():
-		_exposure[side] = analysis.exposure_map(threats_for(side))
-	return _exposure[side]
+## Exposición del bando para un tipo de unidad (se calcula la primera vez que se pide).
+func exposure_for(side: int, kind: int = Unit.Kind.TANK) -> PackedFloat32Array:
+	var i: int = side * 2 + kind
+	if _exposure[i].is_empty():
+		var h: float = Config.INF_STAND_H if kind == Unit.Kind.INFANTRY else Config.HULL_H
+		_exposure[i] = analysis.exposure_map(threats_for(side), h)
+	return _exposure[i]
 
 
 ## Fuerza a recalcular la exposición de ambos bandos.
 func invalidate_exposure() -> void:
-	_exposure = [PackedFloat32Array(), PackedFloat32Array()]
-	_pathfinder_side = -1
+	_exposure = [PackedFloat32Array(), PackedFloat32Array(), PackedFloat32Array(), PackedFloat32Array()]
+	_pathfinder_side = [-1, -1]
 
 
 ## Ruta para una unidad desde from hasta to, con la exposición de su bando (sin la celda from).
 ## Vacía si no hay ruta. No mira la fase: también sirve para rutas decididas en EXECUTE.
 func _route(u: Unit, from: Vector2i, to: Vector2i, covered: bool) -> Array[Vector2i]:
-	if covered and _pathfinder_side != u.side:
-		pathfinder.set_exposure(exposure_for(u.side))
-		_pathfinder_side = u.side
-	var path: Array[Vector2i] = pathfinder.find_path(from, to, covered)
+	var pf: Pathfinder = pathfinders[u.kind]
+	if covered and _pathfinder_side[u.kind] != u.side:
+		pf.set_exposure(exposure_for(u.side, u.kind))
+		_pathfinder_side[u.kind] = u.side
+	var path: Array[Vector2i] = pf.find_path(from, to, covered)
 	if not path.is_empty():
 		path.remove_at(0)
 	return path
@@ -205,7 +316,7 @@ func _route(u: Unit, from: Vector2i, to: Vector2i, covered: bool) -> Array[Vecto
 ## append = true: agrega un tramo desde el destino actual (waypoint) en vez de reemplazar la ruta.
 func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.ZERO, covered: bool = true, append: bool = false) -> bool:
 	var u: Unit = get_unit(unit_id)
-	if u == null or not u.alive or phase != Phase.PLAN:
+	if not _can_order(u):
 		return false
 	append = append and not u.path.is_empty()
 	var from: Vector2i = destination(u) if append else u.cell()
@@ -256,6 +367,11 @@ static func gate_signal(name: String) -> Dictionary:
 ## Cuando la otra unidad terminó su ruta (o murió).
 static func gate_unit(unit_id: int) -> Dictionary:
 	return {"type": "unit", "unit": unit_id}
+
+
+## Cuando esa unidad (propia o enemiga) está suprimida (o murió).
+static func gate_suppressed(unit_id: int) -> Dictionary:
+	return {"type": "suppressed", "unit": unit_id}
 
 
 ## Pone (o quita, con gate vacío) la condición del tramo leg (-1 = el último). Solo en PLAN.
@@ -312,6 +428,9 @@ func gate_met(u: Unit, gate: Dictionary) -> bool:
 			return not visible_enemies[u.side].is_empty()
 		"signal":
 			return signals[u.side].has(gate["name"])
+		"suppressed":
+			var target: Unit = get_unit(int(gate["unit"]))
+			return target == null or not target.alive or is_suppressed(target)
 		"all_signals":
 			for n: String in gate["names"]:
 				if not signals[u.side].has(n):
@@ -374,11 +493,28 @@ func platoon_cells(p: Platoon, target: Vector2i, facing: Vector2) -> Dictionary:
 	secs.sort_custom(func(a: Array, b: Array) -> bool:
 		return _centroid(a).dot(perp) < _centroid(b).dot(perp))
 	var out: Dictionary = {}
-	for i: int in secs.size():
-		var center: Vector2 = Vector2(target) + perp * (float(i) - float(secs.size() - 1) * 0.5) * Config.SECTION_GAP
+	# Pelotón mixto: la infantería va al objetivo y los tanques se quedan atrás, cubriéndola
+	var foot: Array[Array] = []
+	var support: Array[int] = []
+	for sec: Array in secs:
+		if units[int(sec[0])].is_infantry():
+			foot.append(sec)
+		else:
+			for uid: int in sec:
+				support.append(uid)
+	if foot.is_empty() or support.is_empty():
+		foot = secs
+		support.clear()
+	for i: int in foot.size():
+		var center: Vector2 = Vector2(target) + perp * (float(i) - float(foot.size() - 1) * 0.5) * Config.SECTION_GAP
 		var ids: Array[int] = []
-		ids.assign(secs[i])
+		ids.assign(foot[i])
 		out.merge(formation_cells(ids, _clamp_cell(Vector2i(center.round())), facing))
+	if not support.is_empty():
+		var back: Vector2 = _centroid(support) - Vector2(target)
+		var dist: float = minf(Config.TANK_SUPPORT_BACK, back.length())
+		var at: Vector2 = Vector2(target) + (back.normalized() if back.length() > 0.001 else Vector2(0.0, 1.0)) * dist
+		out.merge(formation_cells(support, _nearest_walkable(_clamp_cell(Vector2i(at.round())), Unit.Kind.TANK), facing))
 	return out
 
 
@@ -488,11 +624,11 @@ func order_assault(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector
 ## si no hay amenazas, WITHDRAW_RADIUS celdas hacia atrás.
 func order_withdraw(unit_id: int, target_cell: Vector2i = Vector2i(-1, -1)) -> bool:
 	var u: Unit = get_unit(unit_id)
-	if u == null or not u.alive or phase != Phase.PLAN:
+	if not _can_order(u):
 		return false
 	var threats: Array[Vector2i] = threats_for(u.side)
 	if not height_field.in_bounds(target_cell):
-		target_cell = lowest_exposure_cell(u.side, u.cell(), Config.WITHDRAW_RADIUS)
+		target_cell = lowest_exposure_cell(u.side, u.cell(), Config.WITHDRAW_RADIUS, u.kind)
 		if target_cell == u.cell():
 			target_cell = _back_target(u)
 	if target_cell == u.cell():
@@ -508,8 +644,9 @@ func order_withdraw(unit_id: int, target_cell: Vector2i = Vector2i(-1, -1)) -> b
 
 
 ## Celda transitable de menor exposición del bando dentro de radius (desempate: la más cercana).
-func lowest_exposure_cell(side: int, origin: Vector2i, radius: int) -> Vector2i:
-	var exposure: PackedFloat32Array = exposure_for(side)
+func lowest_exposure_cell(side: int, origin: Vector2i, radius: int, kind: int = Unit.Kind.TANK) -> Vector2i:
+	var exposure: PackedFloat32Array = exposure_for(side, kind)
+	var pf: Pathfinder = pathfinders[kind]
 	var n: int = height_field.size
 	var best: Vector2i = origin
 	var best_e: float = exposure[origin.y * n + origin.x]
@@ -517,7 +654,7 @@ func lowest_exposure_cell(side: int, origin: Vector2i, radius: int) -> Vector2i:
 	for dy: int in range(-radius, radius + 1):
 		for dx: int in range(-radius, radius + 1):
 			var c: Vector2i = origin + Vector2i(dx, dy)
-			if dx * dx + dy * dy > radius * radius or not pathfinder.is_walkable(c):
+			if dx * dx + dy * dy > radius * radius or not pf.is_walkable(c):
 				continue
 			var e: float = exposure[c.y * n + c.x]
 			var d: float = Vector2(dx, dy).length()
@@ -533,7 +670,7 @@ func _back_target(u: Unit) -> Vector2i:
 	var dir: Vector2 = -u.heading.normalized()
 	for back: int in Config.WITHDRAW_RADIUS:
 		var c: Vector2i = Vector2i((u.pos + dir * float(Config.WITHDRAW_RADIUS - back)).round())
-		if height_field.in_bounds(c) and pathfinder.is_walkable(c):
+		if height_field.in_bounds(c) and pathfinders[u.kind].is_walkable(c):
 			return c
 	return u.cell()
 
@@ -542,7 +679,7 @@ func _back_target(u: Unit) -> Vector2i:
 ## de ±OVERWATCH_HALF_ANGLE_DEG. Cualquier otra orden la cancela.
 func order_overwatch(unit_id: int, dir: Vector2) -> bool:
 	var u: Unit = get_unit(unit_id)
-	if u == null or not u.alive or phase != Phase.PLAN or dir.length() < 0.001:
+	if not _can_order(u) or dir.length() < 0.001:
 		return false
 	u.path.clear()
 	u.waypoints.clear()
@@ -609,7 +746,7 @@ func order_smoke(unit_id: int, cell: Vector2i) -> bool:
 
 func can_smoke_at(u: Unit, cell: Vector2i) -> bool:
 	return TerrainAnalysis.dist_m(u.cell(), cell) <= Config.SMOKE_RANGE \
-		and analysis.los(u.cell(), Config.EYE_H, cell, 1.0)
+		and analysis.los(u.cell(), u.eye_h(), cell, 1.0)
 
 
 ## Fin de turno: cada nube pierde un turno y se van las que llegaron a cero.
@@ -633,11 +770,11 @@ static func in_overwatch_sector(u: Unit, at: Vector2) -> bool:
 func order_attack(unit_id: int, enemy_id: int) -> bool:
 	var u: Unit = get_unit(unit_id)
 	var enemy: Unit = get_unit(enemy_id)
-	if u == null or enemy == null or not u.alive or not enemy.alive or enemy.side == u.side:
+	if not _can_order(u) or enemy == null or not enemy.alive or enemy.side == u.side:
 		return false
 	if phase != Phase.PLAN or not known_enemies[u.side].has(enemy_id):
 		return false
-	if _can_see(u, enemy, Config.CENTER_H) and visible_enemies[u.side].has(enemy_id):
+	if _can_see(u, enemy, enemy.center_h()) and visible_enemies[u.side].has(enemy_id):
 		u.path.clear()
 		u.moving = false
 		u.final_heading = Vector2.ZERO
@@ -660,7 +797,7 @@ func _update_attackers() -> void:
 			u.order = Unit.Order.NONE
 			u.path.clear()
 			u.moving = false
-		elif not u.path.is_empty() and visible_enemies[u.side].has(enemy.id) and _can_see(u, enemy, Config.CENTER_H):
+		elif not u.path.is_empty() and visible_enemies[u.side].has(enemy.id) and _can_see(u, enemy, enemy.center_h()):
 			u.path.clear()
 			u.moving = false
 			u.final_heading = Vector2.ZERO
@@ -689,10 +826,11 @@ func order_hulldown(unit_ids: Array[int], already_reserved: Array[Vector2i] = []
 		if threats.is_empty():
 			target = _advance_target(u.cell())
 		else:
-			var cands: Array[Dictionary] = analysis.hulldown_candidates(u.cell(), threats, Config.HULLDOWN_RADIUS)
+			var cands: Array[Dictionary] = analysis.hulldown_candidates(u.cell(), threats, Config.HULLDOWN_RADIUS,
+				u.eye_h(), u.profile_h(), u.center_h(), Config.COVER_W_TAKE_POSITION if u.is_infantry() else 0.0)
 			for c: Dictionary in cands:
 				var cell: Vector2i = c["cell"]
-				if pathfinder.is_walkable(cell) and is_free(cell, reserved):
+				if pathfinders[u.kind].is_walkable(cell) and is_free(cell, reserved):
 					target = cell
 					break
 		if order_move(u.id, target, facing_to_threats(target, threats)):
@@ -751,7 +889,12 @@ func step() -> void:
 			u.moving = false
 			continue
 		u.waiting = false
+		if is_suppressed(u) and u.is_infantry():
+			u.moving = false # cuerpo a tierra, no avanza
+			continue
 		_advance(u, Config.TICK)
+	_update_suppression()
+	_update_posture()
 	tick_in_turn += 1
 	total_ticks += 1
 	if tick_in_turn % Config.DETECTION_INTERVAL_TICKS == 0:
@@ -762,65 +905,247 @@ func step() -> void:
 		_end_turn()
 
 
+func is_suppressed(u: Unit) -> bool:
+	return u.suppression >= Config.SUPPRESSED
+
+
+func is_pinned(u: Unit) -> bool:
+	return u.is_infantry() and u.suppression >= Config.PINNED
+
+
+## La supresión baja sola pasado un rato sin fuego; la infantería suprimida pierde moral.
+func _update_suppression() -> void:
+	for u: Unit in units:
+		if not u.alive:
+			continue
+		if float(total_ticks - u.last_suppressed_tick) * Config.TICK > Config.SUPP_DECAY_DELAY:
+			u.suppression = maxf(0.0, u.suppression - Config.SUPP_DECAY * Config.TICK)
+		if u.is_infantry() and is_suppressed(u):
+			_lose_morale(u, Config.MORALE_SUPP_DRAIN * Config.TICK)
+
+
+func _lose_morale(u: Unit, amount: float) -> void:
+	if not u.is_infantry():
+		return
+	u.morale = maxf(0.0, u.morale - amount)
+	if u.morale < Config.MORALE_BREAK:
+		u.broken = true
+
+
+## Supresión de un disparo con el arma w contra target (y la mitad a las unidades cercanas del mismo bando).
+func _suppress(target: Unit, w: int, hit: bool, factor: float = 1.0) -> void:
+	var amount: float = weapon_suppression(w) * factor * (Config.SUPP_HIT_MULT if hit else 1.0)
+	for u: Unit in units:
+		if not u.alive or u.side != target.side:
+			continue
+		var d: float = u.pos.distance_to(target.pos)
+		if u == target:
+			_add_suppression(u, amount)
+		elif d <= Config.SUPP_NEAR_RADIUS:
+			_add_suppression(u, amount * 0.5)
+
+
+func _add_suppression(u: Unit, amount: float) -> void:
+	u.suppression = minf(100.0, u.suppression + amount)
+	u.last_suppressed_tick = total_ticks
+	if u.is_infantry() and is_suppressed(u):
+		u.prone = true
+		u.still_time = maxf(u.still_time, Config.INF_PRONE_SECONDS)
+
+
+static func weapon_suppression(w: int) -> float:
+	match w:
+		Unit.Weapon.COAX:
+			return Config.SUPP_COAX
+		Unit.Weapon.RIFLES:
+			return Config.SUPP_RIFLES
+		Unit.Weapon.AT:
+			return Config.SUPP_AT
+	return Config.SUPP_CANNON
+
+
+## Infantería: en movimiento va de pie; quieta INF_PRONE_SECONDS, cuerpo a tierra.
+func _update_posture() -> void:
+	for u: Unit in units:
+		if not u.alive or not u.is_infantry():
+			continue
+		if u.moving:
+			u.still_time = 0.0
+			u.prone = false
+		elif is_suppressed(u):
+			u.prone = true
+		else:
+			u.still_time += Config.TICK
+			u.prone = u.still_time >= Config.INF_PRONE_SECONDS - 0.0001
+
+
 func _combat() -> void:
 	for shooter: Unit in units:
-		if not shooter.alive:
-			continue
+		for slot: int in 2:
+			if shooter.alive:
+				_fire_slot(shooter, slot)
+
+
+## Un arma de un tirador: recarga y, si está lista y hay blanco, dispara.
+func _fire_slot(shooter: Unit, slot: int) -> void:
+	var w: int = shooter.weapon(slot)
+	if slot == 0:
 		shooter.reload_left = maxf(0.0, shooter.reload_left - Config.TICK)
 		if shooter.reload_left > 0.0:
+			return
+	else:
+		shooter.reload2_left = maxf(0.0, shooter.reload2_left - Config.TICK)
+		if shooter.reload2_left > 0.0 or (w == Unit.Weapon.AT and shooter.at_charges <= 0):
+			return
+	if is_pinned(shooter):
+		return
+	var anti_inf: bool = weapon_target_kind(w) == Unit.Kind.INFANTRY
+	if anti_inf and shooter.order == Unit.Order.SUPPRESS:
+		if roe_allows_fire(shooter):
+			_area_fire(shooter, slot, w)
+		return
+	var target: Unit = _pick_target(shooter, w)
+	if target == null:
+		return
+	if slot == 0:
+		shooter.reload_left = weapon_reload(w)
+	else:
+		shooter.reload2_left = weapon_reload(w)
+	if w == Unit.Weapon.AT:
+		shooter.at_charges -= 1
+	shooter.last_fire_tick = total_ticks
+	# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
+	known_enemies[target.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
+	target.shots_received += 1
+	target.last_fired_upon_tick = total_ticks
+	var hit: bool = rng.randf() < hit_probability(shooter, target, w)
+	if hit:
+		_damage(target)
+	_suppress(target, w, hit)
+	shooter.overwatch_ready = false
+	if shooter.order == Unit.Order.SCOOT and not shooter.scoot_fired:
+		_start_scoot_return(shooter, target)
+	shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit,
+		"aspect": aspect_of(target, shooter.pos), "weapon": w})
+
+
+## Un impacto: un hombre menos (con su golpe a la moral) o un impacto de cañón.
+func _damage(target: Unit) -> void:
+	target.hp -= 1
+	_lose_morale(target, Config.MORALE_PER_CASUALTY)
+	if target.hp <= 0:
+		target.alive = false
+		target.moving = false
+		target.path.clear()
+
+
+## Fuego de área de la orden SUPPRESS: bate la zona aunque no haya blanco visible.
+## Suprime a todo enemigo en SUPPRESS_AREA_RADIUS y casi no causa bajas.
+func _area_fire(shooter: Unit, slot: int, w: int) -> void:
+	if not can_suppress_at(shooter, shooter.suppress_cell):
+		return
+	if slot == 0:
+		shooter.reload_left = weapon_reload(w)
+	else:
+		shooter.reload2_left = weapon_reload(w)
+	shooter.last_fire_tick = total_ticks
+	var center: Vector2 = Vector2(shooter.suppress_cell)
+	for u: Unit in units:
+		if not u.alive or u.side == shooter.side or u.pos.distance_to(center) > Config.SUPPRESS_AREA_RADIUS:
 			continue
-		var target: Unit = _pick_target(shooter)
-		if target == null:
-			continue
-		shooter.reload_left = Config.RELOAD_SECONDS
-		shooter.last_fire_tick = total_ticks
-		# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
-		known_enemies[target.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
-		target.shots_received += 1
-		target.last_fired_upon_tick = total_ticks
-		var hit: bool = rng.randf() < hit_probability(shooter, target)
-		if hit:
-			target.hp -= 1
-			if target.hp <= 0:
-				target.alive = false
-				target.moving = false
-				target.path.clear()
-		shooter.overwatch_ready = false
-		if shooter.order == Unit.Order.SCOOT and not shooter.scoot_fired:
-			_start_scoot_return(shooter, target)
-		shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit, "aspect": aspect_of(target, shooter.pos)})
+		known_enemies[u.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
+		if u.is_infantry() and rng.randf() < hit_probability(shooter, u, w) * Config.SUPPRESS_AREA_HIT_FACTOR:
+			_damage(u)
+		_add_suppression(u, weapon_suppression(w) * Config.SUPPRESS_AREA_SUPP)
+	shot_events.append({"shooter": shooter.id, "target": -1, "cell": shooter.suppress_cell, "hit": false,
+		"aspect": Aspect.FRONT, "weapon": w})
+
+
+## ¿Puede batir la zona? Alcance del arma antipersonal y línea de visión al suelo de la zona.
+func can_suppress_at(u: Unit, cell: Vector2i) -> bool:
+	var w: int = u.weapon(0) if u.is_infantry() else u.weapon(1)
+	return height_field.in_bounds(cell) and TerrainAnalysis.dist_m(u.cell(), cell) <= weapon_range(w) \
+		and analysis.los(u.cell(), u.eye_h(), cell, 1.0)
+
+
+## Orden SUPPRESS: quieta, batiendo la zona alrededor de cell con su arma antipersonal
+## (fusiles o coaxial). El cañón del tanque sigue tirando a tanques. Solo en PLAN.
+func order_suppress(unit_id: int, cell: Vector2i) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if not _can_order(u) or not can_suppress_at(u, cell):
+		return false
+	u.path.clear()
+	u.waypoints.clear()
+	u.moving = false
+	u.attack_target = -1
+	u.reversing = false
+	u.final_heading = Vector2.ZERO
+	_face(u, Vector2(cell))
+	u.suppress_cell = cell
+	u.order = Unit.Order.SUPPRESS
+	return true
+
+
+## ¿Contra qué tipo de unidad sirve el arma?
+static func weapon_target_kind(w: int) -> int:
+	return Unit.Kind.INFANTRY if w == Unit.Weapon.COAX or w == Unit.Weapon.RIFLES else Unit.Kind.TANK
+
+
+static func weapon_range(w: int) -> float:
+	match w:
+		Unit.Weapon.COAX:
+			return Config.COAX_RANGE
+		Unit.Weapon.RIFLES:
+			return Config.RIFLES_RANGE
+		Unit.Weapon.AT:
+			return Config.AT_RANGE
+	return Config.MAX_RANGE
+
+
+static func weapon_reload(w: int) -> float:
+	match w:
+		Unit.Weapon.COAX:
+			return Config.COAX_RELOAD
+		Unit.Weapon.RIFLES:
+			return Config.RIFLES_RELOAD
+		Unit.Weapon.AT:
+			return Config.AT_RELOAD
+	return Config.RELOAD_SECONDS
 
 
 ## Enemigo visible para el bando del tirador, más cercano, al que el tirador ve
 ## y que su ROE permite (arco y distancia máxima de enganche incluidos).
-func _pick_target(shooter: Unit) -> Unit:
+## weapon: solo blancos del tipo que el arma puede dañar y dentro de su alcance.
+func _pick_target(shooter: Unit, weapon: int = Unit.Weapon.CANNON) -> Unit:
 	if not roe_allows_fire(shooter):
 		return null
+	var kind: int = weapon_target_kind(weapon)
+	var reach: float = weapon_range(weapon)
 	var vis: Dictionary = visible_enemies[shooter.side]
 	# Blanco prioritario de la orden ATTACK, si se lo puede tirar
 	if shooter.attack_target >= 0 and vis.has(shooter.attack_target):
 		var prio: Unit = units[shooter.attack_target]
-		if prio.alive and _can_engage(shooter, prio):
+		if prio.alive and prio.kind == kind and _can_engage(shooter, prio, reach):
 			return prio
 	var best: Unit = null
 	var best_d: float = INF
 	for id: int in vis:
 		var enemy: Unit = units[id]
-		if not enemy.alive:
+		if not enemy.alive or enemy.kind != kind:
 			continue
 		var d: float = TerrainAnalysis.dist_m(shooter.cell(), enemy.cell())
 		if shooter.order == Unit.Order.OVERWATCH and not in_overwatch_sector(shooter, enemy.pos):
 			continue
-		if d < best_d and _can_engage(shooter, enemy):
+		if d < best_d and _can_engage(shooter, enemy, reach):
 			best = enemy
 			best_d = d
 	return best
 
 
 ## Línea de tiro y dentro del arco y la distancia máxima de enganche del tirador.
-func _can_engage(shooter: Unit, enemy: Unit) -> bool:
-	return TerrainAnalysis.dist_m(shooter.cell(), enemy.cell()) <= shooter.max_engage_m \
-		and in_fire_arc(shooter, enemy.pos) and _can_see(shooter, enemy, Config.CENTER_H)
+func _can_engage(shooter: Unit, enemy: Unit, reach: float = Config.MAX_RANGE) -> bool:
+	return TerrainAnalysis.dist_m(shooter.cell(), enemy.cell()) <= minf(shooter.max_engage_m, reach) \
+		and in_fire_arc(shooter, enemy.pos) and _can_see(shooter, enemy, enemy.center_h())
 
 
 ## ¿La ROE de u le deja abrir fuego ahora?
@@ -895,13 +1220,13 @@ static func aspect_factor(aspect: int) -> float:
 	return Config.ARMOR_FLANK_FACTOR
 
 
-## p = P_HIT_BASE x distancia x casco x movimiento (x emboscada) x blindaje (tope P_HIT_MAX).
-func hit_probability(shooter: Unit, target: Unit) -> float:
+## Cañón: p = P_HIT_BASE x distancia x casco x movimiento (x emboscada) x blindaje (tope P_HIT_MAX).
+## Otras armas: p del arma x distancia (sobre su alcance) x movimiento x postura del blanco
+## x escuadra diezmada; el antitanque además x casco x blindaje.
+func hit_probability(shooter: Unit, target: Unit, weapon: int = Unit.Weapon.CANNON) -> float:
 	var d: float = TerrainAnalysis.dist_m(shooter.cell(), target.cell())
-	var f_dist: float = clampf(1.0 - d / Config.MAX_RANGE, 0.2, 1.0)
-	var f_hull: float = 1.0
-	if not analysis.los(shooter.cell(), Config.EYE_H, target.cell(), Config.HULL_H):
-		f_hull = hulldown_hit_factor
+	var reach: float = weapon_range(weapon)
+	var f_dist: float = clampf(1.0 - d / reach, 0.2, 1.0)
 	var f_move: float = 1.0
 	if shooter.moving:
 		match effective_pace(shooter):
@@ -911,19 +1236,40 @@ func hit_probability(shooter: Unit, target: Unit) -> float:
 				f_move = Config.PACE_CAUTIOUS_FIRE_FACTOR
 			_:
 				f_move = moving_shooter_factor
+	if weapon == Unit.Weapon.COAX or weapon == Unit.Weapon.RIFLES:
+		var p: float = Config.COAX_P_HIT if weapon == Unit.Weapon.COAX else Config.RIFLES_P_HIT
+		var f_posture: float = Config.INF_PRONE_HIT_FACTOR if target.prone else 1.0
+		var f_cover: float = 1.0 - cover_at(target.cell())
+		return minf(p * f_dist * f_move * f_posture * f_cover * _weak_factor(shooter), p_hit_max)
+	var f_hull: float = 1.0
+	if not analysis.los(shooter.cell(), shooter.eye_h(), target.cell(), target.profile_h()):
+		f_hull = hulldown_hit_factor
+	var f_armor: float = aspect_factor(aspect_of(target, shooter.pos)) if armor_enabled and not target.is_infantry() else 1.0
+	if weapon == Unit.Weapon.AT:
+		return minf(Config.AT_P_HIT * f_dist * f_move * f_hull * f_armor * _weak_factor(shooter), p_hit_max)
 	if shooter.order == Unit.Order.OVERWATCH and shooter.overwatch_ready and target.moving:
 		f_move *= Config.OVERWATCH_FIRST_SHOT_FACTOR # emboscada
-	var f_armor: float = aspect_factor(aspect_of(target, shooter.pos)) if armor_enabled else 1.0
 	return minf(p_hit_base * f_dist * f_hull * f_move * f_armor, p_hit_max)
+
+
+## Escuadra diezmada o suprimida: tira peor.
+static func _weak_factor(shooter: Unit) -> float:
+	var f: float = 1.0
+	if shooter.is_infantry() and shooter.hp <= Config.INF_WEAK_MEN:
+		f *= Config.INF_WEAK_FACTOR
+	if shooter.is_infantry() and shooter.suppression >= Config.SUPPRESSED:
+		f *= Config.SUPPRESSED_FIRE_FACTOR
+	return f
 
 
 ## Probabilidad de que un tirador quieto en shooter_cell impacte a un blanco en target_cell
 ## con ese heading (para la vista previa de riesgo: sin emboscada ni movimiento del tirador).
-func hit_probability_at(shooter_cell: Vector2i, target_cell: Vector2i, target_heading: Vector2) -> float:
+func hit_probability_at(shooter_cell: Vector2i, target_cell: Vector2i, target_heading: Vector2,
+		target_profile_h: float = Config.HULL_H) -> float:
 	var d: float = TerrainAnalysis.dist_m(shooter_cell, target_cell)
 	var f_dist: float = clampf(1.0 - d / Config.MAX_RANGE, 0.2, 1.0)
 	var f_hull: float = 1.0
-	if not analysis.los(shooter_cell, Config.EYE_H, target_cell, Config.HULL_H):
+	if not analysis.los(shooter_cell, Config.EYE_H, target_cell, target_profile_h):
 		f_hull = hulldown_hit_factor
 	var f_armor: float = 1.0
 	if armor_enabled:
@@ -955,7 +1301,7 @@ func route_risk(unit_id: int) -> Dictionary:
 	var worst: int = -1
 	for c: Vector2i in u.path:
 		var delta: Vector2 = Vector2(c) - pos
-		var speed: float = speed_at(c) * pace_speed_factor(pace) * (Config.REVERSE_SPEED_FACTOR if u.reversing else 1.0)
+		var speed: float = speed_at(c, u.kind) * pace_speed_factor(pace) * (Config.REVERSE_SPEED_FACTOR if u.reversing else 1.0)
 		var dt: float = delta.length() * Config.CELL_SIZE / maxf(speed, 0.01)
 		if not u.reversing and delta.length() > 0.0001:
 			heading = delta.normalized()
@@ -964,11 +1310,11 @@ func route_risk(unit_id: int) -> Dictionary:
 		for i: int in threats.size():
 			var th: Vector2i = threats[i]
 			if TerrainAnalysis.dist_m(th, c) > minf(spot_m, Config.MAX_RANGE) \
-					or not analysis.los(th, Config.EYE_H, c, Config.CENTER_H):
+					or not analysis.los(th, Config.EYE_H, c, u.center_h()):
 				continue
 			seen_here = true
 			seeing[i] = true
-			hits += dt / Config.RELOAD_SECONDS * hit_probability_at(th, c, heading)
+			hits += dt / Config.RELOAD_SECONDS * hit_probability_at(th, c, heading, u.profile_h())
 			worst = maxi(worst, aspect_from(heading, Vector2(c), Vector2(th)))
 		if seen_here:
 			exposed_s += dt
@@ -1008,12 +1354,21 @@ func _check_victory() -> void:
 
 func _end_turn() -> void:
 	_age_smoke()
+	for u: Unit in units:
+		if u.alive and u.is_infantry() and not is_suppressed(u):
+			u.morale = minf(100.0, u.morale + Config.MORALE_RECOVER_PER_TURN)
+			if u.broken and u.morale >= Config.MORALE_RALLY:
+				u.broken = false
 	update_detection()
 	if turn >= Config.MAX_TURNS:
 		var blue: int = alive_count(0)
 		var red: int = alive_count(1)
 		game_over = true
 		winner = DRAW if blue == red else (0 if blue > red else 1)
+		if scenario == Scenario.LOMA:
+			# La loma: el azul gana solo si ocupa la cresta sin rojos; en disputa, empate; si no, gana el rojo
+			var holder: int = objective_holder()
+			winner = 0 if holder == 0 else (DRAW if holder == DRAW else 1)
 		phase = Phase.PLAN
 		return
 	turn += 1
@@ -1021,13 +1376,40 @@ func _end_turn() -> void:
 	start_plan()
 
 
-func speed_at(c: Vector2i) -> float:
-	var t: float = clampf(height_field.slope_at(c) / Config.PATH_MAX_SLOPE, 0.0, 1.0)
-	return Config.TANK_SPEED * lerpf(1.0, Config.SLOPE_SPEED_PENALTY, t)
+## Centro del objetivo de la loma: el eje de la cresta en el medio del mapa.
+func objective_cell() -> Vector2i:
+	var x: int = height_field.size / 2
+	return Vector2i(x, roundi(height_field.ridge_center_y(float(x))))
+
+
+## Quién ocupa el objetivo: el bando con infantería viva y sin quebrar a <= LOMA_OBJECTIVE_RADIUS
+## (y el otro sin ninguna), DRAW si los dos, NO_WINNER si nadie.
+func objective_holder() -> int:
+	var present: Array[bool] = [false, false]
+	var center: Vector2 = Vector2(objective_cell())
+	for u: Unit in units:
+		if u.alive and u.is_infantry() and not u.broken and u.pos.distance_to(center) <= Config.LOMA_OBJECTIVE_RADIUS:
+			present[u.side] = true
+	if present[0] and present[1]:
+		return DRAW
+	if present[0]:
+		return 0
+	if present[1]:
+		return 1
+	return NO_WINNER
+
+
+func speed_at(c: Vector2i, kind: int = Unit.Kind.TANK) -> float:
+	var max_slope: float = Config.INF_MAX_SLOPE if kind == Unit.Kind.INFANTRY else Config.PATH_MAX_SLOPE
+	var base: float = Config.INF_SPEED if kind == Unit.Kind.INFANTRY else Config.TANK_SPEED
+	if kind == Unit.Kind.TANK and cover != null and cover.is_forest(c):
+		base *= Config.FOREST_TANK_SPEED
+	var t: float = clampf(height_field.slope_at(c) / max_slope, 0.0, 1.0)
+	return base * lerpf(1.0, Config.SLOPE_SPEED_PENALTY, t)
 
 
 func _advance(u: Unit, dt: float) -> void:
-	var budget_m: float = speed_at(u.cell()) * pace_speed_factor(effective_pace(u)) * dt
+	var budget_m: float = speed_at(u.cell(), u.kind) * pace_speed_factor(effective_pace(u)) * dt
 	if u.reversing:
 		budget_m *= Config.REVERSE_SPEED_FACTOR
 	while budget_m > 0.0 and not u.path.is_empty():

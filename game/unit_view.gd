@@ -1,6 +1,7 @@
 class_name UnitView
 extends Node3D
-## Vista de un tanque: caja de casco + torreta, y anillo de selección.
+## Vista de una unidad: tanque (caja de casco + torreta) o escuadra (caja baja y ancha con
+## el número de hombres encima), y anillo de selección.
 ## Modos de niebla: normal, fantasma (última posición conocida), oculto, restos.
 
 enum Display { NORMAL, GHOST, HIDDEN, WRECK }
@@ -20,6 +21,7 @@ var prev_pos: Vector2 = Vector2.ZERO # posición en el tick anterior (para inter
 var _ring: MeshInstance3D
 var _hull: MeshInstance3D
 var _turret: MeshInstance3D
+var _label: Label3D # hombres de la escuadra (solo infantería)
 var _mat_normal: StandardMaterial3D = StandardMaterial3D.new()
 var _mat_ghost: StandardMaterial3D = StandardMaterial3D.new()
 var _mat_wreck: StandardMaterial3D = StandardMaterial3D.new()
@@ -37,20 +39,30 @@ func setup(p_unit: Unit, hf: HeightField) -> void:
 	_mat_wreck.albedo_color = Color(0.12, 0.11, 0.1)
 	var mat: StandardMaterial3D = _mat_normal
 
+	var inf: bool = unit.is_infantry()
 	var hull_mesh: BoxMesh = BoxMesh.new()
-	hull_mesh.size = Vector3(3.5, 2.2, 7.0)
+	hull_mesh.size = Vector3(6.0, 0.8, 4.0) if inf else Vector3(3.5, 2.2, 7.0)
 	hull_mesh.material = mat
 	_hull = MeshInstance3D.new()
 	_hull.mesh = hull_mesh
-	_hull.position.y = 1.1
+	_hull.position.y = hull_mesh.size.y * 0.5
 	add_child(_hull)
+	if inf:
+		_label = Label3D.new()
+		_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_label.no_depth_test = true
+		_label.font_size = 48
+		_label.outline_size = 12
+		_label.modulate = color.lightened(0.5)
+		_label.position.y = 4.0
+		add_child(_label)
 
 	var turret_mesh: BoxMesh = BoxMesh.new()
-	turret_mesh.size = Vector3(2.2, 0.9, 3.0)
+	turret_mesh.size = Vector3(1.0, 0.5, 1.0) if inf else Vector3(2.2, 0.9, 3.0)
 	turret_mesh.material = mat
 	_turret = MeshInstance3D.new()
 	_turret.mesh = turret_mesh
-	_turret.position = Vector3(0.0, 2.65, -0.4)
+	_turret.position = Vector3(0.0, 1.05, -1.4) if inf else Vector3(0.0, 2.65, -0.4)
 	add_child(_turret)
 
 	var ring_mesh: TorusMesh = TorusMesh.new()
@@ -72,6 +84,15 @@ func setup(p_unit: Unit, hf: HeightField) -> void:
 func sync_from_sim(alpha: float = 1.0) -> void:
 	_place(prev_pos.lerp(unit.pos, alpha))
 	rotation.y = atan2(-unit.heading.x, -unit.heading.y)
+	if _label != null:
+		var mark: String = ""
+		if unit.broken:
+			mark = " !"
+		elif unit.suppression >= Config.SUPPRESSED:
+			mark = " ▼"
+		_label.text = "%d%s" % [unit.hp, mark]
+		_label.modulate = Color.WHITE.lerp(Color(1.0, 0.35, 0.2), clampf(unit.suppression / 100.0, 0.0, 1.0))
+		_hull.scale.y = 0.5 if unit.prone else 1.0
 
 
 func _place(p: Vector2) -> void:
@@ -95,3 +116,5 @@ func set_display(mode: int) -> void:
 	_turret.material_override = mat
 	if mode == Display.WRECK:
 		_ring.visible = false
+	if _label != null:
+		_label.visible = mode == Display.NORMAL

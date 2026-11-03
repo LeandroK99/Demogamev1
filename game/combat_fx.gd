@@ -25,12 +25,18 @@ func _point(u: Unit, h: float) -> Vector3:
 	return Vector3(u.pos.x * Config.CELL_SIZE, height_field.height_at(u.pos) + h, u.pos.y * Config.CELL_SIZE)
 
 
-func add_shot(shooter: Unit, target: Unit, hit: bool, aspect: int = SimWorld.Aspect.FRONT) -> void:
-	var to: Vector3 = _point(target, Config.CENTER_H)
+func add_shot(shooter: Unit, target: Unit, hit: bool, aspect: int = SimWorld.Aspect.FRONT, weapon: int = Unit.Weapon.CANNON) -> void:
+	var to: Vector3 = _point(target, target.center_h())
+	if weapon == Unit.Weapon.COAX or weapon == Unit.Weapon.RIFLES:
+		# Armas livianas: varias trazadoras cortas alrededor del blanco, sin fogonazo de impacto
+		for i: int in 3:
+			var spread: Vector3 = Vector3(randf_range(-3.0, 3.0), randf_range(0.0, 1.5), randf_range(-3.0, 3.0))
+			_tracers.append({"from": _point(shooter, shooter.eye_h()), "to": to + spread, "left": TRACER_SECONDS * 0.5})
+		return
 	if not hit:
 		# Errado: la trazadora pasa un poco por al lado
 		to += Vector3(randf_range(-4.0, 4.0), randf_range(0.5, 3.0), randf_range(-4.0, 4.0))
-	_tracers.append({"from": _point(shooter, Config.EYE_H), "to": to, "left": TRACER_SECONDS})
+	_tracers.append({"from": _point(shooter, shooter.eye_h()), "to": to, "left": TRACER_SECONDS})
 	if hit:
 		var mesh: SphereMesh = SphereMesh.new()
 		var r: float = 2.0
@@ -52,6 +58,15 @@ func add_shot(shooter: Unit, target: Unit, hit: bool, aspect: int = SimWorld.Asp
 		flash.position = to
 		add_child(flash)
 		_flashes.append({"node": flash, "left": FLASH_SECONDS})
+
+
+## Fuego de área (suprimir): trazadoras repartidas sobre la zona.
+func add_area_shot(shooter: Unit, cell: Vector2i) -> void:
+	var center: Vector3 = height_field.cell_to_world(cell)
+	var r: float = Config.SUPPRESS_AREA_RADIUS * Config.CELL_SIZE
+	for i: int in 4:
+		var to: Vector3 = center + Vector3(randf_range(-r, r), randf_range(0.0, 1.0), randf_range(-r, r))
+		_tracers.append({"from": _point(shooter, shooter.eye_h()), "to": to, "left": TRACER_SECONDS * 0.5})
 
 
 func _process(delta: float) -> void:

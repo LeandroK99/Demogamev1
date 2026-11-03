@@ -185,3 +185,14 @@ func test_smoke_order_and_duration() -> void:
 	for i: int in world.ticks_per_turn:
 		world.step()
 	assert_eq(world.smoke_clouds.size(), 0, "se disipó después de SMOKE_TURNS turnos")
+
+
+func test_tank_kind_keeps_tank_heights() -> void:
+	var world: SimWorld = _flat_world()
+	var u: Unit = world.units[0]
+	assert_eq(u.kind, Unit.Kind.TANK, "por defecto es un tanque")
+	assert_eq(u.eye_h(), Config.EYE_H, "ojo de tanque")
+	assert_eq(u.profile_h(), Config.HULL_H, "casco de tanque")
+	assert_eq(u.center_h(), Config.CENTER_H, "centro de tanque")
+	assert_eq(u.hp, Config.TANK_HP, "vida de tanque")
+	assert_eq(world.speed_at(u.cell()), Config.TANK_SPEED, "velocidad de tanque en llano")

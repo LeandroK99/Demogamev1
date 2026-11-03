@@ -57,8 +57,11 @@ func _process(delta: float) -> void:
 				break
 	for e: Dictionary in world.shot_events:
 		var shooter: Unit = world.units[int(e["shooter"])]
-		if shooter.side == PLAYER_SIDE or world.visible_enemies[PLAYER_SIDE].has(shooter.id):
-			fx.add_shot(shooter, world.units[int(e["target"])], bool(e["hit"]), int(e.get("aspect", SimWorld.Aspect.FRONT)))
+		if int(e["target"]) < 0:
+			if shooter.side == PLAYER_SIDE or world.visible_enemies[PLAYER_SIDE].has(shooter.id):
+				fx.add_area_shot(shooter, e["cell"])
+		elif shooter.side == PLAYER_SIDE or world.visible_enemies[PLAYER_SIDE].has(shooter.id):
+			fx.add_shot(shooter, world.units[int(e["target"])], bool(e["hit"]), int(e.get("aspect", SimWorld.Aspect.FRONT)), int(e.get("weapon", Unit.Weapon.CANNON)))
 	world.shot_events.clear()
 	var alpha: float = clampf(_accum / Config.TICK, 0.0, 1.0) if world.phase == SimWorld.Phase.EXECUTE else 1.0
 	_apply_fog(alpha)

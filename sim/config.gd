@@ -30,6 +30,95 @@ const ARMOR_FRONT_FACTOR: float = 0.6 # multiplicador de impacto si el tirador e
 const ARMOR_FLANK_FACTOR: float = 1.0
 const ARMOR_REAR_FACTOR: float = 1.4
 
+# --- Infantería ---
+const INF_MEN: int = 9 # hombres por escuadra
+const INF_EYE_H: float = 1.7 # altura del ojo de pie
+const INF_STAND_H: float = 1.0 # perfil de una escuadra de pie (agachada, en movimiento)
+const INF_PRONE_H: float = 0.4 # perfil cuerpo a tierra
+const INF_CENTER_FRACTION: float = 0.6 # fracción del perfil a la que se apunta
+const INF_SPEED: float = 1.5 # m/s en llano
+const INF_MAX_SLOPE: float = 8.0 # metros; la infantería sube pendientes que el tanque no
+const INF_PRONE_SECONDS: float = 3.0 # quieta este tiempo, se tira cuerpo a tierra
+const INF_SPOT_MOVING: float = 250.0 # metros: alcance para detectar a una escuadra en movimiento (o que dispara)
+const INF_SPOT_STILL: float = 120.0 # ... quieta de pie
+const INF_SPOT_PRONE: float = 60.0 # ... cuerpo a tierra
+
+# --- Armas cruzadas (el cañón usa MAX_RANGE, RELOAD_SECONDS y P_HIT_BASE) ---
+const COAX_RANGE: float = 300.0 # metros
+const COAX_RELOAD: float = 2.0 # segundos entre ráfagas
+const COAX_P_HIT: float = 0.3
+const RIFLES_RANGE: float = 300.0
+const RIFLES_RELOAD: float = 2.5
+const RIFLES_P_HIT: float = 0.3
+const AT_RANGE: float = 150.0
+const AT_RELOAD: float = 10.0
+const AT_P_HIT: float = 0.5
+const INF_AT_CHARGES: int = 2
+const INF_PRONE_HIT_FACTOR: float = 0.5 # contra una escuadra cuerpo a tierra
+const INF_WEAK_MEN: int = 3 # con estos hombres o menos, la escuadra tira peor
+const INF_WEAK_FACTOR: float = 0.5
+
+# --- Cobertura fina ---
+const COVER_FOREST: float = 0.4 # cobertura para la infantería (0..1)
+const COVER_WALL: float = 0.6
+const COVER_PIT: float = 0.7
+const COVER_SPOT_FACTOR: float = 0.5 # la cobertura achica la detección de infantería en cobertura x esto
+const FOREST_TREE_H: float = 10.0 # metros: altura de los árboles para la línea de visión
+const FOREST_LOS_CELLS: float = 2.0 # celdas de bosque que la línea de visión atraviesa antes de cortarse
+const FOREST_TANK_SPEED: float = 0.5 # multiplicador de velocidad del tanque en el bosque
+const FOREST_TANK_PATH_COST: float = 1.0 # costo extra del A* del tanque por celda de bosque
+const COVER_W_TAKE_POSITION: float = 2.0 # peso de la cobertura al tomar posición (infantería)
+const COVER_DEPLOY_CLEAR: int = 4 # celdas libres de cobertura más allá del margen de despliegue
+const FOREST_COUNT: int = 7
+const FOREST_R_MIN: float = 3.0 # celdas
+const FOREST_R_MAX: float = 6.0
+const WALL_COUNT: int = 6
+const WALL_LEN_MIN: int = 5
+const WALL_LEN_MAX: int = 10
+const PIT_COUNT: int = 25
+
+# --- Supresión y moral ---
+const SUPP_CANNON: float = 30.0 # supresión por disparo recibido, según el arma
+const SUPP_COAX: float = 25.0
+const SUPP_RIFLES: float = 20.0
+const SUPP_AT: float = 30.0
+const SUPP_HIT_MULT: float = 1.5 # si además impacta
+const SUPP_NEAR_RADIUS: float = 2.0 # celdas: las unidades del blanco a esta distancia reciben la mitad
+const SUPP_DECAY: float = 5.0 # por segundo, pasados SUPP_DECAY_DELAY sin fuego
+const SUPP_DECAY_DELAY: float = 2.0
+const SUPPRESSED: float = 50.0 # desde acá la escuadra no avanza, tira a la mitad y se tira al suelo
+const PINNED: float = 85.0 # desde acá no tira
+const SUPPRESSED_FIRE_FACTOR: float = 0.5
+const TANK_BUTTONED_SPOT_FACTOR: float = 0.5 # tanque con supresión alta (abotonado): ve a esta fracción
+const MORALE_PER_CASUALTY: float = 8.0
+const MORALE_SUPP_DRAIN: float = 0.3 # por segundo mientras está suprimida
+const MORALE_RECOVER_PER_TURN: float = 15.0 # al terminar el turno sin estar suprimida
+const MORALE_BREAK: float = 25.0 # por debajo, se quiebra
+const MORALE_RALLY: float = 40.0 # quebrada, se recupera al llegar a esto
+const SUPPRESS_AREA_RADIUS: float = 3.0 # celdas: zona que bate la orden suprimir
+const SUPPRESS_AREA_SUPP: float = 0.7 # fracción de la supresión del arma que recibe cada unidad en la zona
+const SUPPRESS_AREA_HIT_FACTOR: float = 0.2 # el fuego de área casi no mata
+
+# --- Escenario "La loma" (infantería + tanque contra infantería + tanque) ---
+const LOMA_SQUADS: int = 3 # escuadras por bando
+const LOMA_TANKS: int = 1 # tanques por bando
+const LOMA_TURN_SECONDS: float = 45.0
+const LOMA_SQUAD_SPACING: int = 7 # celdas entre unidades al desplegar
+const LOMA_RED_BEHIND_CREST: int = 4 # celdas detrás del eje de la cresta donde despliega el rojo
+const LOMA_FOREST_FROM: int = 3 # bosque de la contrapendiente: de esta distancia detrás del eje...
+const LOMA_FOREST_TO: int = 8 # ... hasta esta
+const LOMA_FOREST_X_STEP: int = 18 # celdas entre manchas de bosque a lo largo de la cresta
+const LOMA_FOREST_HALF_W: int = 6 # medio ancho (en x) de cada mancha
+const LOMA_OBJECTIVE_RADIUS: float = 8.0 # celdas alrededor del centro de la cresta que hay que ocupar
+const TANK_SUPPORT_BACK: float = 12.0 # celdas: el tanque de un pelotón mixto se queda esto detrás de la infantería
+
+# --- IA de infantería ---
+const AI_INF_AMBUSH_RANGE: float = 150.0 # metros: la escuadra roja no abre fuego más lejos si no la atacaron
+const AI_INF_POSITION_RADIUS: int = 6 # celdas para buscar cobertura alrededor de la escuadra
+const AI_INF_W_COVER: float = 3.0 # puntaje de la cobertura al elegir posición
+const AI_INF_W_VIEW: float = 2.0 # puntaje de ver hacia adelante (o a las amenazas)
+const AI_INF_SUPPRESS_MAX: float = 30.0 # suprime una zona solo si su propia supresión es menor
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3
