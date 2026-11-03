@@ -443,3 +443,12 @@ const NEAR_AMBUSH_DONE_M: float = 6.0 # llegó a la posición del emboscador
 # --- Reptar (fase 53) ---
 const PACE_CRAWL_SPEED: float = 0.2 # multiplicador de velocidad reptando (0,3 m/s)
 const CRAWL_AFTER_SECONDS: float = 3.0 # clavada en marcha este tiempo, la escuadra sigue reptando
+
+# --- Tirador selecto (fase 54) ---
+const MARKSMAN_INDEX: int = 6 # el soldado 7 lleva fusil con mira (equipo A)
+const MARKSMAN_RANGE: float = 500.0
+const MARKSMAN_P_HIT: float = 0.2 # por tiro contra un blanco quieto de pie y al descubierto, a quemarropa
+const MARKSMAN_MOVING_FACTOR: float = 0.4 # contra un blanco en marcha
+const MARKSMAN_RELOAD: float = 4.0 # segundos entre tiros (apunta)
+const MARKSMAN_SPOT_FACTOR: float = 2.0 # con la mira ve a esto por el alcance normal
+const MARKSMAN_PRIORITY: float = 0.25 # jefes y ametralladoras cuentan como así de cerca al elegir blanco

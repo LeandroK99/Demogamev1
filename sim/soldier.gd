@@ -59,6 +59,7 @@ var ammo_carry: int = 0
 ## Granadas (fase 49): de mano, y las del fusil lanzagranadas si es el granadero.
 var grenades: int = 0
 var gl_rounds: int = 0
+var marksman: bool = false # tirador selecto (fase 54): fusil con mira, ve y tira más lejos
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
@@ -72,6 +73,7 @@ func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
 	grenades = 0 if p_role == Role.MG else Config.GRENADES_PER_SOLDIER
 	if p_index == Config.GRENADIER_INDEX:
 		gl_rounds = Config.GL_ROUNDS
+	marksman = p_index == Config.MARKSMAN_INDEX
 
 
 ## Equipo de fuego del soldado i.

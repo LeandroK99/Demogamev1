@@ -598,6 +598,9 @@ func begin_detection(w: SimWorld) -> void:
 		var want: int = mini(ok.size(), Config.SOLDIER_OBSERVERS - obs.size())
 		for k: int in want:
 			obs.append(ok[(_round * want + k) % ok.size()])
+		for s: Soldier in ok:
+			if s.marksman and not obs.has(s):
+				obs.append(s) # el tirador selecto siempre mira, con su mira
 		_observers[u.id] = obs
 
 
@@ -634,8 +637,8 @@ func spot_squad(w: SimWorld, side: int, enemy: Unit, vis_s: Dictionary) -> bool:
 	var anchor: Vector2 = enemy.pos_m()
 	var viewers: Array[Unit] = []
 	for own: Unit in w.units:
-		if own.side == side and own.alive \
-				and own.pos_m().distance_to(anchor) <= Config.INF_SPOT_MOVING + Config.SOLDIER_PAIR_MARGIN_M:
+		var far: float = Config.INF_SPOT_MOVING * (Config.MARKSMAN_SPOT_FACTOR if own.is_infantry() and not own.moving else 1.0)
+		if own.side == side and own.alive and own.pos_m().distance_to(anchor) <= far + Config.SOLDIER_PAIR_MARGIN_M:
 			viewers.append(own)
 	if viewers.is_empty():
 		return false
@@ -648,7 +651,8 @@ func spot_squad(w: SimWorld, side: int, enemy: Unit, vis_s: Dictionary) -> bool:
 		for own: Unit in viewers:
 			if own.is_infantry():
 				for o: Soldier in _observers.get(own.id, []):
-					if o.pos.distance_to(t.pos) <= reach and w.analysis.los_m(o.pos, eye_of(w, o), t.pos, head):
+					var r: float = reach * (Config.MARKSMAN_SPOT_FACTOR if o.marksman and not own.moving else 1.0) # la mira, quieto
+					if o.pos.distance_to(t.pos) <= r and w.analysis.los_m(o.pos, eye_of(w, o), t.pos, head):
 						seen = true
 						break
 			else:
@@ -731,10 +735,10 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 			if s.ammo > 0:
 				_area_shot(w, u, s, wpn)
 			continue
-		var reach: float = SimWorld.weapon_range(wpn)
+		var reach: float = Config.MARKSMAN_RANGE if s.marksman else SimWorld.weapon_range(wpn)
 		if s.ammo <= 0:
 			reach = Config.GL_RANGE if s.gl_rounds > 0 else Config.GRENADE_RANGE_M
-		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), reach, s.index)
+		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), reach, s.index, s.marksman)
 		if not t.is_empty():
 			if grenade_at(w, u, s, t["soldier"]) or s.ammo <= 0:
 				continue
@@ -987,7 +991,7 @@ func tank_coax(w: SimWorld, tank: Unit) -> void:
 ## visible para el bando más cercano (los del blanco de ATTACK cuentan como más cerca) dentro del
 ## alcance, el arco y el sector, al que el tirador ve la cabeza. Vacío si no hay. spread reparte el
 ## fuego: el tirador arranca por el blanco spread entre los SOLDIER_TARGET_SPREAD más cercanos.
-func pick_soldier(w: SimWorld, u: Unit, from: Vector2, eye: float, reach: float, spread: int = 0) -> Dictionary:
+func pick_soldier(w: SimWorld, u: Unit, from: Vector2, eye: float, reach: float, spread: int = 0, priority: bool = false) -> Dictionary:
 	var max_d: float = minf(reach, u.max_engage_m)
 	var cands: Array[Dictionary] = []
 	for key: int in visible_soldiers[u.side]:
@@ -1004,12 +1008,14 @@ func pick_soldier(w: SimWorld, u: Unit, from: Vector2, eye: float, reach: float,
 		if u.order == Unit.Order.OVERWATCH and not SimWorld.in_overwatch_sector(u, at):
 			continue
 		var rank: float = d * (0.5 if tu.id == u.attack_target else 1.0)
+		if priority and (ts.role == Soldier.Role.LEADER or ts.role == Soldier.Role.MG):
+			rank *= Config.MARKSMAN_PRIORITY # el tirador selecto busca jefes y ametralladoras
 		cands.append({"unit": tu, "soldier": ts, "rank": rank})
 	if cands.is_empty():
 		return {}
 	cands.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["rank"]) < float(b["rank"]))
 	# Reparto del fuego: cada tirador arranca por un blanco distinto entre los más cercanos
-	var start: int = spread % mini(cands.size(), Config.SOLDIER_TARGET_SPREAD)
+	var start: int = 0 if priority else spread % mini(cands.size(), Config.SOLDIER_TARGET_SPREAD)
 	for k: int in mini(cands.size(), Config.SOLDIER_TARGET_CHECKS):
 		var i: int = (start + k) % cands.size()
 		var ts: Soldier = cands[i]["soldier"]
@@ -1025,12 +1031,16 @@ func pick_soldier(w: SimWorld, u: Unit, from: Vector2, eye: float, reach: float,
 func soldier_hit_p(w: SimWorld, shooter: Unit, shooter_moving: bool, from: Vector2, eye: float,
 		tu: Unit, t: Soldier, wpn: int, aimed: bool = true, ss: Soldier = null) -> float:
 	var p: float = Config.SOLDIER_RIFLE_P_HIT
+	var reach: float = SimWorld.weapon_range(wpn)
 	if wpn == Unit.Weapon.MG:
 		p = Config.SOLDIER_MG_P_HIT
 	elif wpn == Unit.Weapon.COAX:
 		p = Config.SOLDIER_COAX_P_HIT
+	elif ss != null and ss.marksman:
+		p = Config.MARKSMAN_P_HIT * (Config.MARKSMAN_MOVING_FACTOR if t.moving else 1.0)
+		reach = Config.MARKSMAN_RANGE
 	var d: float = from.distance_to(t.pos)
-	var f_dist: float = clampf(1.0 - d / SimWorld.weapon_range(wpn), 0.2, 1.0)
+	var f_dist: float = clampf(1.0 - d / reach, 0.2, 1.0)
 	var f_post: float = 1.0
 	if t.posture == Soldier.Posture.PRONE:
 		f_post = Config.INF_PRONE_HIT_FACTOR
@@ -1070,6 +1080,8 @@ func _shoot(w: SimWorld, su: Unit, from: Vector2, eye: float, s: Soldier, tu: Un
 	var reload: float = SimWorld.weapon_reload(wpn)
 	if s != null:
 		reload = (Config.SOLDIER_RIFLE_RELOAD if wpn == Unit.Weapon.RIFLES else reload) * w.rng.randf_range(0.75, 1.25)
+		if s.marksman and wpn == Unit.Weapon.RIFLES:
+			reload = Config.MARKSMAN_RELOAD
 		s.reload_left = reload * fire_rate_factor(su, s)
 		spend_ammo(w, su, s)
 		s.last_fire_tick = w.total_ticks
