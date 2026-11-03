@@ -38,6 +38,10 @@ const INF_PRONE_H: float = 0.4 # perfil cuerpo a tierra
 const INF_CENTER_FRACTION: float = 0.6 # fracción del perfil a la que se apunta
 const INF_SPEED: float = 1.5 # m/s en llano
 const INF_MAX_SLOPE: float = 8.0 # metros; la infantería sube pendientes que el tanque no
+const INF_PRONE_SECONDS: float = 3.0 # quieta este tiempo, se tira cuerpo a tierra
+const INF_SPOT_MOVING: float = 250.0 # metros: alcance para detectar a una escuadra en movimiento (o que dispara)
+const INF_SPOT_STILL: float = 120.0 # ... quieta de pie
+const INF_SPOT_PRONE: float = 60.0 # ... cuerpo a tierra
 
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex

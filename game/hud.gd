@@ -145,10 +145,14 @@ func _unit_text() -> String:
 		lines.append("%s: %d / %d" % ["Hombres" if sel.is_infantry() else "Vida", sel.hp, sel.max_hp()])
 		lines.append("Recarga: %s" % ("lista" if sel.reload_left <= 0.0 else "%.1f s" % sel.reload_left))
 		var order_text: String = ORDER_NAMES.get(sel.order, "?")
+		if sel.is_infantry() and sel.order == Unit.Order.HULLDOWN:
+			order_text = "tomar posición"
 		if sel.order == Unit.Order.ATTACK and sel.attack_target >= 0:
 			order_text += " (rojo %d)" % (sel.attack_target - Config.UNITS_PER_SIDE + 1)
 		lines.append("Orden: %s" % order_text)
 		lines.append("Mira al %s" % compass(sel.heading))
+		if sel.is_infantry():
+			lines.append("Postura: %s" % ("cuerpo a tierra" if sel.prone else "de pie"))
 		var roe_text: String = ROE_NAMES.get(sel.roe, "?")
 		if sel.fire_arc_dir != Vector2.ZERO:
 			roe_text += ", arco al %s" % compass(sel.fire_arc_dir)

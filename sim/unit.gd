@@ -32,6 +32,7 @@ var reversing: bool = false # marcha atrás: no gira el casco al moverse
 var order: int = Order.NONE
 var moving: bool = false
 var prone: bool = false # infantería cuerpo a tierra
+var still_time: float = 0.0 # segundos quieta (la infantería se tira cuerpo a tierra)
 var waiting: bool = false # tiene ruta pero espera la condición del tramo actual
 var alive: bool = true
 var last_fire_tick: int = -1000000 # tick global del último disparo

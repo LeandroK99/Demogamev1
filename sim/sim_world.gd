@@ -92,6 +92,13 @@ func _deploy() -> void:
 		platoons.append(Platoon.new(side, side, secs))
 
 
+## Agrega una unidad (escenarios y tests). No la mete en ningún pelotón.
+func add_unit(side: int, pos: Vector2, kind: int = Unit.Kind.TANK) -> Unit:
+	var u: Unit = Unit.new(units.size(), side, pos, kind)
+	units.append(u)
+	return u
+
+
 func get_unit(unit_id: int) -> Unit:
 	if unit_id < 0 or unit_id >= units.size():
 		return null
@@ -156,6 +163,8 @@ func _can_spot(observer: Unit, target: Unit) -> bool:
 		return false
 	if not analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.center_h()):
 		return false
+	if target.is_infantry():
+		return d <= infantry_spot_range(target)
 	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
 		return true
 	if d <= Config.SPOT_RANGE_HULLDOWN:
@@ -164,6 +173,15 @@ func _can_spot(observer: Unit, target: Unit) -> bool:
 		return false
 	# Quieto entre los dos alcances: solo si se le ve el casco
 	return analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.profile_h())
+
+
+## Alcance de detección de una escuadra según lo que hace.
+func infantry_spot_range(target: Unit) -> float:
+	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
+		return Config.INF_SPOT_MOVING
+	if target.prone:
+		return Config.INF_SPOT_PRONE
+	return Config.INF_SPOT_STILL
 
 
 func recently_fired(u: Unit) -> bool:
@@ -760,6 +778,7 @@ func step() -> void:
 			continue
 		u.waiting = false
 		_advance(u, Config.TICK)
+	_update_posture()
 	tick_in_turn += 1
 	total_ticks += 1
 	if tick_in_turn % Config.DETECTION_INTERVAL_TICKS == 0:
@@ -768,6 +787,19 @@ func step() -> void:
 	_check_victory()
 	if not game_over and tick_in_turn >= ticks_per_turn:
 		_end_turn()
+
+
+## Infantería: en movimiento va de pie; quieta INF_PRONE_SECONDS, cuerpo a tierra.
+func _update_posture() -> void:
+	for u: Unit in units:
+		if not u.alive or not u.is_infantry():
+			continue
+		if u.moving:
+			u.still_time = 0.0
+			u.prone = false
+		else:
+			u.still_time += Config.TICK
+			u.prone = u.still_time >= Config.INF_PRONE_SECONDS - 0.0001
 
 
 func _combat() -> void:
@@ -802,7 +834,7 @@ func _combat() -> void:
 ## Enemigo visible para el bando del tirador, más cercano, al que el tirador ve
 ## y que su ROE permite (arco y distancia máxima de enganche incluidos).
 func _pick_target(shooter: Unit) -> Unit:
-	if not roe_allows_fire(shooter):
+	if not roe_allows_fire(shooter) or shooter.is_infantry():
 		return null
 	var vis: Dictionary = visible_enemies[shooter.side]
 	# Blanco prioritario de la orden ATTACK, si se lo puede tirar
@@ -814,7 +846,7 @@ func _pick_target(shooter: Unit) -> Unit:
 	var best_d: float = INF
 	for id: int in vis:
 		var enemy: Unit = units[id]
-		if not enemy.alive:
+		if not enemy.alive or enemy.is_infantry():
 			continue
 		var d: float = TerrainAnalysis.dist_m(shooter.cell(), enemy.cell())
 		if shooter.order == Unit.Order.OVERWATCH and not in_overwatch_sector(shooter, enemy.pos):
@@ -921,7 +953,7 @@ func hit_probability(shooter: Unit, target: Unit) -> float:
 				f_move = moving_shooter_factor
 	if shooter.order == Unit.Order.OVERWATCH and shooter.overwatch_ready and target.moving:
 		f_move *= Config.OVERWATCH_FIRST_SHOT_FACTOR # emboscada
-	var f_armor: float = aspect_factor(aspect_of(target, shooter.pos)) if armor_enabled else 1.0
+	var f_armor: float = aspect_factor(aspect_of(target, shooter.pos)) if armor_enabled and not target.is_infantry() else 1.0
 	return minf(p_hit_base * f_dist * f_hull * f_move * f_armor, p_hit_max)
 
 
