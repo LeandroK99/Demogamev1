@@ -87,6 +87,13 @@ const ROE_RETURN_FIRE_SECONDS: float = 15.0 # "solo si te disparan": queda liber
 const FIRE_ARC_HALF_ANGLE_DEG: float = 45.0 # semiángulo del arco de tiro
 const AI_AMBUSH_RANGE: float = 250.0 # metros: la IA en vigilancia no tira más lejos que esto si no la atacaron
 
+# --- Ritmo, asalto y retirada ---
+const PACE_FAST_SPEED: float = 1.4 # multiplicador de velocidad a ritmo rápido
+const PACE_CAUTIOUS_SPEED: float = 0.5 # multiplicador de velocidad a ritmo cauto
+const PACE_FAST_FIRE_FACTOR: float = 0.6 # se suma al de tirador en movimiento a ritmo rápido
+const PACE_CAUTIOUS_FIRE_FACTOR: float = 0.75 # reemplaza al de tirador en movimiento a ritmo cauto
+const WITHDRAW_RADIUS: int = 10 # celdas: dónde buscar cubierta al retirarse sin destino
+
 # --- Orden hull-down e IA ---
 const HULLDOWN_MIN_SEPARATION: float = 3.0 # celdas mínimas entre destinos de una misma orden
 const NO_THREAT_ADVANCE: int = 20 # celdas hacia el centro si no hay amenazas conocidas

@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
+	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · T + clic der: asaltar · B: retirarse · X: ritmo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -13,6 +13,13 @@ const ORDER_NAMES: Dictionary = {
 	Unit.Order.ATTACK: "atacar",
 	Unit.Order.OVERWATCH: "vigilancia",
 	Unit.Order.SCOOT: "disparar y replegarse",
+	Unit.Order.ASSAULT: "asaltar",
+	Unit.Order.WITHDRAW: "retirarse",
+}
+const PACE_NAMES: Dictionary = {
+	Unit.Pace.NORMAL: "normal",
+	Unit.Pace.FAST: "rápido",
+	Unit.Pace.CAUTIOUS: "cauto",
 }
 
 const ROE_NAMES: Dictionary = {
@@ -104,6 +111,9 @@ func _unit_text() -> String:
 	if input_controller.pending_mode == "scoot":
 		lines.append("Clic derecho: posición de tiro (Esc cancela)")
 		lines.append("")
+	elif input_controller.pending_mode == "assault":
+		lines.append("Clic derecho: objetivo del asalto (Esc cancela)")
+		lines.append("")
 	elif input_controller.pending_mode == "smoke":
 		lines.append("Clic izquierdo: dónde tirar el humo (Esc cancela)")
 		lines.append("")
@@ -122,6 +132,7 @@ func _unit_text() -> String:
 		if sel.max_engage_m < Config.MAX_RANGE:
 			roe_text += ", hasta %d m" % roundi(sel.max_engage_m)
 		lines.append("ROE: %s" % roe_text)
+		lines.append("Ritmo: %s" % PACE_NAMES.get(SimWorld.effective_pace(sel), "?"))
 		lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
 		lines.append("")
 	lines.append("Disparos recibidos")

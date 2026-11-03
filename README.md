@@ -24,6 +24,9 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | V | Vigilancia: el tanque se queda quieto mirando hacia el cursor y solo dispara dentro de un sector de ±35°. Arranca cada turno con la recarga lista y su primer disparo contra un blanco en movimiento tiene ×1,5 |
 | F y clic derecho | Disparar y replegarse: va a esa posición, hace un disparo y vuelve en reversa a donde estaba, mirando al blanco. Esc cancela |
 | G y clic izquierdo | Humo: una nube de 12 m de radio que corta la línea de visión durante 2 turnos. 2 cargas por tanque, hasta 150 m y con línea de visión al punto. Aparece en el acto, así que tirala antes de planear la ruta. Esc cancela |
+| T y clic derecho | Asaltar: ruta directa a ritmo rápido hasta ese punto, disparando en marcha y sin frenar. Esc cancela |
+| B | Retirarse: en reversa por la ruta cubierta hasta la celda menos expuesta cercana, con el frente hacia las amenazas |
+| X | Ritmo de los seleccionados: normal → rápido (×1,4 de velocidad, tira peor) → cauto (×0,5, tira mejor en marcha y se lo detecta como si estuviera quieto) |
 | Z | Reglas de fuego (ROE) de los seleccionados: fuego libre → solo si le disparan → retener fuego |
 | C | Área de enganche: solo dispara dentro de un arco de ±45° hacia el cursor y hasta la distancia del cursor. Shift+C la quita |
 | Espacio | Ejecutar el turno |

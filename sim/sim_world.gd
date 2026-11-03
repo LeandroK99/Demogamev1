@@ -139,7 +139,7 @@ func _can_spot(observer: Unit, target: Unit) -> bool:
 		return false
 	if not analysis.los(observer.cell(), Config.EYE_H, target.cell(), Config.CENTER_H):
 		return false
-	if target.moving or recently_fired(target):
+	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
 		return true
 	if d <= Config.SPOT_RANGE_HULLDOWN:
 		return true
@@ -218,6 +218,93 @@ func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.Z
 	if not u.moving and u.final_heading != Vector2.ZERO:
 		u.heading = u.final_heading # ya está en destino: solo gira
 	return true
+
+
+## Ritmo de una unidad (solo en PLAN). Dura hasta que se cambie.
+func set_pace(unit_id: int, pace: int) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN:
+		return false
+	u.pace = pace
+	return true
+
+
+## El asalto siempre va a ritmo rápido.
+static func effective_pace(u: Unit) -> int:
+	return Unit.Pace.FAST if u.order == Unit.Order.ASSAULT else u.pace
+
+
+static func pace_speed_factor(pace: int) -> float:
+	match pace:
+		Unit.Pace.FAST:
+			return Config.PACE_FAST_SPEED
+		Unit.Pace.CAUTIOUS:
+			return Config.PACE_CAUTIOUS_SPEED
+	return 1.0
+
+
+## Orden ASSAULT: ruta directa a ritmo rápido hasta target_cell, disparando en marcha.
+## A diferencia de ATTACK, no frena al tener línea de tiro.
+func order_assault(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.ZERO) -> bool:
+	if not order_move(unit_id, target_cell, facing, false):
+		return false
+	units[unit_id].order = Unit.Order.ASSAULT
+	return true
+
+
+## Orden WITHDRAW: en reversa por la ruta cubierta, con el frente hacia las amenazas.
+## Sin destino (celda fuera del mapa): la celda menos expuesta a <= WITHDRAW_RADIUS o,
+## si no hay amenazas, WITHDRAW_RADIUS celdas hacia atrás.
+func order_withdraw(unit_id: int, target_cell: Vector2i = Vector2i(-1, -1)) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN:
+		return false
+	var threats: Array[Vector2i] = threats_for(u.side)
+	if not height_field.in_bounds(target_cell):
+		target_cell = lowest_exposure_cell(u.side, u.cell(), Config.WITHDRAW_RADIUS)
+		if target_cell == u.cell():
+			target_cell = _back_target(u)
+	if target_cell == u.cell():
+		return false
+	var facing: Vector2 = facing_to_threats(target_cell, threats)
+	if facing == Vector2.ZERO:
+		facing = u.heading
+	if not order_move(unit_id, target_cell, facing):
+		return false
+	u.order = Unit.Order.WITHDRAW
+	u.reversing = u.moving
+	return true
+
+
+## Celda transitable de menor exposición del bando dentro de radius (desempate: la más cercana).
+func lowest_exposure_cell(side: int, origin: Vector2i, radius: int) -> Vector2i:
+	var exposure: PackedFloat32Array = exposure_for(side)
+	var n: int = height_field.size
+	var best: Vector2i = origin
+	var best_e: float = exposure[origin.y * n + origin.x]
+	var best_d: float = 0.0
+	for dy: int in range(-radius, radius + 1):
+		for dx: int in range(-radius, radius + 1):
+			var c: Vector2i = origin + Vector2i(dx, dy)
+			if dx * dx + dy * dy > radius * radius or not pathfinder.is_walkable(c):
+				continue
+			var e: float = exposure[c.y * n + c.x]
+			var d: float = Vector2(dx, dy).length()
+			if e < best_e or (is_equal_approx(e, best_e) and d < best_d):
+				best = c
+				best_e = e
+				best_d = d
+	return best
+
+
+## Celda transitable hasta WITHDRAW_RADIUS celdas detrás de u (contra su heading).
+func _back_target(u: Unit) -> Vector2i:
+	var dir: Vector2 = -u.heading.normalized()
+	for back: int in Config.WITHDRAW_RADIUS:
+		var c: Vector2i = Vector2i((u.pos + dir * float(Config.WITHDRAW_RADIUS - back)).round())
+		if height_field.in_bounds(c) and pathfinder.is_walkable(c):
+			return c
+	return u.cell()
 
 
 ## Orden OVERWATCH: quieto, con el casco hacia dir, y solo dispara dentro del sector
@@ -572,7 +659,15 @@ func hit_probability(shooter: Unit, target: Unit) -> float:
 	var f_hull: float = 1.0
 	if not analysis.los(shooter.cell(), Config.EYE_H, target.cell(), Config.HULL_H):
 		f_hull = hulldown_hit_factor
-	var f_move: float = moving_shooter_factor if shooter.moving else 1.0
+	var f_move: float = 1.0
+	if shooter.moving:
+		match effective_pace(shooter):
+			Unit.Pace.FAST:
+				f_move = moving_shooter_factor * Config.PACE_FAST_FIRE_FACTOR
+			Unit.Pace.CAUTIOUS:
+				f_move = Config.PACE_CAUTIOUS_FIRE_FACTOR
+			_:
+				f_move = moving_shooter_factor
 	if shooter.order == Unit.Order.OVERWATCH and shooter.overwatch_ready and target.moving:
 		f_move *= Config.OVERWATCH_FIRST_SHOT_FACTOR # emboscada
 	var f_armor: float = aspect_factor(aspect_of(target, shooter.pos)) if armor_enabled else 1.0
@@ -617,7 +712,7 @@ func speed_at(c: Vector2i) -> float:
 
 
 func _advance(u: Unit, dt: float) -> void:
-	var budget_m: float = speed_at(u.cell()) * dt
+	var budget_m: float = speed_at(u.cell()) * pace_speed_factor(effective_pace(u)) * dt
 	if u.reversing:
 		budget_m *= Config.REVERSE_SPEED_FACTOR
 	while budget_m > 0.0 and not u.path.is_empty():
@@ -640,6 +735,6 @@ func _advance(u: Unit, dt: float) -> void:
 	if not u.moving:
 		if u.final_heading != Vector2.ZERO:
 			u.heading = u.final_heading
-		if u.order == Unit.Order.MOVE or (u.order == Unit.Order.SCOOT and u.scoot_fired):
+		if u.order in [Unit.Order.MOVE, Unit.Order.ASSAULT, Unit.Order.WITHDRAW] or (u.order == Unit.Order.SCOOT and u.scoot_fired):
 			u.order = Unit.Order.NONE
 		u.reversing = false

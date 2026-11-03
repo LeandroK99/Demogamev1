@@ -2,9 +2,11 @@ class_name Unit
 extends RefCounted
 ## Un tanque de la simulación.
 
-enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT }
+enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW }
 ## Reglas de fuego: libre, solo si te dispararon hace poco, o retener.
 enum Roe { FREE, RETURN_FIRE, HOLD }
+## Ritmo de marcha: normal, rápido (más veloz, tira peor) o cauto (lento, se detecta como si estuviera quieto).
+enum Pace { NORMAL, FAST, CAUTIOUS }
 
 var id: int = 0
 var side: int = 0 # 0 azul, 1 rojo
@@ -32,6 +34,7 @@ var roe: int = Roe.FREE # reglas de fuego; duran hasta que se cambien (no las bo
 var fire_arc_dir: Vector2 = Vector2.ZERO # centro del arco de tiro (cero = sin arco)
 var max_engage_m: float = Config.MAX_RANGE # distancia máxima de enganche
 var last_fired_upon_tick: int = -1000000 # tick global del último disparo recibido
+var pace: int = Pace.NORMAL # ritmo; dura hasta que se cambie (ASSAULT siempre va rápido)
 
 
 func _init(p_id: int, p_side: int, p_pos: Vector2) -> void:

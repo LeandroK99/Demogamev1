@@ -107,6 +107,18 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_ESCAPE:
 		pending_mode = ""
 		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_X:
+		_cycle_pace()
+		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_T:
+		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty():
+			pending_mode = "assault"
+		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_B:
+		if world.phase == SimWorld.Phase.PLAN:
+			for id: int in selected_ids:
+				world.order_withdraw(id)
+		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_Z:
 		_cycle_roe()
 		return
@@ -209,6 +221,12 @@ func _right_pressed(screen: Vector2, direct: bool, append: bool) -> void:
 		for id: int in cells:
 			world.order_scoot(id, cells[id])
 		return
+	if pending_mode == "assault":
+		pending_mode = ""
+		var cells: Dictionary = _formation_cells(world.height_field.world_to_cell(hit as Vector3), Vector2.ZERO)
+		for id: int in cells:
+			world.order_assault(id, cells[id])
+		return
 	_rdragging = true
 	_rdrag_start = screen
 	_rdrag_target = hit
@@ -259,6 +277,16 @@ func _cycle_roe() -> void:
 	var next: int = (u.roe + 1) % Unit.Roe.size()
 	for id: int in selected_ids:
 		world.set_roe(id, next)
+
+
+## X: siguiente ritmo (normal -> rápido -> cauto) para las seleccionadas.
+func _cycle_pace() -> void:
+	var u: Unit = primary_unit()
+	if u == null or world.phase != SimWorld.Phase.PLAN:
+		return
+	var next: int = (u.pace + 1) % Unit.Pace.size()
+	for id: int in selected_ids:
+		world.set_pace(id, next)
 
 
 ## C: área de enganche hacia el cursor (arco centrado en el cursor y distancia máxima
