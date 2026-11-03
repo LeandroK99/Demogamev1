@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · N: formación · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma)"
+	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · N: formación · Y: autonomía · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma)"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -45,6 +45,8 @@ var _status: Label = Label.new()
 var _unit_info: Label = Label.new()
 var _help: Label = Label.new()
 var _banner: Label = Label.new()
+var _radio: Label = Label.new()
+const RADIO_LINES: int = 6
 
 
 func setup(p_world: SimWorld, tc: TurnController, ic: InputController, p_seed: int) -> void:
@@ -71,6 +73,13 @@ func setup(p_world: SimWorld, tc: TurnController, ic: InputController, p_seed: i
 	_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_help.offset_bottom = -8.0
 	add_child(_help)
+
+	_style(_radio, 15)
+	_radio.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_radio.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_radio.position = Vector2(12.0, -150.0)
+	_radio.modulate = Color(0.75, 1.0, 0.75)
+	add_child(_radio)
 
 	_style(_banner, 52)
 	_banner.set_anchors_preset(Control.PRESET_CENTER)
@@ -100,6 +109,7 @@ func _process(_delta: float) -> void:
 		scen, world.turn, Config.MAX_TURNS, phase_text, roundi(turn_controller.speed()),
 		world.alive_count(0), world.alive_count(1), map_seed]
 	_unit_info.text = _unit_text()
+	_radio.text = radio_text(world, PLAYER_SIDE, RADIO_LINES)
 	if world.game_over:
 		_banner.visible = true
 		var result: String = "EMPATE"
@@ -108,6 +118,23 @@ func _process(_delta: float) -> void:
 		elif world.winner != SimWorld.DRAW:
 			result = "DERROTA"
 		_banner.text = "%s\nR: jugar de nuevo · Shift+R: mapa nuevo" % result
+
+
+## Las últimas n líneas de radio del bando: "[m:ss] Escuadra 2: ¡contacto! ...".
+static func radio_text(w: SimWorld, side: int, n: int) -> String:
+	var lines: PackedStringArray = PackedStringArray()
+	for i: int in range(w.radio_log.size() - 1, -1, -1):
+		var r: Dictionary = w.radio_log[i]
+		if int(r["side"]) != side:
+			continue
+		var secs: int = roundi(float(r["tick"]) * Config.TICK)
+		var u: Unit = w.get_unit(int(r["unit"]))
+		lines.insert(0, "[%d:%02d] %s %d: %s" % [secs / 60, secs % 60, unit_name(u), u.id + 1, r["text"]])
+		if lines.size() >= n:
+			break
+	if lines.is_empty():
+		return ""
+	return "Radio\n" + "\n".join(lines)
 
 
 static func unit_name(u: Unit) -> String:
@@ -204,6 +231,12 @@ func _unit_text() -> String:
 			if sel.broken:
 				state = " · QUEBRADA"
 			lines.append("Moral: %d%s" % [roundi(sel.morale), state])
+			var m: SquadMind = sel.mind
+			lines.append("Autonomía: %s · jefe %s" % [SquadMind.AUTONOMY_NAMES[m.autonomy], SquadMind.QUALITY_NAMES[m.quality]])
+			if m.is_disorganized(world.total_ticks):
+				lines.append("Decide: SIN JEFE, desorganizada")
+			elif not m.is_following():
+				lines.append("Decide: %s" % m.option_name())
 		var supp_state: String = ""
 		if world.is_pinned(sel):
 			supp_state = " · inmovilizada"

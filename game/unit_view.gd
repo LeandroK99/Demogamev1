@@ -121,6 +121,10 @@ func sync_from_sim(alpha: float = 1.0) -> void:
 		elif unit.suppression >= Config.SUPPRESSED:
 			mark = " ▼"
 		_label.text = "%d%s" % [unit.hp, mark]
+		if unit.mind != null and unit.side == player_side and world != null:
+			var intent: String = unit.mind.intent_short(world.total_ticks)
+			if intent != "":
+				_label.text += "\n" + intent # lo que decidió por su cuenta
 		_label.modulate = Color.WHITE.lerp(Color(1.0, 0.35, 0.2), clampf(unit.suppression / 100.0, 0.0, 1.0))
 
 

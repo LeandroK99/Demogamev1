@@ -64,6 +64,8 @@ var inf: InfantrySim = InfantrySim.new() # los soldados de las escuadras
 var minds: MindSim = MindSim.new() # la autonomía de las escuadras
 ## Radio: lo que las escuadras deciden por su cuenta. {tick, turn, side, unit, text}, el último al final.
 var radio_log: Array[Dictionary] = []
+## Decisiones propias tomadas en la partida (nombre de la opción -> cantidad), para el banco IA contra IA.
+var decision_counts: Dictionary = {}
 var _autonomous: int = 0 # > 0: órdenes que se da la propia escuadra (valen en la ejecución)
 
 
@@ -696,6 +698,17 @@ func set_formation(unit_id: int, f: int) -> bool:
 
 
 ## Ritmo de una unidad (solo en PLAN). Dura hasta que se cambie.
+## Autonomía de una escuadra (en cualquier fase). Bajarla a estricta la hace volver a la orden.
+func set_autonomy(unit_id: int, autonomy: int) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or u.mind == null:
+		return false
+	u.mind.autonomy = autonomy
+	if not SquadMind.allowed(autonomy, u.mind.option):
+		minds.switch_to(self, u, SquadMind.Option.FOLLOW)
+	return true
+
+
 func set_pace(unit_id: int, pace: int) -> bool:
 	var u: Unit = get_unit(unit_id)
 	if u == null or not u.alive or phase != Phase.PLAN:

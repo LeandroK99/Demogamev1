@@ -129,6 +129,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_N:
 		_cycle_formation()
 		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_Y:
+		_cycle_autonomy()
+		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_T:
 		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty():
 			pending_mode = "assault"
@@ -364,6 +367,20 @@ func _cycle_formation() -> void:
 	var next: int = (u.formation + 1) % Unit.Formation.size()
 	for id: int in selected_ids:
 		world.set_formation(id, next)
+
+
+## Y: autonomía de las escuadras elegidas (estricta, normal, alta).
+func _cycle_autonomy() -> void:
+	var u: Unit = null
+	for id: int in selected_ids:
+		if world.get_unit(id).mind != null:
+			u = world.get_unit(id)
+			break
+	if u == null:
+		return
+	var next: int = (u.mind.autonomy + 1) % SquadMind.Autonomy.size()
+	for id: int in selected_ids:
+		world.set_autonomy(id, next)
 
 
 ## C: área de enganche hacia el cursor (arco centrado en el cursor y distancia máxima

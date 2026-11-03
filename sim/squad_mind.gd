@@ -15,6 +15,8 @@ enum Quality { VETERAN, REGULAR, GREEN }
 ## Para la radio y el HUD.
 const OPTION_NAMES: Array[String] = ["sigue la orden", "contacto", "se reubica", "emboscada",
 	"rompe el contacto", "avanza por saltos", "flanquea", "rescata un herido"]
+## Ícono de intención sobre la escuadra (vacío = cumple la orden).
+const INTENT_SHORT: Array[String] = ["", "CONTACTO", "REUBICA", "EMBOSCADA", "SE REPLIEGA", "SALTOS", "FLANQUEA", "RESCATE"]
 const AUTONOMY_NAMES: Array[String] = ["estricta", "normal", "alta"]
 const QUALITY_NAMES: Array[String] = ["veterano", "regular", "novato"]
 
@@ -125,3 +127,8 @@ func is_following() -> bool:
 
 func option_name() -> String:
 	return OPTION_NAMES[option]
+
+
+## Texto corto de lo que está haciendo por su cuenta (para el ícono sobre la escuadra).
+func intent_short(now: int) -> String:
+	return "SIN JEFE" if is_disorganized(now) else INTENT_SHORT[option]

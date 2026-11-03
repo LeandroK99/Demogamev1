@@ -275,8 +275,8 @@ func _score_flank(w: SimWorld, u: Unit, s: Dictionary) -> void:
 		if not u.path.is_empty():
 			s[SquadMind.Option.FLANK] = Config.FLANK_SCORE + 1.0
 		return
-	if m.option != SquadMind.Option.FOLLOW:
-		return
+	if m.option != SquadMind.Option.FOLLOW or u.path.is_empty():
+		return # solo flanquea la que avanza; la que defiende se queda en su puesto
 	if w.fired_upon_within(u, Config.FLANK_QUIET_SECONDS) or u.order in [Unit.Order.ASSAULT, Unit.Order.WITHDRAW]:
 		return
 	for id: int in m.contacts:
@@ -484,15 +484,19 @@ func switch_to(w: SimWorld, u: Unit, opt: int) -> void:
 	if m.is_following():
 		_save_intent(u)
 	_exit(w, u, m.option)
+	var was: int = m.option
 	m.option = opt
 	m.since_tick = w.total_ticks
-	m.data = {}
+	m.data = {"was": was}
 	if opt == SquadMind.Option.FOLLOW:
 		_restore_intent(w, u)
-		w.radio(u, "retoma la orden")
+		if was not in [SquadMind.Option.CONTACT_DRILL, SquadMind.Option.AMBUSH]:
+			w.radio(u, "retoma la orden") # tras un drill o una emboscada sigue sin avisar
 	else:
 		_enter(w, u, opt)
 		w.radio(u, _announce(opt))
+		var key: String = SquadMind.OPTION_NAMES[opt]
+		w.decision_counts[key] = int(w.decision_counts.get(key, 0)) + 1
 
 
 func _enter(w: SimWorld, u: Unit, opt: int) -> void:

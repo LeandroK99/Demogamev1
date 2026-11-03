@@ -60,9 +60,11 @@ func test_flank_when_another_squad_fixes() -> void:
 	var base: Unit = world.add_unit(0, Vector2(48, 70), Unit.Kind.INFANTRY)
 	var sq: Unit = world.add_unit(0, Vector2(30, 75), Unit.Kind.INFANTRY)
 	sq.mind.autonomy = SquadMind.Autonomy.HIGH
+	world.order_move(sq.id, Vector2i(30, 55)) # flanquea la que avanza
 	world.begin_execute()
 	var contact: Vector2 = Vector2(48, 40) * Config.CELL_SIZE
 	sq.mind.learn(4, contact, world.total_ticks, true)
+	sq.mind.reacted[4] = true # ya hizo el drill por este contacto
 	base.last_fire_tick = world.total_ticks
 	world.mind_think_now(sq)
 	assert_eq(sq.mind.option, O.FLANK, "flanquea")
