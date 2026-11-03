@@ -115,10 +115,12 @@ func _smoke_reflex(w: SimWorld, u: Unit) -> void:
 	var m: SquadMind = u.mind
 	if not w.inf.halted(u):
 		m.halted_since = -1
+		m.crawling = false
 		return
 	if m.halted_since < 0:
 		m.halted_since = w.total_ticks
 		return
+	_crawl_reflex(w, u)
 	if m.autonomy < SquadMind.Autonomy.NORMAL or u.smoke_charges <= 0:
 		return
 	if float(w.total_ticks - m.halted_since) * Config.TICK < Config.INF_SMOKE_SUPPRESSED_SECONDS:
@@ -126,6 +128,20 @@ func _smoke_reflex(w: SimWorld, u: Unit) -> void:
 	if throw_smoke_toward(w, u, w.inf.threat_point(w, u)):
 		w.radio(u, "humo, ¡nos tienen clavados!")
 	m.halted_since = w.total_ticks # la próxima, otros 15 s después
+
+
+## Clavada en marcha más de CRAWL_AFTER_SECONDS (autonomía normal o alta): sigue reptando hacia su
+## destino en vez de quedarse quieta. No en la retirada ni si decidió frenar.
+func _crawl_reflex(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	var can: bool = m.autonomy >= SquadMind.Autonomy.NORMAL and not u.path.is_empty() and not m.hold \
+			and u.order != Unit.Order.WITHDRAW and m.option in [SquadMind.Option.FOLLOW, SquadMind.Option.BOUND]
+	if not can:
+		m.crawling = false
+		return
+	if not m.crawling and float(w.total_ticks - m.halted_since) * Config.TICK >= Config.CRAWL_AFTER_SECONDS:
+		m.crawling = true
+		w.radio(u, "nos tienen clavados, seguimos reptando")
 
 
 ## Granada de humo de mano hacia threat (a INF_SMOKE_DIST_M, o a mitad de camino si está más cerca).
@@ -203,7 +219,62 @@ func score_options(w: SimWorld, u: Unit) -> Dictionary:
 	_score_bound(w, u, s)
 	_score_flank(w, u, s)
 	_score_rescue(w, u, s)
+	_score_near_ambush(w, u, s)
 	return s
+
+
+## --- Emboscada cercana (fase 52) ---
+## Le tiran desde menos de NEAR_AMBUSH_M: en la zona de muerte no se busca cubierta, se asalta al
+## emboscador ya, a la carrera (y con granadas, que a esa distancia salen solas). Más lejos es una
+## emboscada lejana: el drill de contacto (fuego desde cubierto) y después fuego y movimiento.
+
+func _score_near_ambush(w: SimWorld, u: Unit, s: Dictionary) -> void:
+	var m: SquadMind = u.mind
+	if m.option == SquadMind.Option.NEAR_AMBUSH:
+		var id: int = int(m.data.get("enemy", -1))
+		var e: Unit = w.get_unit(id)
+		var elapsed: float = float(w.total_ticks - m.since_tick) * Config.TICK
+		if e != null and e.alive and m.contacts.has(id) and elapsed < Config.NEAR_AMBUSH_MAX_SECONDS \
+				and Vector2(m.contacts[id]["pos"]).distance_to(u.pos_m()) > Config.NEAR_AMBUSH_DONE_M and not u.path.is_empty():
+			s[SquadMind.Option.NEAR_AMBUSH] = Config.NEAR_AMBUSH_SCORE
+		return
+	if not w.fired_upon_within(u, Config.NEAR_AMBUSH_FIRED_SECONDS) or u.order == Unit.Order.WITHDRAW or u.path.is_empty():
+		return # solo la que va en marcha cae en una emboscada; la que defiende se queda en su puesto
+	if m.option in [SquadMind.Option.BREAK_CONTACT, SquadMind.Option.RESCUE]:
+		return
+	if float(w.total_ticks - m.drill_end_tick) * Config.TICK < Config.DRILL_COOLDOWN_SECONDS:
+		return # recién reaccionó: no vuelve a lanzarse
+	var id: int = _nearest_contact_id(u)
+	if id >= 0 and not m.reacted.has(id) and Vector2(m.contacts[id]["pos"]).distance_to(u.pos_m()) <= Config.NEAR_AMBUSH_M:
+		s[SquadMind.Option.NEAR_AMBUSH] = Config.NEAR_AMBUSH_SCORE # sorpresa: un enemigo al que no había reaccionado
+
+
+func _nearest_contact_id(u: Unit) -> int:
+	var best: int = -1
+	var best_d: float = INF
+	for id: int in u.mind.contacts:
+		var d: float = Vector2(u.mind.contacts[id]["pos"]).distance_to(u.pos_m())
+		if d < best_d:
+			best = id
+			best_d = d
+	return best
+
+
+func _start_near_ambush(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	var id: int = _nearest_contact_id(u)
+	m.data["enemy"] = id
+	for c: int in m.contacts:
+		m.reacted[c] = true
+	m.hold = false
+	_release_teams(u)
+	for s: Soldier in u.soldiers:
+		s.dive_until = 0 # nadie se queda tirado en la zona de muerte
+	if id < 0:
+		return
+	var target: Vector2i = Vector2i((Vector2(m.contacts[id]["pos"]) / Config.CELL_SIZE).round())
+	if autonomous_move(w, u, target, Vector2.ZERO, false):
+		u.order = Unit.Order.ASSAULT # a la carrera y tirando
 
 
 ## --- Rescate ---
@@ -297,8 +368,9 @@ func _start_rescue(w: SimWorld, u: Unit) -> void:
 
 ## --- Equipos de fuego: avanzar por saltos ---
 ## En marcha con un contacto cerca: el equipo A queda como base de fuego (quieto, tirando o batiendo
-## el contacto) mientras el B avanza BOUND_M con el ancla; después el ancla frena, B se cubre y A
-## sube a su lugar; y otra vez.
+## el contacto) mientras el B avanza BOUND_M con el ancla. Bajo fuego, saltos sucesivos: el ancla
+## frena, B se cubre y A sube a su lugar. Sin fuego encima, alternados (más rápidos): el que estaba
+## quieto salta y pasa adelante, y el otro queda de base.
 
 func _score_bound(w: SimWorld, u: Unit, s: Dictionary) -> void:
 	var m: SquadMind = u.mind
@@ -320,8 +392,10 @@ func _start_bound(w: SimWorld, u: Unit) -> void:
 		if throw_smoke_toward(w, u, w.inf.threat_point(w, u)):
 			w.radio(u, "humo, cruzamos")
 	var target: Vector2 = _nearest_contact_pos(u)
+	var mover: int = int(m.data.get("mover", 1))
+	m.data["mover"] = mover
 	for s: Soldier in u.soldiers:
-		s.hold_pos = s.team == 0 and s.is_ok()
+		s.hold_pos = s.team != mover and s.is_ok()
 		s.suppress_m = target if s.hold_pos else Vector2(-1.0, -1.0)
 
 
@@ -339,13 +413,22 @@ func _act_bound(w: SimWorld, u: Unit) -> void:
 		return
 	if str(m.data["phase"]) == "B":
 		if u.pos_m().distance_to(m.data["start"]) >= Config.BOUND_M or u.path.is_empty():
-			m.data["phase"] = "A" # B llegó: frena, se cubre y sube A
+			var mover: int = int(m.data.get("mover", 1))
+			m.bound_alternate = not rush and not u.path.is_empty()
+			if m.bound_alternate:
+				if w.inf.lagging(u):
+					return # el que salta todavía no llegó a su lugar
+				m.data["mover"] = 1 - mover # saltos alternados: ahora salta el otro y pasa adelante
+				_start_bound(w, u)
+				return
+			m.data["phase"] = "A" # saltos sucesivos: el que saltó frena, se cubre y el otro lo alcanza
+			m.data["mover"] = 1
 			m.hold = true
 			for s: Soldier in u.soldiers:
 				s.hold_pos = false
-				s.suppress_m = _nearest_contact_pos(u) if s.team == 1 else Vector2(-1.0, -1.0)
+				s.suppress_m = _nearest_contact_pos(u) if s.team == mover else Vector2(-1.0, -1.0)
 	elif not w.inf.lagging(u):
-		_start_bound(w, u) # A ya subió: otro salto
+		_start_bound(w, u) # ya lo alcanzó: otro salto
 
 
 func _release_teams(u: Unit) -> void:
@@ -634,6 +717,8 @@ func _enter(w: SimWorld, u: Unit, opt: int) -> void:
 				m.hold = true
 		SquadMind.Option.RESCUE:
 			_start_rescue(w, u)
+		SquadMind.Option.NEAR_AMBUSH:
+			_start_near_ambush(w, u)
 		SquadMind.Option.BREAK_CONTACT:
 			throw_smoke_toward(w, u, w.inf.threat_point(w, u))
 			w.begin_autonomous()
@@ -647,8 +732,8 @@ func _exit(w: SimWorld, u: Unit, opt: int) -> void:
 	var m: SquadMind = u.mind
 	m.hold = false
 	m.cover_m = Config.SOLDIER_COVER_SEARCH_M
-	if opt == SquadMind.Option.CONTACT_DRILL:
-		m.drill_end_tick = w.total_ticks
+	if opt == SquadMind.Option.CONTACT_DRILL or opt == SquadMind.Option.NEAR_AMBUSH:
+		m.drill_end_tick = w.total_ticks # tras reaccionar al contacto, un rato sin otro drill
 	match opt:
 		SquadMind.Option.AMBUSH:
 			u.roe = int(m.data.get("roe", Unit.Roe.FREE))
@@ -688,6 +773,8 @@ func _announce(opt: int) -> String:
 			return "los fijan ustedes, nosotros flanqueamos"
 		SquadMind.Option.RESCUE:
 			return "¡herido al descubierto! humo, cobertura y lo sacamos"
+		SquadMind.Option.NEAR_AMBUSH:
+			return "¡emboscada! ¡al asalto!"
 	return SquadMind.OPTION_NAMES[opt]
 
 

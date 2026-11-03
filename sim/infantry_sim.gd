@@ -50,7 +50,8 @@ func move_soldiers(w: SimWorld) -> void:
 			if s.drag_target >= 0 and s.is_ok() and s.suppression < Config.PINNED:
 				_drag(w, u, s, speed)
 				continue
-			if not s.is_ok() or s.suppression >= Config.PINNED or s.dive_until > w.total_ticks or s.hold_pos:
+			var crawl: bool = u.mind != null and u.mind.crawling and u.moving
+			if not s.is_ok() or (s.suppression >= Config.PINNED and not crawl) or s.dive_until > w.total_ticks or s.hold_pos:
 				s.moving = false # herido, clavado, recién tirado al suelo o base de fuego: se queda donde está
 				continue
 			var target: Vector2 = u.slot_pos_m(s.index)
@@ -82,7 +83,7 @@ func reroll_jitter(w: SimWorld, u: Unit) -> void:
 	var right: Vector2 = Vector2(-u.heading.y, u.heading.x)
 	var taken: Array[Vector2] = []
 	for s: Soldier in u.soldiers:
-		var base: Vector2 = Unit.formation_offset(s.index, u.formation)
+		var base: Vector2 = Unit.formation_offset(s.index, u.shape, u.echelon_side) * u.spread
 		var best: Vector2 = Vector2.ZERO
 		var best_score: float = -INF
 		for k: int in Config.JITTER_TRIES:
@@ -556,9 +557,10 @@ func update_postures(w: SimWorld) -> void:
 		if not u.alive or not u.is_infantry():
 			continue
 		var cautious: bool = SimWorld.effective_pace(u) == Unit.Pace.CAUTIOUS
+		var crawl: bool = SimWorld.effective_pace(u) == Unit.Pace.CRAWL
 		for s: Soldier in u.soldiers:
-			if not s.is_ok():
-				s.posture = Soldier.Posture.PRONE
+			if not s.is_ok() or (crawl and s.moving):
+				s.posture = Soldier.Posture.PRONE # reptando, cuerpo a tierra
 			elif s.suppression >= Config.SUPPRESSED:
 				s.posture = Soldier.Posture.PRONE
 			elif s.moving:
@@ -615,7 +617,7 @@ static func soldier_spot_range(w: SimWorld, u: Unit, s: Soldier) -> float:
 	var fired: bool = float(w.total_ticks - s.last_fire_tick) * Config.TICK < Config.FIRE_REVEAL_SECONDS
 	if fired:
 		return Config.INF_SPOT_MOVING
-	if (s.moving or u.moving) and SimWorld.effective_pace(u) != Unit.Pace.CAUTIOUS and s.posture != Soldier.Posture.PRONE:
+	if (s.moving or u.moving) and SimWorld.effective_pace(u) not in [Unit.Pace.CAUTIOUS, Unit.Pace.CRAWL] and s.posture != Soldier.Posture.PRONE:
 		return Config.INF_SPOT_MOVING
 	var f: float = 1.0 - w.cover_at(Vector2i((s.pos / Config.CELL_SIZE).round())) * Config.COVER_SPOT_FACTOR
 	if s.protected and not s.moving and not s.peeking:
@@ -722,17 +724,254 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 				continue
 		if u.reload_left > 0.0:
 			continue
+		if s.ammo <= 0 and s.grenades <= 0 and s.gl_rounds <= 0:
+			continue
 		var wpn: int = Unit.Weapon.MG if s.role == Soldier.Role.MG else Unit.Weapon.RIFLES
 		if area:
-			_area_shot(w, u, s, wpn)
+			if s.ammo > 0:
+				_area_shot(w, u, s, wpn)
 			continue
-		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), SimWorld.weapon_range(wpn), s.index)
+		var reach: float = SimWorld.weapon_range(wpn)
+		if s.ammo <= 0:
+			reach = Config.GL_RANGE if s.gl_rounds > 0 else Config.GRENADE_RANGE_M
+		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), reach, s.index)
 		if not t.is_empty():
+			if grenade_at(w, u, s, t["soldier"]) or s.ammo <= 0:
+				continue
 			_shoot(w, u, s.pos, eye_of(w, s), s, t["unit"], t["soldier"], wpn)
-		elif s.suppress_m.x >= 0.0:
+		elif s.suppress_m.x >= 0.0 and s.ammo > 0:
 			var cell: Vector2i = Vector2i((s.suppress_m / Config.CELL_SIZE).round())
 			if w.can_suppress_at(u, cell):
 				_area_shot(w, u, s, wpn, cell) # base de fuego: bate el contacto aunque no lo vea
+
+
+## --- Formación según terreno (fase 50) ---
+
+## Cada FORM_UPDATE_SECONDS, las escuadras en marcha con la cuña elegida adaptan la formación.
+func update_formations(w: SimWorld) -> void:
+	if w.total_ticks % roundi(Config.FORM_UPDATE_SECONDS / Config.TICK) != 0:
+		return
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		if u.mind != null:
+			choose_technique(u)
+		if u.moving and (u.mind == null or u.mind.is_following()):
+			adapt_formation(w, u) # una maniobra propia (reubicarse, flanquear) no se reacomoda en el camino
+
+
+## Técnica de movimiento según qué tan probable es el contacto: por saltos si la cabeza eligió saltar,
+## con vigilancia (el equipo A detrás) con un contacto conocido a OVERWATCH_CONTACT_M, simple si no.
+static func choose_technique(u: Unit) -> void:
+	var m: SquadMind = u.mind
+	if m.option == SquadMind.Option.BOUND:
+		m.technique = SquadMind.Technique.BOUNDING
+	else:
+		var near: bool = false
+		for id: int in m.contacts:
+			if Vector2(m.contacts[id]["pos"]).distance_to(u.pos_m()) <= Config.OVERWATCH_CONTACT_M:
+				near = true
+				break
+		m.technique = SquadMind.Technique.OVERWATCH if near and m.is_following() else SquadMind.Technique.TRAVEL
+	var trail: float = Config.OVERWATCH_TRAIL_M if m.technique == SquadMind.Technique.OVERWATCH and u.moving else 0.0
+	u.trail_m = move_toward(u.trail_m, trail, Config.OVERWATCH_TRAIL_STEP)
+
+
+## Cuña cerrada en el bosque, cerca de él o en terreno quebrado; abierta en terreno limpio; línea a FORM_LINE_ASSAULT_M del objetivo del asalto; escalón hacia un contacto de costado.
+## Si el jugador eligió fila o línea, solo se abre o se cierra.
+func adapt_formation(w: SimWorld, u: Unit) -> void:
+	var c: Vector2i = u.cell()
+	var closed: bool = (w.cover != null and w.cover.type_at(c) == CoverMap.Type.FOREST) or w.height_field.slope_at(c) > Config.FORM_ROUGH_SLOPE or _forest_near(w, c)
+	u.spread = move_toward(u.spread, 1.0 if closed else Config.FORM_SPREAD_OPEN, Config.FORM_SPREAD_STEP)
+	if u.formation != Unit.Formation.WEDGE:
+		u.shape = u.formation
+		return
+	var shape: int = Unit.Formation.WEDGE
+	var side: float = _contact_side(u)
+	if u.order == Unit.Order.ASSAULT and not u.path.is_empty() and u.pos.distance_to(Vector2(u.path.back())) * Config.CELL_SIZE <= Config.FORM_LINE_ASSAULT_M:
+		shape = Unit.Formation.LINE
+	elif side != 0.0:
+		shape = Unit.Formation.ECHELON
+		u.echelon_side = side
+	if shape != u.shape:
+		u.shape = shape
+		reroll_jitter(w, u)
+
+
+static func _forest_near(w: SimWorld, c: Vector2i) -> bool:
+	if w.cover == null:
+		return false
+	var r: int = Config.FORM_FOREST_NEAR
+	for dy: int in range(-r, r + 1):
+		for dx: int in range(-r, r + 1):
+			if w.cover.type_at(c + Vector2i(dx, dy)) == CoverMap.Type.FOREST:
+				return true
+	return false
+
+
+## Lado (1 derecha, -1 izquierda) del contacto conocido más cercano si está de costado, 0 si no.
+static func _contact_side(u: Unit) -> float:
+	if u.mind == null:
+		return 0.0
+	var best_d: float = Config.FORM_ECHELON_RANGE_M
+	var side: float = 0.0
+	var right: Vector2 = Vector2(-u.heading.y, u.heading.x)
+	for id: int in u.mind.contacts:
+		var to: Vector2 = Vector2(u.mind.contacts[id]["pos"]) - u.pos_m()
+		var d: float = to.length()
+		if d > best_d or d < 1.0:
+			continue
+		var ang: float = rad_to_deg(absf(u.heading.angle_to(to)))
+		best_d = d
+		side = (1.0 if to.dot(right) > 0.0 else -1.0) if ang >= Config.FORM_ECHELON_MIN_DEG and ang <= 180.0 - Config.FORM_ECHELON_MIN_DEG else 0.0
+	return side
+
+
+## --- Granadas (fase 49) ---
+
+## Busca blanco y, si está protegido de su fusil, le tira una granada. Contra un enemigo visible protegido: granada de mano si está a 8-30 m, o
+## el lanzagranadas del granadero si está a 30-150 m. No la tira si cae cerca de un propio.
+func try_grenade(w: SimWorld, u: Unit, s: Soldier) -> bool:
+	if s.grenades <= 0 and s.gl_rounds <= 0:
+		return false
+	var reach: float = Config.GL_RANGE if s.gl_rounds > 0 else Config.GRENADE_RANGE_M
+	var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), reach, s.index)
+	return not t.is_empty() and grenade_at(w, u, s, t["soldier"])
+
+
+## Granada contra ts (el blanco que eligió el soldado), si conviene: ver try_grenade.
+func grenade_at(w: SimWorld, u: Unit, s: Soldier, ts: Soldier) -> bool:
+	if s.grenades <= 0 and s.gl_rounds <= 0:
+		return false
+	if not is_protected_from(w, ts, s.pos):
+		return false # al descubierto alcanza el fusil
+	var d: float = s.pos.distance_to(ts.pos)
+	var hand: bool = s.grenades > 0 and d >= Config.GRENADE_MIN_M and d <= Config.GRENADE_RANGE_M
+	var launcher: bool = not hand and s.gl_rounds > 0 and d >= Config.GL_MIN_M
+	if not hand and not launcher:
+		return false
+	if _friend_near(w, u.side, ts.pos):
+		return false
+	var scatter: float = d * (Config.GRENADE_SCATTER if hand else Config.GL_SCATTER)
+	var at: Vector2 = ts.pos + Vector2(w.rng.randf_range(-scatter, scatter), w.rng.randf_range(-scatter, scatter))
+	var delay: float = Config.GRENADE_FUSE_SECONDS if hand else Config.GL_FLIGHT_SECONDS
+	if hand:
+		s.grenades -= 1
+		s.reload_left = Config.GRENADE_THROW_SECONDS
+	else:
+		s.gl_rounds -= 1
+		s.reload_left = Config.GL_RELOAD
+	s.last_fire_tick = w.total_ticks
+	s.heading = (ts.pos - s.pos).normalized()
+	u.last_fire_tick = w.total_ticks
+	w.grenades.append({"at": at, "tick": w.total_ticks + roundi(delay / Config.TICK), "side": u.side, "unit": u.id, "from": s.pos})
+	return true
+
+
+## ¿Hay un soldado propio en condiciones cerca de at?
+func _friend_near(w: SimWorld, side: int, at: Vector2) -> bool:
+	for fu: Unit in w.units:
+		if not fu.alive or fu.side != side or not fu.is_infantry() or fu.pos_m().distance_to(at) > Config.GRENADE_FRIENDLY_M + Config.SOLDIER_LAG_M * 4.0:
+			continue
+		for f: Soldier in fu.soldiers:
+			if f.state != Soldier.State.DEAD and f.state != Soldier.State.EVACUATED and f.pos.distance_to(at) <= Config.GRENADE_FRIENDLY_M:
+				return true
+	return false
+
+
+## Hace explotar las granadas que cumplieron su tiempo.
+func update_grenades(w: SimWorld) -> void:
+	while w.blast_events.size() > 64: # la vista las consume; sin vista (tests), que no crezca
+		w.blast_events.pop_front()
+	var left: Array[Dictionary] = []
+	for g: Dictionary in w.grenades:
+		if int(g["tick"]) <= w.total_ticks:
+			explode(w, g["at"], w.get_unit(int(g["unit"])), g["from"])
+		else:
+			left.append(g)
+	w.grenades = left
+
+
+## Explosión en at: esquirlas a todos (de los dos bandos) a GRENADE_RADIUS_M, sin importar rocas ni
+## muros; menos cuerpo a tierra o en un cráter. Suprime al doble del radio.
+func explode(w: SimWorld, at: Vector2, owner: Unit, from: Vector2) -> void:
+	w.blast_events.append(at)
+	var r: float = Config.GRENADE_RADIUS_M
+	for tu: Unit in w.units:
+		if not tu.alive or not tu.is_infantry() or tu.pos_m().distance_to(at) > r * 2.0 + Config.SOLDIER_LAG_M * 4.0:
+			continue
+		var touched: bool = false
+		for t: Soldier in tu.soldiers:
+			if t.state == Soldier.State.DEAD or t.state == Soldier.State.EVACUATED:
+				continue
+			var d: float = t.pos.distance_to(at)
+			if d > r * 2.0:
+				continue
+			touched = true
+			if t.is_ok():
+				add_soldier_suppression(w, t, Config.GRENADE_SUPP * (1.0 if d <= r else 0.5))
+			if d > r:
+				continue
+			var low: bool = t.posture == Soldier.Posture.PRONE or (t.posture == Soldier.Posture.CROUCH and w.micro != null and w.micro.type_at_m(t.pos) == MicroCover.Type.CRATER)
+			var p: float = Config.GRENADE_P_HIT * (1.0 - 0.5 * d / r) * (Config.GRENADE_PRONE_FACTOR if low else 1.0)
+			if w.rng.randf() < p:
+				w.damage_soldier(tu, t)
+		if touched and tu.alive:
+			tu.last_fired_upon_tick = w.total_ticks
+			if owner != null and owner.side != tu.side:
+				w.known_enemies[tu.side][owner.id] = {"cell": owner.cell(), "last_seen_turn": w.turn}
+				w.minds.flash(w, tu, owner, from)
+			aggregate_suppression(tu)
+
+
+## --- Munición (fase 48) ---
+
+## ¿La escuadra tira a fuego rápido? Al asaltar, al suprimir una zona o a ritmo rápido.
+static func rapid_fire(u: Unit) -> bool:
+	return u.order == Unit.Order.ASSAULT or u.order == Unit.Order.SUPPRESS or SimWorld.effective_pace(u) == Unit.Pace.FAST
+
+
+## Multiplica el tiempo entre tiros: fuego rápido lo acorta; con poca munición, el soldado lo estira.
+static func fire_rate_factor(u: Unit, s: Soldier) -> float:
+	if s.ammo_fraction() < Config.AMMO_LOW_FRACTION:
+		return Config.FIRE_CONSERVE_RELOAD
+	return Config.FIRE_RAPID_RELOAD if rapid_fire(u) else 1.0
+
+
+## Gasta un tiro (o una ráfaga) y avisa por radio cuando la escuadra se va quedando sin munición.
+func spend_ammo(w: SimWorld, u: Unit, s: Soldier) -> void:
+	s.ammo = maxi(0, s.ammo - 1)
+	if s.role == Soldier.Role.MG and s.ammo == 0 and not u.mg_dry_reported:
+		u.mg_dry_reported = true
+		w.radio(u, "¡ametralladora sin munición!")
+	if not u.low_ammo_reported and u.ammo_fraction() < Config.AMMO_LOW_FRACTION:
+		u.low_ammo_reported = true
+		w.radio(u, "nos queda poca munición")
+
+
+## El proveedor le pasa cintas a la ametralladora (una vez por segundo) si está cerca y a ella le falta.
+func update_ammo(w: SimWorld) -> void:
+	if w.total_ticks % roundi(1.0 / Config.TICK) != 0:
+		return
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		var mg: Soldier = null
+		var ast: Soldier = null
+		for s: Soldier in u.soldiers:
+			if s.is_ok() and s.role == Soldier.Role.MG:
+				mg = s
+			elif s.is_ok() and s.role == Soldier.Role.ASSISTANT:
+				ast = s
+		if mg == null or ast == null or ast.ammo_carry <= 0 or mg.ammo_fraction() >= Config.AMMO_PASS_BELOW:
+			continue
+		if mg.pos.distance_to(ast.pos) > Config.AMMO_PASS_M:
+			continue
+		var n: int = mini(ast.ammo_carry, mini(Config.AMMO_PASS_PER_SECOND, Config.AMMO_MG - mg.ammo))
+		ast.ammo_carry -= n
+		mg.ammo += n
+		if mg.ammo > 0:
+			u.mg_dry_reported = false
 
 
 ## Coaxial de un tanque: ráfaga al soldado enemigo visible más cercano que ve desde su óptica.
@@ -831,7 +1070,8 @@ func _shoot(w: SimWorld, su: Unit, from: Vector2, eye: float, s: Soldier, tu: Un
 	var reload: float = SimWorld.weapon_reload(wpn)
 	if s != null:
 		reload = (Config.SOLDIER_RIFLE_RELOAD if wpn == Unit.Weapon.RIFLES else reload) * w.rng.randf_range(0.75, 1.25)
-		s.reload_left = reload
+		s.reload_left = reload * fire_rate_factor(su, s)
+		spend_ammo(w, su, s)
 		s.last_fire_tick = w.total_ticks
 		s.heading = (t.pos - s.pos).normalized()
 	else:
@@ -879,7 +1119,8 @@ func _area_shot(w: SimWorld, u: Unit, s: Soldier, wpn: int, cell: Vector2i = Vec
 		cell = u.suppress_cell
 	if not w.can_suppress_at(u, cell):
 		return
-	s.reload_left = (Config.SOLDIER_RIFLE_RELOAD if wpn == Unit.Weapon.RIFLES else SimWorld.weapon_reload(wpn)) * w.rng.randf_range(0.75, 1.25)
+	s.reload_left = (Config.SOLDIER_RIFLE_RELOAD if wpn == Unit.Weapon.RIFLES else SimWorld.weapon_reload(wpn)) * w.rng.randf_range(0.75, 1.25) * fire_rate_factor(u, s)
+	spend_ammo(w, u, s)
 	s.last_fire_tick = w.total_ticks
 	u.last_fire_tick = w.total_ticks
 	var r: float = Config.SUPPRESS_AREA_RADIUS * Config.CELL_SIZE
@@ -965,7 +1206,7 @@ func suppress_at(w: SimWorld, side: int, at: Vector2, from: Vector2, wpn: int, h
 			add_soldier_suppression(w, t, a)
 			t.incoming_from = from
 			t.incoming_tick = w.total_ticks
-			if tu.moving and not prot and a >= Config.REFLEX_DIVE_SUPP:
+			if tu.moving and not prot and a >= Config.REFLEX_DIVE_SUPP and (tu.mind == null or tu.mind.option != SquadMind.Option.NEAR_AMBUSH):
 				t.dive_until = w.total_ticks + roundi(Config.REFLEX_DIVE_SECONDS / Config.TICK) # ¡al suelo!
 			touched = true
 		if touched:

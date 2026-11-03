@@ -6,15 +6,15 @@ enum Kind { TANK, INFANTRY }
 ## Armas: el tanque lleva cañón (contra tanques) y coaxial (contra infantería); la escuadra,
 ## fusiles y ametralladora (contra infantería) y un antitanque con pocas cargas. Cada soldado
 ## tira con la suya: fusil, ametralladora (MG, en ráfagas) o antitanque.
-enum Weapon { CANNON, COAX, RIFLES, AT, MG }
+enum Weapon { CANNON, COAX, RIFLES, AT, MG, GRENADE }
 
 enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW, SUPPRESS }
 ## Reglas de fuego: libre, solo si te dispararon hace poco, o retener.
 enum Roe { FREE, RETURN_FIRE, HOLD }
 ## Ritmo de marcha: normal, rápido (más veloz, tira peor) o cauto (lento, se detecta como si estuviera quieto).
-enum Pace { NORMAL, FAST, CAUTIOUS }
+enum Pace { NORMAL, FAST, CAUTIOUS, CRAWL }
 ## Formación de la escuadra: cuña, fila india o línea.
-enum Formation { WEDGE, FILE, LINE }
+enum Formation { WEDGE, FILE, LINE, ECHELON }
 
 var id: int = 0
 var kind: int = Kind.TANK
@@ -58,10 +58,18 @@ var last_fired_upon_tick: int = -1000000 # tick global del último disparo recib
 var pace: int = Pace.NORMAL # ritmo; dura hasta que se cambie (ASSAULT siempre va rápido)
 ## Infantería: los soldados de la escuadra. pos es el ancla de la formación, que sigue la ruta.
 var soldiers: Array[Soldier] = []
-var formation: int = Formation.WEDGE
+var formation: int = Formation.WEDGE # la que eligió el jugador
+## Formación en uso (fase 50): con la cuña elegida, la escuadra la adapta al terreno (fila en el bosque,
+## línea para el asalto final, escalón hacia un contacto de costado). spread abre o cierra los lugares.
+var shape: int = Formation.WEDGE
+var spread: float = 1.0
+var echelon_side: float = 1.0 # 1 = escalón a la derecha, -1 a la izquierda
+var trail_m: float = 0.0 # desplazamiento con vigilancia: metros extra que el equipo A va detrás
 ## Infantería: la cabeza de la escuadra (autonomía, ver MindSim). null en los tanques.
 var mind: SquadMind = null
 var jitter_at: Vector2 = Vector2(-1.0e9, -1.0e9) # dónde estaba el ancla la última vez que se reacomodaron
+var low_ammo_reported: bool = false # ya avisó por radio que le queda poca munición
+var mg_dry_reported: bool = false # ya avisó que la ametralladora se quedó sin munición
 
 
 func _init(p_id: int, p_side: int, p_pos: Vector2, p_kind: int = Kind.TANK) -> void:
@@ -82,6 +90,17 @@ func _init(p_id: int, p_side: int, p_pos: Vector2, p_kind: int = Kind.TANK) -> v
 		mind.next_think_tick = p_id % Config.MIND_THINK_TICKS
 
 
+## Fracción de munición que le queda a los soldados en condiciones (1 = llena). Los tanques, 1.
+func ammo_fraction() -> float:
+	var have: int = 0
+	var full: int = 0
+	for s: Soldier in soldiers:
+		if s.is_ok():
+			have += s.ammo
+			full += Soldier.max_ammo(s.role)
+	return 1.0 if full == 0 else float(have) / float(full)
+
+
 ## Ancla de la formación en metros.
 func pos_m() -> Vector2:
 	return pos * Config.CELL_SIZE
@@ -89,15 +108,21 @@ func pos_m() -> Vector2:
 
 ## Lugar del soldado i en la formación, en metros (según el ancla y el rumbo).
 func slot_pos_m(i: int) -> Vector2:
-	var off: Vector2 = formation_offset(i, formation) + soldiers[i].jitter if i < soldiers.size() else formation_offset(i, formation)
+	var base: Vector2 = formation_offset(i, shape, echelon_side) * spread
+	if trail_m > 0.0 and i < soldiers.size() and soldiers[i].team == 0:
+		base.y += trail_m
+	var off: Vector2 = base + soldiers[i].jitter if i < soldiers.size() else base
 	var right: Vector2 = Vector2(-heading.y, heading.x)
 	return pos_m() + right * off.x - heading * off.y
 
 
 ## Desplazamiento del lugar i en una formación: x a la derecha, y hacia atrás, en metros.
-static func formation_offset(i: int, f: int) -> Vector2:
+static func formation_offset(i: int, f: int, side: float = 1.0) -> Vector2:
 	var s: float = Config.SOLDIER_SPACING
 	match f:
+		Formation.ECHELON:
+			# En diagonal hacia atrás y hacia el lado del escalón
+			return Vector2(side * float(i) * s, float(i) * s * 0.7)
 		Formation.FILE:
 			return Vector2(0.0, float(i) * s)
 		Formation.LINE:

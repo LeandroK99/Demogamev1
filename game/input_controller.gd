@@ -356,6 +356,8 @@ func _cycle_pace() -> void:
 	if u == null or world.phase != SimWorld.Phase.PLAN:
 		return
 	var next: int = (u.pace + 1) % Unit.Pace.size()
+	if next == Unit.Pace.CRAWL and not u.is_infantry():
+		next = Unit.Pace.NORMAL # los tanques no reptan
 	for id: int in selected_ids:
 		world.set_pace(id, next)
 

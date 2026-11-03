@@ -329,3 +329,15 @@ Plan completo en el doc "Hull-Down: autonomía, sistema médico y 10 mecánicas 
 - **45 — Sangrado.** Un herido sin atender se desangra en 90 a 240 s; mientras tanto le baja la moral a la escuadra. Estabilizado, deja de desangrarse.
 - **46 — Médico.** El soldado 9 es el médico (en lugar de un fusilero): con la escuadra detenida va al herido que se desangra más rápido y lo estabiliza en 15 s. Sin médico, un compañero tarda 40 s. El que atiende no tira.
 - **47 — Rescate y evacuación.** Bajo fuego, con un herido al descubierto (autonomía normal o alta): humo de mano entre el herido y la amenaza, el equipo A bate la amenaza y el médico (o un fusilero) lo arrastra a cubierto a 0,6 m/s; ahí lo atienden. Tecla P (en PLAN): cada herido sale hacia el borde propio con un camillero y a los 60 s dejan el campo; la escuadra recupera moral.
+
+
+## Fases 48–72 — Campo abierto, edificios y CQB
+
+Plan completo en el doc "Hull-Down: plan de las fases 48 a 72" (cuatro PR: A fuego 48–53, B pelotón 54–59, C edificios 60–65, D CQB 66–72). Las mecánicas salen del doc "Hull-Down: 30 mecánicas de infantería".
+
+- **48 — Munición.** Tiros por fusilero (120), ráfagas de la ametralladora (150) y cintas extra del proveedor (150), que se las pasa si está a 6 m y le queda menos de la mitad. Fuego rápido (asalto, suprimir, ritmo rápido) acorta el tiempo entre tiros a ×0,6; con menos del 25 % dosifica (×1,5). Sin munición no tira; avisa por radio.
+- **49 — Granadas.** Dos de mano por soldado (no la ametralladora), a 8–30 m contra un enemigo visible protegido de su fusil: radio 5 m que ignora rocas y muros, menos cuerpo a tierra; suprime al doble del radio. El soldado 5 es granadero: 8 granadas de fusil a 30–150 m. No se tira si un propio queda a 7 m de donde cae.
+- **50 — Formación según terreno.** En marcha con la cuña elegida: se abre de a poco hasta ×2 en terreno limpio, se cierra en el bosque, cerca de él o en terreno quebrado, línea a 60 m del objetivo de un asalto y escalón hacia un contacto de costado. Fila o línea elegidas por el jugador solo se abren o se cierran.
+- **51 — Técnicas de movimiento.** Simple sin contactos; con vigilancia si hay un contacto conocido a 600 m (el equipo A va 20 m detrás); por saltos si se espera (la opción BOUND). Saltos alternados (el que estaba quieto pasa adelante) sin fuego encima; sucesivos bajo fuego.
+- **52 — Emboscadas.** En marcha, si le tiran desde menos de 35 m: asalta al emboscador a la carrera sin tirarse al suelo, y retoma la orden al llegar o si cae. Más lejos: drill de contacto y después fuego y movimiento.
+- **53 — Reptar.** Ritmo nuevo (X) a 0,3 m/s, cuerpo a tierra; no se lo detecta como en marcha. Una escuadra con autonomía, clavada en marcha 3 s, sigue reptando hacia su destino.

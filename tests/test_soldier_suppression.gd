@@ -63,6 +63,7 @@ func test_pinned_soldier_stays_and_squad_moves_on() -> void:
 func test_majority_pinned_halts_squad() -> void:
 	var world: SimWorld = _world()
 	var sq: Unit = world.add_unit(0, Vector2(48, 80), Unit.Kind.INFANTRY)
+	sq.mind.autonomy = SquadMind.Autonomy.STRICT # con autonomía, a los 3 s repta (test_crawl)
 	for s: Soldier in sq.soldiers:
 		if s.index < 6:
 			s.suppression = 90.0

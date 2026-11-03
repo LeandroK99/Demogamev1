@@ -88,6 +88,11 @@ func _point_m(m: Vector2, h: float) -> Vector3:
 	return Vector3(m.x, height_field.height_at(m / Config.CELL_SIZE) + h, m.y)
 
 
+## Explosión de una granada en m (metros del mundo): destello gris anaranjado a ras del suelo.
+func add_blast_m(m: Vector2) -> void:
+	_flash(_point_m(m, 0.5), SimWorld.Aspect.FLANK)
+
+
 ## Fuego de área (suprimir): trazadoras repartidas sobre la zona.
 func add_area_shot(shooter: Unit, cell: Vector2i) -> void:
 	var center: Vector3 = height_field.cell_to_world(cell)

@@ -386,3 +386,60 @@ const AI_RETREAT_RADIUS: int = 10 # celdas de búsqueda para retroceder con hp =
 const AI_CREST_SEARCH_DEPTH: int = 50 # celdas hacia adelante para buscar la cresta
 const AI_CREST_PROBE_DIST: int = 20 # observador hipotético a esta distancia delante de la cresta
 const AI_CREST_CAND_RADIUS: int = 6 # radio de candidatos alrededor de la cresta
+
+# --- Munición y disciplina de fuego (fase 48) ---
+const AMMO_RIFLE: int = 120 # tiros por fusilero (cada tiro del modelo es un par de disparos)
+const AMMO_MG: int = 150 # ráfagas que lleva la ametralladora
+const AMMO_ASSISTANT_CARRY: int = 150 # ráfagas extra que carga el proveedor para la ametralladora
+const AMMO_PASS_M: float = 6.0 # el proveedor le pasa cintas a la ametralladora si está a esta distancia
+const AMMO_PASS_PER_SECOND: int = 5 # ráfagas que pasa por segundo
+const AMMO_PASS_BELOW: float = 0.5 # le pasa cuando a la ametralladora le queda menos de esta fracción
+const AMMO_LOW_FRACTION: float = 0.25 # por debajo de esto, la escuadra tiene poca munición y dosifica
+const FIRE_RAPID_RELOAD: float = 0.6 # fuego rápido: multiplica el tiempo entre tiros (asalto, suprimir, ritmo rápido)
+const FIRE_CONSERVE_RELOAD: float = 1.5 # con poca munición: tira más espaciado
+
+# --- Granadas de mano y granadero (fase 49) ---
+const GRENADES_PER_SOLDIER: int = 2 # de fragmentación (la ametralladora no lleva)
+const GRENADE_RANGE_M: float = 30.0 # alcance de la granada de mano
+const GRENADE_MIN_M: float = 8.0 # más cerca no la tira: lo alcanzaría a él
+const GRENADE_RADIUS_M: float = 5.0 # radio letal (ignora la protección frontal de rocas y muros)
+const GRENADE_P_HIT: float = 0.6 # en el punto de la explosión; baja hacia el borde del radio
+const GRENADE_PRONE_FACTOR: float = 0.6 # cuerpo a tierra o en un cráter, recibe menos esquirlas
+const GRENADE_SUPP: float = 45.0 # supresión en el punto; la mitad al doble del radio
+const GRENADE_FUSE_SECONDS: float = 2.5 # entre que la tira y explota
+const GRENADE_THROW_SECONDS: float = 2.0 # el que la tira no hace otra cosa este tiempo
+const GRENADE_SCATTER: float = 0.1 # error de puntería: fracción de la distancia
+const GRENADE_FRIENDLY_M: float = 7.0 # no la tira si un propio queda a esta distancia de donde apunta
+const GRENADIER_INDEX: int = 4 # el soldado 5 lleva el fusil lanzagranadas
+const GL_ROUNDS: int = 8
+const GL_RANGE: float = 150.0
+const GL_MIN_M: float = 30.0
+const GL_FLIGHT_SECONDS: float = 1.0
+const GL_SCATTER: float = 0.05
+const GL_RELOAD: float = 6.0
+
+# --- Formación según terreno y escalón (fase 50) ---
+const FORM_UPDATE_SECONDS: float = 1.0 # cada cuánto la escuadra revisa su formación en marcha
+const FORM_SPREAD_OPEN: float = 2.0 # en terreno limpio la cuña se abre a esto por SOLDIER_SPACING (6 m)
+const FORM_ROUGH_SLOPE: float = 2.0 # metros de desnivel con los vecinos: terreno quebrado, se cierra
+const FORM_FOREST_NEAR: int = 2 # celdas: con bosque así de cerca se cierra
+const FORM_LINE_ASSAULT_M: float = 60.0 # al asaltar, a esta distancia del objetivo forma en línea
+const FORM_ECHELON_RANGE_M: float = 300.0 # contacto conocido a esta distancia y de costado: escalón
+const FORM_ECHELON_MIN_DEG: float = 40.0 # ... a más de esto del rumbo (y a menos de 140°)
+const FORM_SPREAD_STEP: float = 0.1 # cuánto se abre o se cierra por revisión (de a poco, para que nadie quede atrás)
+
+# --- Técnicas de movimiento (fase 51) ---
+const OVERWATCH_CONTACT_M: float = 600.0 # con un contacto conocido a esta distancia, desplazamiento con vigilancia
+const OVERWATCH_TRAIL_M: float = 20.0 # el equipo A (con la ametralladora) va esto más atrás
+const OVERWATCH_TRAIL_STEP: float = 2.0 # metros por revisión (de a poco)
+
+# --- Emboscada cercana y lejana (fase 52) ---
+const NEAR_AMBUSH_M: float = 35.0 # le tiran desde más cerca que esto (a distancia de granada): asalta
+const NEAR_AMBUSH_FIRED_SECONDS: float = 2.0 # ... si le tiraron hace menos que esto
+const NEAR_AMBUSH_SCORE: float = 4.0 # le gana a todo: en la zona de muerte no se piensa
+const NEAR_AMBUSH_MAX_SECONDS: float = 25.0 # el asalto dura a lo sumo esto
+const NEAR_AMBUSH_DONE_M: float = 6.0 # llegó a la posición del emboscador
+
+# --- Reptar (fase 53) ---
+const PACE_CRAWL_SPEED: float = 0.2 # multiplicador de velocidad reptando (0,3 m/s)
+const CRAWL_AFTER_SECONDS: float = 3.0 # clavada en marcha este tiempo, la escuadra sigue reptando

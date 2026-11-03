@@ -5,19 +5,23 @@ extends RefCounted
 ## las opciones está en MindSim; acá queda el estado y la regla para cambiar de opción.
 
 ## FOLLOW cumple la orden del jugador; las demás son decisiones propias.
-enum Option { FOLLOW, CONTACT_DRILL, RELOCATE, AMBUSH, BREAK_CONTACT, BOUND, FLANK, RESCUE }
+enum Option { FOLLOW, CONTACT_DRILL, RELOCATE, AMBUSH, BREAK_CONTACT, BOUND, FLANK, RESCUE, NEAR_AMBUSH }
 ## Estricta: solo cumple la orden. Normal: reacciona (drill, reubicarse, emboscar, rescatar).
 ## Normal también avanza por fuego y movimiento. Alta: además flanquea y rompe el contacto sola
 ## (solo diezmada de verdad).
 enum Autonomy { STRICT, NORMAL, HIGH }
+## Técnica de movimiento (fase 51): simple sin contactos, con vigilancia si el contacto es posible
+## (un equipo va detrás cubriendo), por saltos si se espera (la opción BOUND).
+enum Technique { TRAVEL, OVERWATCH, BOUNDING }
+const TECHNIQUE_NAMES: Array[String] = ["simple", "con vigilancia", "por saltos"]
 ## Calidad del jefe: cada cuánto piensa y cuánto se equivoca al puntuar.
 enum Quality { VETERAN, REGULAR, GREEN }
 
 ## Para la radio y el HUD.
 const OPTION_NAMES: Array[String] = ["sigue la orden", "contacto", "se reubica", "emboscada",
-	"rompe el contacto", "avanza por saltos", "flanquea", "rescata un herido"]
+	"rompe el contacto", "avanza por saltos", "flanquea", "rescata un herido", "asalta la emboscada"]
 ## Ícono de intención sobre la escuadra (vacío = cumple la orden).
-const INTENT_SHORT: Array[String] = ["", "CONTACTO", "REUBICA", "EMBOSCADA", "SE REPLIEGA", "SALTOS", "FLANQUEA", "RESCATE"]
+const INTENT_SHORT: Array[String] = ["", "CONTACTO", "REUBICA", "EMBOSCADA", "SE REPLIEGA", "SALTOS", "FLANQUEA", "RESCATE", "ASALTO"]
 const AUTONOMY_NAMES: Array[String] = ["estricta", "normal", "alta"]
 const QUALITY_NAMES: Array[String] = ["veterano", "regular", "novato"]
 
@@ -42,6 +46,9 @@ var target_cell: Vector2i = Vector2i(-1, -1) # destino de la opción que se muev
 var flank_enemy: int = -1 # contacto que está flanqueando
 var rescue_index: int = -1 # herido elegido para rescatar
 var drill_end_tick: int = -1000000 # cuándo terminó la última reacción al contacto
+var technique: int = Technique.TRAVEL
+var bound_alternate: bool = true # el último salto fue alternado (si no, sucesivo)
+var crawling: bool = false # clavada en marcha: repta en vez de quedarse quieta (fase 53)
 var rushing: bool = false # bajo fuego, los que avanzan van a carreras cortas (ver InfantrySim)
 var pending: Dictionary = {} # enemigos con un aviso de radio en camino
 var halted_since: int = -1 # tick desde el que la supresión la tiene frenada (-1 = no lo está)
@@ -56,7 +63,7 @@ static func allowed(p_autonomy: int, opt: int) -> bool:
 	match opt:
 		Option.FOLLOW:
 			return true
-		Option.CONTACT_DRILL, Option.RELOCATE, Option.AMBUSH, Option.RESCUE, Option.BOUND:
+		Option.CONTACT_DRILL, Option.RELOCATE, Option.AMBUSH, Option.RESCUE, Option.BOUND, Option.NEAR_AMBUSH:
 			return p_autonomy >= Autonomy.NORMAL
 	return p_autonomy >= Autonomy.HIGH
 

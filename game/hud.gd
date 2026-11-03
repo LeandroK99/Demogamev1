@@ -23,12 +23,14 @@ const PACE_NAMES: Dictionary = {
 	Unit.Pace.NORMAL: "normal",
 	Unit.Pace.FAST: "rápido",
 	Unit.Pace.CAUTIOUS: "cauto",
+	Unit.Pace.CRAWL: "reptando",
 }
 
 const FORMATION_NAMES: Dictionary = {
 	Unit.Formation.WEDGE: "cuña",
 	Unit.Formation.FILE: "fila india",
 	Unit.Formation.LINE: "línea",
+	Unit.Formation.ECHELON: "escalón",
 }
 const ROE_NAMES: Dictionary = {
 	Unit.Roe.FREE: "fuego libre",
@@ -236,7 +238,15 @@ func _unit_text() -> String:
 		lines.append("Mira al %s" % compass(sel.heading))
 		if sel.is_infantry():
 			lines.append(soldiers_text(sel))
-			lines.append("Formación: %s" % FORMATION_NAMES.get(sel.formation, "?"))
+			var adapted: String = ""
+			if sel.shape != sel.formation:
+				adapted = " (ahora %s)" % FORMATION_NAMES.get(sel.shape, "?")
+			lines.append("Formación: %s%s%s" % [FORMATION_NAMES.get(sel.formation, "?"), adapted, ", abierta" if sel.spread > 1.0 else ""])
+			if sel.mind != null:
+				var tech: String = SquadMind.TECHNIQUE_NAMES[sel.mind.technique]
+				if sel.mind.technique == SquadMind.Technique.BOUNDING:
+					tech += " alternados" if sel.mind.bound_alternate else " sucesivos"
+				lines.append("Avance: %s" % tech)
 			var state: String = ""
 			if sel.broken:
 				state = " · QUEBRADA"
@@ -283,6 +293,7 @@ func _unit_text() -> String:
 			lines.append("RIESGO %s" % RISK_NAMES[int(risk["level"])])
 		if sel.is_infantry():
 			lines.append("Antitanque: %d / %d" % [sel.at_charges, Config.INF_AT_CHARGES])
+			lines.append("Munición: %d %%%s" % [roundi(sel.ammo_fraction() * 100.0), " (fuego rápido)" if InfantrySim.rapid_fire(sel) else ""])
 		else:
 			lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
 		lines.append("")
