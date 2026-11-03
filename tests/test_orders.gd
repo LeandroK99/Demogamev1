@@ -124,3 +124,42 @@ func test_move_without_append_replaces() -> void:
 	assert_eq(u.path.back(), c, "la ruta nueva termina en c")
 	assert_true(not u.path.has(a), "descartó los tramos anteriores")
 	assert_eq(u.waypoints.size(), 1, "un solo tramo")
+
+
+func test_overwatch_sector_limits_fire() -> void:
+	var ids: Array[int] = [0, 4]
+	var world: SimWorld = _world(ids)
+	var blue: Unit = world.units[0]
+	var red: Unit = world.units[4]
+	red.pos = blue.pos + Vector2(20.0, 0.0) # al este, a 80 m
+	red.reload_left = 100.0
+	blue.reload_left = 5.0
+	world.update_detection()
+	assert_true(world.visible_enemies[0].has(4), "lo ve")
+	assert_true(world.order_overwatch(0, Vector2(0.0, -1.0)), "vigila al norte")
+	world.begin_execute()
+	assert_eq(blue.reload_left, 0.0, "arranca con la recarga lista")
+	world.step()
+	assert_eq(world.shot_events.size(), 0, "no tira fuera del sector")
+	world.phase = SimWorld.Phase.PLAN
+	assert_true(world.order_overwatch(0, Vector2(1.0, 0.0)), "vigila al este")
+	world.begin_execute()
+	world.step()
+	assert_eq(world.shot_events.size(), 1, "tira dentro del sector en el primer tick")
+
+
+func test_overwatch_ambush_bonus() -> void:
+	var ids: Array[int] = [0, 4]
+	var world: SimWorld = _world(ids)
+	world.p_hit_base = 0.3 # lejos del tope
+	var blue: Unit = world.units[0]
+	var red: Unit = world.units[4]
+	red.pos = blue.pos + Vector2(0.0, -20.0)
+	red.moving = true
+	var p_normal: float = world.hit_probability(blue, red)
+	assert_true(world.order_overwatch(0, Vector2(0.0, -1.0)), "vigila al norte")
+	world.begin_execute()
+	var p_ambush: float = world.hit_probability(blue, red)
+	assert_true(is_equal_approx(p_ambush, p_normal * Config.OVERWATCH_FIRST_SHOT_FACTOR), "emboscada ×1,5 (%.3f vs %.3f)" % [p_ambush, p_normal])
+	blue.overwatch_ready = false
+	assert_true(is_equal_approx(world.hit_probability(blue, red), p_normal), "después del primer disparo, normal")

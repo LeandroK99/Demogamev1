@@ -101,6 +101,11 @@ func begin_execute() -> void:
 	if phase == Phase.PLAN and not game_over:
 		phase = Phase.EXECUTE
 		tick_in_turn = 0
+		# Vigilancia: arranca el turno con la recarga lista y el disparo de emboscada
+		for u: Unit in units:
+			if u.alive and u.order == Unit.Order.OVERWATCH:
+				u.reload_left = 0.0
+				u.overwatch_ready = true
 
 
 ## Quién ve a quién: un enemigo es visible para un bando si alguna unidad viva
@@ -206,6 +211,31 @@ func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.Z
 	if not u.moving and u.final_heading != Vector2.ZERO:
 		u.heading = u.final_heading # ya está en destino: solo gira
 	return true
+
+
+## Orden OVERWATCH: quieto, con el casco hacia dir, y solo dispara dentro del sector
+## de ±OVERWATCH_HALF_ANGLE_DEG. Cualquier otra orden la cancela.
+func order_overwatch(unit_id: int, dir: Vector2) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN or dir.length() < 0.001:
+		return false
+	u.path.clear()
+	u.waypoints.clear()
+	u.moving = false
+	u.attack_target = -1
+	u.final_heading = Vector2.ZERO
+	u.overwatch_dir = dir.normalized()
+	u.heading = u.overwatch_dir
+	u.order = Unit.Order.OVERWATCH
+	return true
+
+
+## ¿Está el punto at (en celdas) dentro del sector de vigilancia de u?
+static func in_overwatch_sector(u: Unit, at: Vector2) -> bool:
+	var d: Vector2 = at - u.pos
+	if d.length_squared() < 0.0001:
+		return true
+	return u.overwatch_dir.dot(d.normalized()) >= cos(deg_to_rad(Config.OVERWATCH_HALF_ANGLE_DEG))
 
 
 ## Orden ATTACK: avanzar por la ruta cubierta hacia la última posición conocida del enemigo,
@@ -357,6 +387,7 @@ func _combat() -> void:
 				target.alive = false
 				target.moving = false
 				target.path.clear()
+		shooter.overwatch_ready = false
 		shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit, "aspect": aspect_of(target, shooter.pos)})
 
 
@@ -375,6 +406,8 @@ func _pick_target(shooter: Unit) -> Unit:
 		if not enemy.alive:
 			continue
 		var d: float = TerrainAnalysis.dist_m(shooter.cell(), enemy.cell())
+		if shooter.order == Unit.Order.OVERWATCH and not in_overwatch_sector(shooter, enemy.pos):
+			continue
 		if d < best_d and _can_see(shooter, enemy, Config.CENTER_H):
 			best = enemy
 			best_d = d
@@ -404,7 +437,7 @@ static func aspect_factor(aspect: int) -> float:
 	return Config.ARMOR_FLANK_FACTOR
 
 
-## p = P_HIT_BASE x distancia x casco x movimiento x blindaje (tope P_HIT_MAX).
+## p = P_HIT_BASE x distancia x casco x movimiento (x emboscada) x blindaje (tope P_HIT_MAX).
 func hit_probability(shooter: Unit, target: Unit) -> float:
 	var d: float = TerrainAnalysis.dist_m(shooter.cell(), target.cell())
 	var f_dist: float = clampf(1.0 - d / Config.MAX_RANGE, 0.2, 1.0)
@@ -412,6 +445,8 @@ func hit_probability(shooter: Unit, target: Unit) -> float:
 	if not analysis.los(shooter.cell(), Config.EYE_H, target.cell(), Config.HULL_H):
 		f_hull = hulldown_hit_factor
 	var f_move: float = moving_shooter_factor if shooter.moving else 1.0
+	if shooter.order == Unit.Order.OVERWATCH and shooter.overwatch_ready and target.moving:
+		f_move *= Config.OVERWATCH_FIRST_SHOT_FACTOR # emboscada
 	var f_armor: float = aspect_factor(aspect_of(target, shooter.pos)) if armor_enabled else 1.0
 	return minf(p_hit_base * f_dist * f_hull * f_move * f_armor, p_hit_max)
 

@@ -4,7 +4,7 @@ extends RefCounted
 ## Por tanque vivo, en orden de prioridad:
 ##   1. hp == 1 -> retroceder a la celda de menor exposición dentro de AI_RETREAT_RADIUS.
 ##   2. Hay amenazas y la celda actual no es hull-down -> orden HULLDOWN.
-##   3. Ya está en hull-down y puede disparar a una amenaza -> HOLD.
+##   3. Ya está en hull-down y puede disparar a una amenaza -> OVERWATCH hacia las amenazas.
 ##      (si está oculto pero no puede disparar, también HULLDOWN: busca desde dónde tirar).
 ##   4. Sin amenazas -> avanzar a la cresta por delante, a una posición hull-down
 ##      contra un observador hipotético del lado enemigo.
@@ -34,9 +34,10 @@ func issue_orders(world: SimWorld) -> void:
 		elif not threats.is_empty():
 			var state: Dictionary = evaluate_cell(world, u.cell(), threats)
 			if state["hull_hidden"] and state["can_fire"]:
-				u.path.clear()
-				u.moving = false
-				u.order = Unit.Order.HOLD
+				if not world.order_overwatch(u.id, SimWorld.facing_to_threats(u.cell(), threats)):
+					u.path.clear()
+					u.moving = false
+					u.order = Unit.Order.HOLD
 				reserved.append(u.cell())
 			else:
 				hulldown_ids.append(u.id)

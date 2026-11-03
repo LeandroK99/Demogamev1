@@ -65,6 +65,10 @@ const SPOT_RANGE_STATIONARY: float = 220.0 # metros: alcance para detectar a un 
 const SPOT_RANGE_HULLDOWN: float = 150.0 # metros: blanco quieto con el casco oculto para el observador
 const FIRE_REVEAL_SECONDS: float = 3.0 # tras disparar, se lo detecta a MAX_RANGE aunque esté quieto
 
+# --- Vigilancia (overwatch) ---
+const OVERWATCH_HALF_ANGLE_DEG: float = 35.0 # semiángulo del sector de tiro
+const OVERWATCH_FIRST_SHOT_FACTOR: float = 1.5 # primer disparo del turno contra un blanco en movimiento
+
 # --- Orden hull-down e IA ---
 const HULLDOWN_MIN_SEPARATION: float = 3.0 # celdas mínimas entre destinos de una misma orden
 const NO_THREAT_ADVANCE: int = 20 # celdas hacia el centro si no hay amenazas conocidas

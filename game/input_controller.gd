@@ -4,6 +4,7 @@ extends Node
 ## clic = mover; mantener y arrastrar = mover y elegir la orientación final; sobre un rojo = atacar.
 ## Con Ctrl, la ruta es directa (la más corta) en vez de la más cubierta.
 ## Con Shift, la orden agrega un tramo (waypoint) al final de la ruta actual.
+## V: vigilancia con el sector apuntando al cursor.
 
 const CLICK_PICK_PX: float = 30.0 # radio en píxeles para seleccionar con un clic
 const DRAG_MIN_PX: float = 8.0 # menos que esto es un clic, no un recuadro
@@ -12,6 +13,8 @@ const PLAYER_SIDE: int = 0
 const COLOR_PATH: Color = Color(1.0, 0.9, 0.2)
 const COLOR_PATH_DIRECT: Color = Color(1.0, 0.5, 0.1)
 const COLOR_WAYPOINT: Color = Color(1.0, 1.0, 1.0)
+const COLOR_OVERWATCH: Color = Color(0.4, 1.0, 0.6)
+const OVERWATCH_ARC_STEPS: int = 12
 const COLOR_FACING: Color = Color(0.3, 0.9, 1.0)
 const COLOR_ATTACK: Color = Color(1.0, 0.25, 0.2)
 const FACING_ARROW_CELLS: float = 4.0 # largo de la flecha de orientación
@@ -81,6 +84,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		# H: hull-down para las seleccionadas (solo en PLAN)
 		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty():
 			world.order_hulldown(selected_ids)
+		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_V:
+		_order_overwatch_at(get_viewport().get_mouse_position())
 		return
 	var mm: InputEventMouseMotion = event as InputEventMouseMotion
 	if mm != null and _rdragging:
@@ -197,6 +203,19 @@ func _right_released() -> void:
 	_rdrag_facing = Vector2.ZERO
 
 
+## V: cada seleccionada vigila el sector que apunta desde ella hacia el punto bajo el cursor.
+func _order_overwatch_at(screen: Vector2) -> void:
+	if selected_ids.is_empty() or world.phase != SimWorld.Phase.PLAN:
+		return
+	var hit: Variant = terrain_view.raycast(camera.project_ray_origin(screen), camera.project_ray_normal(screen))
+	if hit == null:
+		return
+	var at: Vector2 = Vector2((hit as Vector3).x, (hit as Vector3).z) / Config.CELL_SIZE
+	for id: int in selected_ids:
+		var u: Unit = world.get_unit(id)
+		world.order_overwatch(id, at - u.pos)
+
+
 ## Rojo visible o fantasma bajo el cursor (o null).
 func _enemy_at(screen: Vector2) -> UnitView:
 	var best: UnitView = null
@@ -253,6 +272,8 @@ func _draw_paths() -> void:
 					_cross(segs, colors, Vector2(c), COLOR_WAYPOINT) # quiebre entre tramos
 		if u.final_heading != Vector2.ZERO and not u.path.is_empty():
 			_arrow(segs, colors, Vector2(u.path.back()), u.final_heading, COLOR_FACING)
+		if u.order == Unit.Order.OVERWATCH:
+			_sector(segs, colors, u)
 		if u.attack_target >= 0 and world.known_enemies[PLAYER_SIDE].has(u.attack_target):
 			var cell: Vector2i = world.known_enemies[PLAYER_SIDE][u.attack_target]["cell"]
 			_seg(segs, colors, start + Vector3.UP * 2.0, _ground(Vector2(cell)) + Vector3.UP * 2.0, COLOR_ATTACK)
@@ -295,3 +316,20 @@ func _arrow(segs: PackedVector3Array, colors: PackedColorArray, at: Vector2, dir
 func _cross(segs: PackedVector3Array, colors: PackedColorArray, at: Vector2, color: Color) -> void:
 	for d: Vector2 in [Vector2(1.0, 1.0), Vector2(1.0, -1.0)]:
 		_seg(segs, colors, _ground(at - d), _ground(at + d), color)
+
+
+## Abanico del sector de vigilancia: dos bordes y el arco a MAX_RANGE.
+func _sector(segs: PackedVector3Array, colors: PackedColorArray, u: Unit) -> void:
+	var r: float = Config.MAX_RANGE / Config.CELL_SIZE
+	var half: float = deg_to_rad(Config.OVERWATCH_HALF_ANGLE_DEG)
+	var limit: float = float(world.height_field.size - 1)
+	var prev: Vector2 = Vector2.ZERO
+	for i: int in OVERWATCH_ARC_STEPS + 1:
+		var a: float = -half + 2.0 * half * float(i) / float(OVERWATCH_ARC_STEPS)
+		var p: Vector2 = u.pos + u.overwatch_dir.rotated(a) * r
+		p = Vector2(clampf(p.x, 0.0, limit), clampf(p.y, 0.0, limit))
+		if i == 0 or i == OVERWATCH_ARC_STEPS:
+			_seg(segs, colors, _ground(u.pos), _ground(p), COLOR_OVERWATCH)
+		if i > 0:
+			_seg(segs, colors, _ground(prev), _ground(p), COLOR_OVERWATCH)
+		prev = p
