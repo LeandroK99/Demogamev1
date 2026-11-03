@@ -119,6 +119,22 @@ const AI_INF_W_COVER: float = 3.0 # puntaje de la cobertura al elegir posición
 const AI_INF_W_VIEW: float = 2.0 # puntaje de ver hacia adelante (o a las amenazas)
 const AI_INF_SUPPRESS_MAX: float = 30.0 # suprime una zona solo si su propia supresión es menor
 
+# --- Microcobertura (1 m) ---
+const MICRO_PER_CELL: int = 4 # micro-celdas por lado de cada celda de 4 m (1 m cada una)
+const MICRO_ROCK_H: float = 0.6 # metros: tapa a un soldado cuerpo a tierra, no agachado
+const MICRO_CRATER_DEPTH: float = 0.5 # metros: el que está adentro queda más bajo
+const MICRO_WALL_H: float = 1.0 # tapa a uno agachado
+const MICRO_BUSH_H: float = 1.2 # oculta, no protege
+const MICRO_TRUNK_P: float = 0.5 # probabilidad de un tronco por celda de bosque
+const MICRO_EDGE_BUSHES: int = 2 # arbustos por celda de borde de bosque
+const MICRO_ROCK_CLUSTERS: int = 60
+const MICRO_ROCKS_MIN: int = 3
+const MICRO_ROCKS_MAX: int = 6
+const MICRO_CRATERS: int = 40
+const MICRO_LOS_STEP: float = 0.5 # metros entre muestras de microcobertura en la línea de visión
+const MICRO_NEAR_M: float = 15.0 # solo se mira la microcobertura a esta distancia de cada extremo
+const MICRO_SELF_M: float = 0.8 # la micro-celda propia (y la del blanco) no tapa
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3

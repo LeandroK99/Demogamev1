@@ -56,6 +56,7 @@ var ai: AICommander = null # IA del bando rojo (null = sin IA)
 var scenario: int = Scenario.TANKS
 var _forcing: bool = false # órdenes que da la propia simulación (una retirada por moral quebrada)
 var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
+var micro: MicroCover = null # microcobertura a 1 m (piedras, cráteres, pircas); null = sin ella
 
 
 ## Si hf es null se genera el terreno procedural con la semilla.
@@ -80,6 +81,9 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 		cm.generate(sim_seed)
 		cm.add_ridge_forest(hf)
 		set_cover(cm)
+		var mc: MicroCover = MicroCover.new(hf.size)
+		mc.generate(sim_seed, cm)
+		set_micro(mc)
 		_deploy_loma()
 	else:
 		_deploy()
@@ -154,6 +158,12 @@ func set_cover(cm: CoverMap) -> void:
 		costs[i] = Config.FOREST_TANK_PATH_COST if cm != null and cm.types[i] == CoverMap.Type.FOREST else 0.0
 	pathfinders[Unit.Kind.TANK].set_extra_cost(costs)
 	invalidate_exposure()
+
+
+## Activa la microcobertura (la usa la línea de visión en metros de los soldados).
+func set_micro(mc: MicroCover) -> void:
+	micro = mc
+	analysis.micro = mc
 
 
 ## Cobertura de la celda para la infantería (0 sin cobertura).

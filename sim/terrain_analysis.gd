@@ -7,6 +7,7 @@ var height_field: HeightField
 ## Las mantiene SimWorld; acá solo se usan para cortar la línea de visión.
 var smoke: Array[Dictionary] = []
 var cover: CoverMap = null # bosques que cortan la línea de visión (null = sin cobertura)
+var micro: MicroCover = null # microcobertura a 1 m para los soldados (null = sin)
 
 
 func _init(hf: HeightField) -> void:
@@ -55,6 +56,51 @@ func los(from_cell: Vector2i, from_h: float, to_cell: Vector2i, to_h: float) -> 
 	if smoke.is_empty():
 		return true
 	return not _smoke_blocks(Vector2(ax, ay), Vector2(dx, dy), ha, dh)
+
+
+## Línea de visión en metros (soldados): de a_h metros sobre el terreno en a hasta b_h sobre b.
+## Terreno y bosque cada LOS_STEP celdas, como los(); además la microcobertura cada MICRO_LOS_STEP
+## metros, solo a MICRO_NEAR_M de cada extremo (donde importa: la roca del blanco o del tirador),
+## sin contar la micro-celda propia de cada uno. Después el humo.
+func los_m(a: Vector2, a_h: float, b: Vector2, b_h: float) -> bool:
+	var hf: HeightField = height_field
+	var inv_cell: float = 1.0 / Config.CELL_SIZE
+	var ha: float = hf.height_at(a * inv_cell) + a_h
+	var hb: float = hf.height_at(b * inv_cell) + b_h
+	var d: Vector2 = b - a
+	var dist: float = d.length()
+	if dist < 0.01:
+		return true
+	var step_m: float = Config.LOS_STEP * Config.CELL_SIZE
+	var t_step: float = step_m / dist
+	var t: float = t_step
+	var forest_left: float = Config.FOREST_LOS_CELLS * Config.CELL_SIZE
+	while t < 1.0:
+		var p: Vector2 = a + d * t
+		var ground: float = hf.height_at(p * inv_cell)
+		var ray_h: float = ha + (hb - ha) * t
+		if ground > ray_h - Config.LOS_EPSILON:
+			return false
+		if cover != null and ray_h < ground + Config.FOREST_TREE_H \
+				and cover.is_forest(Vector2i(roundi(p.x * inv_cell), roundi(p.y * inv_cell))):
+			forest_left -= step_m
+			if forest_left < 0.0:
+				return false
+		t += t_step
+	if micro != null:
+		var near: float = minf(Config.MICRO_NEAR_M, dist * 0.5)
+		for from_end: int in 2:
+			var s: float = Config.MICRO_SELF_M
+			while s <= near:
+				var tt: float = s / dist if from_end == 0 else 1.0 - s / dist
+				var p: Vector2 = a + d * tt
+				var o: float = micro.height_at_m(p)
+				if o > 0.0 and ha + (hb - ha) * tt < hf.height_at(p * inv_cell) + o:
+					return false
+				s += Config.MICRO_LOS_STEP
+	if smoke.is_empty():
+		return true
+	return not _smoke_blocks(a * inv_cell, d * inv_cell, ha, hb - ha)
 
 
 ## ¿La recta A + t·D (t en 0..1, altura ha + dh·t) atraviesa alguna nube por debajo de su tope?
