@@ -5,7 +5,7 @@ const N: int = 96
 
 
 func _flat_world(sim_seed: int = 7) -> SimWorld:
-	return SimWorld.new(sim_seed, HeightField.new(N))
+	return SimWorld.new(sim_seed, HeightField.new(N), false)
 
 
 ## Mapa llano con una pared de 10 m de alto a lo ancho, entre los dos despliegues.
@@ -13,7 +13,7 @@ func _walled_world() -> SimWorld:
 	var hf: HeightField = HeightField.new(N)
 	for x: int in N:
 		hf.set_height(Vector2i(x, N / 2), 10.0)
-	return SimWorld.new(7, hf)
+	return SimWorld.new(7, hf, false)
 
 
 func _run_scenario(world: SimWorld) -> void:

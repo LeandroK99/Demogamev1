@@ -54,3 +54,11 @@ const PATH_SLOPE_COST: float = 1.0 # costo extra en el A* a pendiente máxima
 
 # --- Detección ---
 const DETECTION_INTERVAL_TICKS: int = 5 # cada cuántos ticks se recalcula quién ve a quién
+
+# --- Orden hull-down e IA ---
+const HULLDOWN_MIN_SEPARATION: float = 3.0 # celdas mínimas entre destinos de una misma orden
+const NO_THREAT_ADVANCE: int = 20 # celdas hacia el centro si no hay amenazas conocidas
+const AI_RETREAT_RADIUS: int = 10 # celdas de búsqueda para retroceder con hp == 1
+const AI_CREST_SEARCH_DEPTH: int = 50 # celdas hacia adelante para buscar la cresta
+const AI_CREST_PROBE_DIST: int = 20 # observador hipotético a esta distancia delante de la cresta
+const AI_CREST_CAND_RADIUS: int = 6 # radio de candidatos alrededor de la cresta
