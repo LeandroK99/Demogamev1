@@ -267,6 +267,10 @@ const BLEED_MIN_SECONDS: float = 90.0 # un herido sin atender se desangra entre 
 const BLEED_MAX_SECONDS: float = 240.0 # ... y esto
 const MORALE_BLEEDING_DRAIN: float = 0.1 # por segundo y por herido que se desangra (la escuadra lo oye)
 const MORALE_BLED_OUT: float = 5.0 # baja de moral cuando uno se muere desangrado
+const MEDIC_INDEX: int = 8 # el soldado 9 es el médico (en lugar de un fusilero)
+const MEDIC_STABILIZE_SECONDS: float = 15.0 # lo que tarda el médico en estabilizar a un herido...
+const BUDDY_STABILIZE_SECONDS: float = 40.0 # ... y un compañero sin entrenamiento
+const CARE_REACH_M: float = 1.0 # a esta distancia del herido ya lo puede atender
 
 # --- Reflejos del soldado ---
 const REFLEX_DIVE_SUPP: float = 8.0 # un tiro que le suma esto en marcha y al descubierto lo tira al suelo

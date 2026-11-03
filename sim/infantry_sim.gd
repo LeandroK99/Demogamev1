@@ -37,7 +37,9 @@ func move_soldiers(w: SimWorld) -> void:
 				s.moving = false # herido, clavado, recién tirado al suelo o base de fuego: se queda donde está
 				continue
 			var target: Vector2 = u.slot_pos_m(s.index)
-			if s.has_cover and not u.moving:
+			if s.care_target >= 0:
+				target = u.soldiers[s.care_target].pos # va a atender al herido
+			elif s.has_cover and not u.moving:
 				target = s.fire_pos if s.peeking else s.cover_pos
 			target = Vector2(clampf(target.x, 0.0, limit), clampf(target.y, 0.0, limit))
 			var d: Vector2 = target - s.pos
@@ -45,7 +47,7 @@ func move_soldiers(w: SimWorld) -> void:
 			if dist > Config.SOLDIER_TELEPORT_M:
 				s.pos = target # la escuadra fue reubicada (escenarios y tests): los soldados van con ella
 				continue
-			if dist <= Config.SOLDIER_ARRIVE_M:
+			if dist <= Config.SOLDIER_ARRIVE_M or (s.care_target >= 0 and dist <= Config.CARE_REACH_M * 0.8):
 				s.moving = false
 				if not u.moving:
 					s.heading = u.heading
@@ -98,6 +100,80 @@ func update_wounded(w: SimWorld) -> void:
 				s.state = Soldier.State.DEAD
 				w._lose_morale(u, Config.MORALE_BLED_OUT)
 				w.radio(u, "perdimos al soldado %d, se desangró" % (s.index + 1))
+
+
+## Escuadras detenidas: el médico (o, sin médico, el fusilero más cercano) va al herido que se
+## desangra más rápido y lo estabiliza en MEDIC_STABILIZE_SECONDS (BUDDY_STABILIZE_SECONDS). Uno por
+## vez. En marcha o clavado, lo deja.
+func update_care(w: SimWorld) -> void:
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		var carer: Soldier = null
+		for s: Soldier in u.soldiers:
+			if s.care_target >= 0:
+				carer = s
+		if u.moving:
+			if carer != null:
+				_stop_care(carer)
+			continue
+		if carer != null:
+			var t: Soldier = u.soldiers[carer.care_target]
+			if not carer.is_ok() or carer.suppression >= Config.PINNED or not t.is_bleeding():
+				_stop_care(carer)
+				carer = null
+			else:
+				_care(w, u, carer, t)
+				continue
+		var target: Soldier = _worst_wounded(u)
+		if target == null:
+			continue
+		carer = caregiver(u, target)
+		if carer != null:
+			carer.care_target = target.index
+			carer.care_time = 0.0
+
+
+func _care(w: SimWorld, u: Unit, carer: Soldier, t: Soldier) -> void:
+	if carer.pos.distance_to(t.pos) > Config.CARE_REACH_M:
+		return # todavía va para allá
+	carer.care_time += Config.TICK
+	var need: float = Config.MEDIC_STABILIZE_SECONDS if carer.role == Soldier.Role.MEDIC else Config.BUDDY_STABILIZE_SECONDS
+	if carer.care_time >= need:
+		t.stabilized = true
+		_stop_care(carer)
+		w.radio(u, "soldado %d estabilizado" % (t.index + 1))
+
+
+static func _stop_care(s: Soldier) -> void:
+	s.care_target = -1
+	s.care_time = 0.0
+
+
+## El herido que se desangra más rápido (null si no hay).
+static func _worst_wounded(u: Unit) -> Soldier:
+	var best: Soldier = null
+	for s: Soldier in u.soldiers:
+		if s.is_bleeding() and (best == null or s.bleed_left < best.bleed_left):
+			best = s
+	return best
+
+
+## Quién lo atiende: el médico si está entero y no clavado; si no, el fusilero o proveedor más cercano.
+static func caregiver(u: Unit, t: Soldier) -> Soldier:
+	var best: Soldier = null
+	var best_d: float = INF
+	for s: Soldier in u.soldiers:
+		if not s.is_ok() or s.suppression >= Config.PINNED:
+			continue
+		if s.role == Soldier.Role.MEDIC:
+			return s
+		if s.role in [Soldier.Role.RIFLE, Soldier.Role.ASSISTANT]:
+			var d: float = s.pos.distance_to(t.pos)
+			if d < best_d:
+				best = s
+				best_d = d
+	return best
 
 
 ## --- Cobertura ---
@@ -382,6 +458,8 @@ func update_postures(w: SimWorld) -> void:
 				s.posture = Soldier.Posture.PRONE
 			elif s.moving:
 				s.posture = Soldier.Posture.CROUCH if cautious else Soldier.Posture.STAND
+			elif s.care_target >= 0 and not s.moving:
+				s.posture = Soldier.Posture.CROUCH # agachado sobre el herido
 			elif s.dive_until > w.total_ticks:
 				s.posture = Soldier.Posture.PRONE # se tiró al suelo
 			elif s.has_cover:
@@ -530,8 +608,8 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 		return
 	var area: bool = u.order == Unit.Order.SUPPRESS
 	for s: Soldier in u.soldiers:
-		if not s.is_ok() or s.reload_left > 0.0 or s.suppression >= Config.PINNED:
-			continue
+		if not s.is_ok() or s.reload_left > 0.0 or s.suppression >= Config.PINNED or s.care_target >= 0:
+			continue # el que atiende a un herido no tira
 		if s.role == Soldier.Role.AT and not area and u.at_charges > 0 and u.reload2_left <= 0.0:
 			var tank: Unit = _pick_tank(w, u, s)
 			if tank != null:

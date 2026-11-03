@@ -5,8 +5,8 @@ extends RefCounted
 
 enum Posture { STAND, CROUCH, PRONE }
 enum State { OK, WOUNDED, DEAD }
-## Jefe, fusilero, ametralladorista, proveedor y tirador antitanque.
-enum Role { LEADER, RIFLE, MG, ASSISTANT, AT }
+## Jefe, fusilero, ametralladorista, proveedor, tirador antitanque y médico (reemplaza a un fusilero).
+enum Role { LEADER, RIFLE, MG, ASSISTANT, AT, MEDIC }
 
 var index: int = 0 # dentro de la escuadra (0 = jefe)
 var role: int = Role.RIFLE
@@ -41,6 +41,8 @@ var suppress_m: Vector2 = Vector2(-1.0, -1.0) # sin blanco a la vista, bate este
 ## Sistema médico (fases 45–47)
 var bleed_left: float = 0.0 # herido sin estabilizar: segundos hasta morir desangrado
 var stabilized: bool = false # herido estabilizado: ya no se desangra
+var care_target: int = -1 # índice del herido de su escuadra que está atendiendo (-1 = ninguno)
+var care_time: float = 0.0 # segundos que lleva atendiéndolo
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
@@ -105,4 +107,6 @@ static func role_for(i: int) -> int:
 			return Role.ASSISTANT
 		3:
 			return Role.AT
+		Config.MEDIC_INDEX:
+			return Role.MEDIC
 	return Role.RIFLE
