@@ -56,6 +56,8 @@ var ai: AICommander = null # IA del bando rojo (null = sin IA)
 var scenario: int = Scenario.TANKS
 var _forcing: bool = false # órdenes que da la propia simulación (una retirada por moral quebrada)
 var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
+var micro: MicroCover = null # microcobertura a 1 m (piedras, cráteres, pircas); null = sin ella
+var inf: InfantrySim = InfantrySim.new() # los soldados de las escuadras
 
 
 ## Si hf es null se genera el terreno procedural con la semilla.
@@ -80,6 +82,9 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 		cm.generate(sim_seed)
 		cm.add_ridge_forest(hf)
 		set_cover(cm)
+		var mc: MicroCover = MicroCover.new(hf.size)
+		mc.generate(sim_seed, cm)
+		set_micro(mc)
 		_deploy_loma()
 	else:
 		_deploy()
@@ -156,6 +161,12 @@ func set_cover(cm: CoverMap) -> void:
 	invalidate_exposure()
 
 
+## Activa la microcobertura (la usa la línea de visión en metros de los soldados).
+func set_micro(mc: MicroCover) -> void:
+	micro = mc
+	analysis.micro = mc
+
+
 ## Cobertura de la celda para la infantería (0 sin cobertura).
 func cover_at(c: Vector2i) -> float:
 	return cover.cover_at(c) if cover != null else 0.0
@@ -222,35 +233,58 @@ func begin_execute() -> void:
 				u.overwatch_ready = true
 
 
-## Quién ve a quién: un enemigo es visible para un bando si alguna unidad viva
-## de ese bando lo detecta (ver _can_spot).
-func update_detection() -> void:
+## Quién ve a quién: un enemigo es visible para un bando si alguna unidad viva de ese bando
+## lo detecta. Tanque contra tanque, ver _can_spot. Si hay soldados de por medio, la detección es
+## por soldado (ver InfantrySim.spot_squad y soldiers_spot_tank); una escuadra es visible si se ve
+## a alguno de sus soldados.
+## full = false (durante la ejecución): cada vez se mira solo la mitad de las escuadras enemigas,
+## alternando; las otras conservan lo de la vez anterior (cada escuadra se actualiza cada
+## 2 * DETECTION_INTERVAL_TICKS). Así la detección por soldado cuesta la mitad.
+func update_detection(full: bool = true) -> void:
+	inf.begin_detection(self)
 	for side: int in 2:
 		var vis: Dictionary = {}
+		var vis_s: Dictionary = {}
 		for enemy: Unit in units:
 			if enemy.side == side or not enemy.alive:
 				continue
-			for own: Unit in units:
-				if own.side == side and own.alive and _can_spot(own, enemy):
-					vis[enemy.id] = true
-					known_enemies[side][enemy.id] = {"cell": enemy.cell(), "last_seen_turn": turn}
-					break
+			var seen: bool = false
+			if enemy.is_infantry() and not full and (enemy.id + inf.round_index()) % 2 == 1:
+				seen = inf.keep_previous(side, enemy, vis_s) and visible_enemies[side].has(enemy.id)
+			elif enemy.is_infantry():
+				seen = inf.spot_squad(self, side, enemy, vis_s)
+			else:
+				for own: Unit in units:
+					if own.side != side or not own.alive:
+						continue
+					if inf.soldiers_spot_tank(self, own, enemy) if own.is_infantry() else _can_spot(own, enemy):
+						seen = true
+						break
+			if seen:
+				vis[enemy.id] = true
+				known_enemies[side][enemy.id] = {"cell": enemy.cell(), "last_seen_turn": turn}
 		visible_enemies[side] = vis
+		inf.visible_soldiers[side] = vis_s
 
 
-## Detección: LOS al centro del blanco y distancia dentro del alcance de detección, que depende
-## de lo que hace el blanco: en movimiento o recién disparado, MAX_RANGE; quieto,
-## SPOT_RANGE_STATIONARY; quieto y con el casco oculto para el observador, SPOT_RANGE_HULLDOWN.
+## Detección de un tanque por otro: LOS al centro del blanco y distancia dentro del alcance de
+## detección, que depende de lo que hace el blanco: en movimiento o recién disparado, MAX_RANGE;
+## quieto, SPOT_RANGE_STATIONARY; quieto y con el casco oculto para el observador, SPOT_RANGE_HULLDOWN.
 func _can_spot(observer: Unit, target: Unit) -> bool:
 	var d: float = TerrainAnalysis.dist_m(observer.cell(), target.cell())
-	if not observer.is_infantry() and is_suppressed(observer):
+	if is_suppressed(observer):
 		d /= Config.TANK_BUTTONED_SPOT_FACTOR # abotonado: ve a menos distancia
 	if d > Config.MAX_RANGE:
 		return false
 	if not analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.center_h()):
 		return false
-	if target.is_infantry():
-		return d <= infantry_spot_range(target)
+	return tank_spot_rule(target, d, func() -> bool:
+		return analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.profile_h()))
+
+
+## Regla de alcance para detectar un tanque a d metros (con LOS a su centro ya comprobada).
+## hull_visible: se llama solo si hace falta saber si se le ve el casco.
+func tank_spot_rule(target: Unit, d: float, hull_visible: Callable) -> bool:
 	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
 		return true
 	if d <= Config.SPOT_RANGE_HULLDOWN:
@@ -258,17 +292,7 @@ func _can_spot(observer: Unit, target: Unit) -> bool:
 	if d > Config.SPOT_RANGE_STATIONARY:
 		return false
 	# Quieto entre los dos alcances: solo si se le ve el casco
-	return analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.profile_h())
-
-
-## Alcance de detección de una escuadra según lo que hace.
-func infantry_spot_range(target: Unit) -> float:
-	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
-		return Config.INF_SPOT_MOVING
-	var f_cover: float = 1.0 - cover_at(target.cell()) * Config.COVER_SPOT_FACTOR
-	if target.prone:
-		return Config.INF_SPOT_PRONE * f_cover
-	return Config.INF_SPOT_STILL * f_cover
+	return bool(hull_visible.call())
 
 
 func recently_fired(u: Unit) -> bool:
@@ -587,6 +611,15 @@ static func _all_signals_gate(names: Array[String]) -> Dictionary:
 	return {"type": "all_signals", "names": names.duplicate()}
 
 
+## Formación de una escuadra (solo en PLAN). Dura hasta que se cambie.
+func set_formation(unit_id: int, f: int) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or not u.is_infantry() or phase != Phase.PLAN:
+		return false
+	u.formation = f
+	return true
+
+
 ## Ritmo de una unidad (solo en PLAN). Dura hasta que se cambie.
 func set_pace(unit_id: int, pace: int) -> bool:
 	var u: Unit = get_unit(unit_id)
@@ -889,16 +922,22 @@ func step() -> void:
 			u.moving = false
 			continue
 		u.waiting = false
-		if is_suppressed(u) and u.is_infantry():
-			u.moving = false # cuerpo a tierra, no avanza
+		if u.is_infantry() and inf.halted(u):
+			u.moving = false # la mayoría suprimida: cuerpo a tierra, no avanza
+			continue
+		if u.is_infantry() and inf.lagging(u):
+			u.moving = true # el ancla espera a los rezagados
 			continue
 		_advance(u, Config.TICK)
+	inf.update_cover(self)
+	inf.move_soldiers(self)
 	_update_suppression()
 	_update_posture()
+	inf.update_postures(self)
 	tick_in_turn += 1
 	total_ticks += 1
 	if tick_in_turn % Config.DETECTION_INTERVAL_TICKS == 0:
-		update_detection()
+		update_detection(false)
 	_combat()
 	_check_victory()
 	if not game_over and tick_in_turn >= ticks_per_turn:
@@ -909,8 +948,9 @@ func is_suppressed(u: Unit) -> bool:
 	return u.suppression >= Config.SUPPRESSED
 
 
+## Escuadra clavada: la mayoría de sus soldados en condiciones lo están (no avanza).
 func is_pinned(u: Unit) -> bool:
-	return u.is_infantry() and u.suppression >= Config.PINNED
+	return u.is_infantry() and inf.pinned_fraction(u) > 0.5
 
 
 ## La supresión baja sola pasado un rato sin fuego; la infantería suprimida pierde moral.
@@ -918,10 +958,13 @@ func _update_suppression() -> void:
 	for u: Unit in units:
 		if not u.alive:
 			continue
+		if u.is_infantry():
+			# Por soldado; la escuadra pierde moral según la parte de sus soldados suprimidos
+			var frac: float = inf.decay_suppression(self, u)
+			_lose_morale(u, Config.MORALE_SUPP_DRAIN * frac * Config.TICK)
+			continue
 		if float(total_ticks - u.last_suppressed_tick) * Config.TICK > Config.SUPP_DECAY_DELAY:
 			u.suppression = maxf(0.0, u.suppression - Config.SUPP_DECAY * Config.TICK)
-		if u.is_infantry() and is_suppressed(u):
-			_lose_morale(u, Config.MORALE_SUPP_DRAIN * Config.TICK)
 
 
 func _lose_morale(u: Unit, amount: float) -> void:
@@ -945,8 +988,15 @@ func _suppress(target: Unit, w: int, hit: bool, factor: float = 1.0) -> void:
 			_add_suppression(u, amount * 0.5)
 
 
+## Supresión a toda la unidad (a una escuadra, a cada uno de sus soldados: fuego de área y cañón).
 func _add_suppression(u: Unit, amount: float) -> void:
-	u.suppression = minf(100.0, u.suppression + amount)
+	if u.is_infantry():
+		for s: Soldier in u.soldiers:
+			if s.is_ok():
+				inf.add_soldier_suppression(self, s, amount)
+		inf.aggregate_suppression(u)
+	else:
+		u.suppression = minf(100.0, u.suppression + amount)
 	u.last_suppressed_tick = total_ticks
 	if u.is_infantry() and is_suppressed(u):
 		u.prone = true
@@ -955,6 +1005,8 @@ func _add_suppression(u: Unit, amount: float) -> void:
 
 static func weapon_suppression(w: int) -> float:
 	match w:
+		Unit.Weapon.MG:
+			return Config.SUPP_MG
 		Unit.Weapon.COAX:
 			return Config.SUPP_COAX
 		Unit.Weapon.RIFLES:
@@ -981,6 +1033,9 @@ func _update_posture() -> void:
 
 func _combat() -> void:
 	for shooter: Unit in units:
+		if shooter.alive and shooter.is_infantry():
+			inf.fire_squad(self, shooter) # cada soldado con su arma
+			continue
 		for slot: int in 2:
 			if shooter.alive:
 				_fire_slot(shooter, slot)
@@ -1003,6 +1058,9 @@ func _fire_slot(shooter: Unit, slot: int) -> void:
 	if anti_inf and shooter.order == Unit.Order.SUPPRESS:
 		if roe_allows_fire(shooter):
 			_area_fire(shooter, slot, w)
+		return
+	if w == Unit.Weapon.COAX:
+		inf.tank_coax(self, shooter) # ráfaga a un soldado visible
 		return
 	var target: Unit = _pick_target(shooter, w)
 	if target == null:
@@ -1031,12 +1089,30 @@ func _fire_slot(shooter: Unit, slot: int) -> void:
 
 ## Un impacto: un hombre menos (con su golpe a la moral) o un impacto de cañón.
 func _damage(target: Unit) -> void:
+	if target.is_infantry():
+		var s: Soldier = inf.random_ok(self, target)
+		if s != null:
+			damage_soldier(target, s)
+		return
 	target.hp -= 1
-	_lose_morale(target, Config.MORALE_PER_CASUALTY)
-	if target.hp <= 0:
-		target.alive = false
-		target.moving = false
-		target.path.clear()
+	_check_dead(target)
+
+
+## Un impacto en un soldado (herido o muerto, ver InfantrySim.hit_soldier); si estaba en
+## condiciones, la escuadra pierde moral.
+func damage_soldier(u: Unit, s: Soldier) -> void:
+	var was_ok: bool = s.is_ok()
+	inf.hit_soldier(self, u, s)
+	if was_ok:
+		_lose_morale(u, Config.MORALE_PER_CASUALTY + (Config.MORALE_LEADER_LOSS if s.role == Soldier.Role.LEADER else 0.0))
+	_check_dead(u)
+
+
+func _check_dead(u: Unit) -> void:
+	if u.hp <= 0 and u.alive:
+		u.alive = false
+		u.moving = false
+		u.path.clear()
 
 
 ## Fuego de área de la orden SUPPRESS: bate la zona aunque no haya blanco visible.
@@ -1088,11 +1164,13 @@ func order_suppress(unit_id: int, cell: Vector2i) -> bool:
 
 ## ¿Contra qué tipo de unidad sirve el arma?
 static func weapon_target_kind(w: int) -> int:
-	return Unit.Kind.INFANTRY if w == Unit.Weapon.COAX or w == Unit.Weapon.RIFLES else Unit.Kind.TANK
+	return Unit.Kind.INFANTRY if w == Unit.Weapon.COAX or w == Unit.Weapon.RIFLES or w == Unit.Weapon.MG else Unit.Kind.TANK
 
 
 static func weapon_range(w: int) -> float:
 	match w:
+		Unit.Weapon.MG:
+			return Config.SOLDIER_MG_RANGE
 		Unit.Weapon.COAX:
 			return Config.COAX_RANGE
 		Unit.Weapon.RIFLES:
@@ -1104,6 +1182,8 @@ static func weapon_range(w: int) -> float:
 
 static func weapon_reload(w: int) -> float:
 	match w:
+		Unit.Weapon.MG:
+			return Config.SOLDIER_MG_RELOAD
 		Unit.Weapon.COAX:
 			return Config.COAX_RELOAD
 		Unit.Weapon.RIFLES:
@@ -1250,6 +1330,18 @@ func hit_probability(shooter: Unit, target: Unit, weapon: int = Unit.Weapon.CANN
 	if shooter.order == Unit.Order.OVERWATCH and shooter.overwatch_ready and target.moving:
 		f_move *= Config.OVERWATCH_FIRST_SHOT_FACTOR # emboscada
 	return minf(p_hit_base * f_dist * f_hull * f_move * f_armor, p_hit_max)
+
+
+## Tirador en movimiento: factor de impacto según el ritmo (1 si está quieto).
+func move_fire_factor(u: Unit, moving: bool) -> float:
+	if not moving:
+		return 1.0
+	match effective_pace(u):
+		Unit.Pace.FAST:
+			return moving_shooter_factor * Config.PACE_FAST_FIRE_FACTOR
+		Unit.Pace.CAUTIOUS:
+			return Config.PACE_CAUTIOUS_FIRE_FACTOR
+	return moving_shooter_factor
 
 
 ## Escuadra diezmada o suprimida: tira peor.

@@ -30,6 +30,7 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | B | Retirarse: en reversa por la ruta cubierta hasta la celda menos expuesta cercana, con el frente hacia las amenazas |
 | K | Condición para arrancar el último tramo de la ruta: ninguna → a los 10 s del turno → a los 20 s → al haber contacto. El tanque espera quieto (y se lo detecta como quieto); el punto de paso se marca en violeta |
 | X | Ritmo de los seleccionados: normal → rápido (×1,4 de velocidad, tira peor) → cauto (×0,5, tira mejor en marcha y se lo detecta como si estuviera quieto) |
+| N | Formación de las escuadras seleccionadas: cuña → fila india → línea |
 | Z | Reglas de fuego (ROE) de los seleccionados: fuego libre → solo si le disparan → retener fuego |
 | C | Área de enganche: solo dispara dentro de un arco de ±45° hacia el cursor y hasta la distancia del cursor. Shift+C la quita |
 | Espacio | Ejecutar el turno |
@@ -57,10 +58,12 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 
 Con **L** cambiás al escenario de infantería. Cada bando tiene 3 escuadras de infantería y 1 tanque, los turnos duran 45 s y el mapa tiene bosques, muros y pozos. El rojo defiende detrás de la cresta central, con bosque en la contrapendiente.
 
-- **Escuadras:** 9 hombres, a pie a 1,5 m/s, suben pendientes que el tanque no. Quietas 3 s se tiran cuerpo a tierra. Se las detecta a 250 m en movimiento, a 120 m quietas y a 60 m cuerpo a tierra (menos en cobertura). H es *tomar posición*: busca cobertura con tiro.
-- **Armas:** el tanque usa el cañón contra tanques y la coaxial contra infantería. La escuadra usa fusiles contra infantería y un antitanque de 150 m con 2 cargas contra tanques (mejor por el flanco o la cola). Con 3 hombres o menos tira a la mitad.
-- **Cobertura:** el bosque corta la línea de visión después de 2 celdas y frena al tanque a la mitad. Bosque, muro y pozo reducen los impactos y la detección contra la infantería.
-- **Supresión y moral:** cada disparo recibido suprime aunque no impacte. Suprimida (desde 50), la escuadra no avanza y tira peor; desde 85 no tira. Un tanque suprimido se abotona y ve a la mitad de distancia. Las bajas y la supresión bajan la moral; con menos de 25 la escuadra se quiebra, se retira sola e ignora órdenes hasta recuperarse.
+- **Soldados:** cada escuadra son 9 soldados que se ven uno por uno: el jefe y la ametralladora (más anchos), un proveedor, un tirador antitanque y cinco fusileros. Marchan juntos en formación (**N**: cuña, fila india o línea, a 3 m) a 1,5 m/s y suben pendientes que el tanque no. Si alguno queda a más de 6 m de su lugar, la escuadra lo espera.
+- **Cobertura de cada soldado:** al detenerse, cada uno busca a menos de 6 m de su lugar una roca, un tramo de muro, un tronco, un cráter o la contrapendiente, a 2 m o más de los demás, y toma la postura que le sirve: agachado detrás de un muro (tira por encima), cuerpo a tierra detrás de una roca (asoma por el costado). Sin nada cerca, cuerpo a tierra. La ametralladora prioriza tener tiro. Si la amenaza se corre, vuelven a buscar.
+- **Microcobertura:** además de bosques, muros y pozos, el mapa tiene rocas (60 cm), arbustos (ocultan pero no frenan balas) y cráteres, a 1 m de resolución.
+- **Visión:** se detecta a cada soldado por separado: hasta 250 m si camina de pie o acaba de disparar, 120 m quieto y 60 m cuerpo a tierra, menos en el bosque o detrás de algo que lo protege. Una roca tapa a uno cuerpo a tierra; un muro, a uno agachado. Ver a un soldado delata a su escuadra, pero solo se le puede tirar a los que se ven.
+- **Armas:** cada soldado tira con la suya: fusil (un tiro), ametralladora (ráfaga que afecta a todos los que estén a 3 m del punto) y antitanque (150 m, 2 cargas por escuadra, mejor por el flanco o la cola). La coaxial del tanque tira ráfagas a soldados. Pegarle a uno protegido cuesta 5 veces más. Un impacto hiere o mata; el herido queda tirado donde cayó y no combate.
+- **Supresión y moral:** cada soldado tiene su supresión: el tiro le suma al que apuntaron y la mitad a los que están a 5 m (menos si está protegido). Desde 50 se tira al suelo y tira peor; desde 85 queda clavado: no tira ni se mueve. Si más de la mitad está suprimida, la escuadra no avanza. Un tanque suprimido se abotona y ve a la mitad de distancia. Las bajas (más si cae el jefe) y la parte de soldados suprimidos bajan la moral de la escuadra; con menos de 25 se quiebra, se retira sola e ignora órdenes hasta recuperarse.
 - **Objetivo:** el círculo blanco sobre la cresta. Al llegar al turno 12, ganás si tenés infantería sin quebrar adentro y el rojo no; si los dos tienen, es empate; si no, gana el rojo. Destruir a todo el bando contrario también gana.
 - **IA roja:** sus escuadras buscan cobertura con vista a las rutas de acercamiento y no abren fuego a más de 150 m salvo que las ataquen. Suprimen la última posición conocida de tu infantería y se repliegan cuando quedan diezmadas. Defienden, no contraatacan.
 - **Pelotón mixto:** con el pelotón seleccionado (doble clic), la infantería va al objetivo y el tanque se queda 48 m detrás, cubriéndola.
@@ -78,6 +81,12 @@ godot --headless --path . --script res://tests/run_tests.gd
 
 # Smoke test: arranca el juego unos segundos sin ventana
 godot --headless --path . --quit-after 300
+
+# Smoke test de la loma, jugando los turnos solo
+godot --headless --path . --quit-after 3000 -- --loma --autoplay
+
+# Rendimiento de la loma (ms por tick)
+godot --headless --path . --script res://tests/bench_loma.gd
 ```
 
 ## Estructura

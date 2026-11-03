@@ -19,8 +19,14 @@ var _game_root: Node3D
 
 
 func _ready() -> void:
+	# Argumentos después de "--": --loma arranca en la loma; --autoplay ejecuta los turnos solo (smoke test)
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	if args.has("--loma"):
+		scenario = SimWorld.Scenario.LOMA
 	_build_environment()
 	_start_game(map_seed)
+	if args.has("--autoplay"):
+		turn_controller.autoplay = true
 	print("Hull-Down OK")
 
 
@@ -66,11 +72,13 @@ func _start_game(p_seed: int) -> void:
 		var cover_view: CoverView = CoverView.new()
 		_game_root.add_child(cover_view)
 		cover_view.setup(world.cover, height_field)
+		if world.micro != null:
+			cover_view.setup_micro(world.micro, height_field)
 
 	for u: Unit in world.units:
 		var v: UnitView = UnitView.new()
 		_game_root.add_child(v)
-		v.setup(u, height_field)
+		v.setup(u, height_field, world)
 		unit_views.append(v)
 
 	overlay = Overlay.new()

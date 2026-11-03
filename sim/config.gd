@@ -119,6 +119,81 @@ const AI_INF_W_COVER: float = 3.0 # puntaje de la cobertura al elegir posición
 const AI_INF_W_VIEW: float = 2.0 # puntaje de ver hacia adelante (o a las amenazas)
 const AI_INF_SUPPRESS_MAX: float = 30.0 # suprime una zona solo si su propia supresión es menor
 
+# --- Microcobertura (1 m) ---
+const MICRO_PER_CELL: int = 4 # micro-celdas por lado de cada celda de 4 m (1 m cada una)
+const MICRO_ROCK_H: float = 0.6 # metros: tapa a un soldado cuerpo a tierra, no agachado
+const MICRO_CRATER_DEPTH: float = 0.5 # metros: el que está adentro queda más bajo
+const MICRO_WALL_H: float = 1.0 # tapa a uno agachado
+const MICRO_BUSH_H: float = 1.2 # oculta, no protege
+const MICRO_TRUNK_P: float = 0.5 # probabilidad de un tronco por celda de bosque
+const MICRO_EDGE_BUSHES: int = 2 # arbustos por celda de borde de bosque
+const MICRO_ROCK_CLUSTERS: int = 60
+const MICRO_ROCKS_MIN: int = 3
+const MICRO_ROCKS_MAX: int = 6
+const MICRO_CRATERS: int = 40
+const MICRO_LOS_STEP: float = 0.5 # metros entre muestras de microcobertura en la línea de visión
+const MICRO_NEAR_M: float = 15.0 # solo se mira la microcobertura a esta distancia de cada extremo
+const MICRO_SELF_M: float = 0.8 # la micro-celda propia (y la del blanco) no tapa
+
+# --- Soldados ---
+const SOLDIER_EYE_STAND: float = 1.7 # altura del ojo según la postura
+const SOLDIER_EYE_CROUCH: float = 1.1
+const SOLDIER_EYE_PRONE: float = 0.4
+const SOLDIER_CENTER_STAND: float = 1.2 # altura del centro del cuerpo
+const SOLDIER_CENTER_CROUCH: float = 0.8
+const SOLDIER_CENTER_PRONE: float = 0.25
+const SOLDIER_TOP_STAND: float = 1.8 # altura de la cabeza
+const SOLDIER_TOP_CROUCH: float = 1.2
+const SOLDIER_TOP_PRONE: float = 0.45
+const SOLDIER_SPACING: float = 3.0 # metros entre soldados en la formación
+const SOLDIER_CATCHUP: float = 1.3 # el soldado puede ir a esta fracción de la velocidad de la escuadra para alcanzarla
+const SOLDIER_LAG_M: float = 6.0 # si alguno queda más lejos que esto de su lugar, la escuadra lo espera
+const SOLDIER_TELEPORT_M: float = 40.0 # más lejos que esto de su lugar, el soldado se reubica de golpe (escuadra movida a mano)
+const SOLDIER_ARRIVE_M: float = 0.3 # a esta distancia de su lugar ya llegó
+const SOLDIER_WOUND_P: float = 0.5 # un impacto hiere (si no, mata); herido otra vez, muere
+
+# --- Cobertura de cada soldado ---
+const SOLDIER_COVER_SEARCH_M: float = 6.0 # radio alrededor de su lugar en la formación
+const SOLDIER_COVER_PROBE_M: float = 2.5 # busca el obstáculo que lo protege hasta esta distancia hacia la amenaza
+const SOLDIER_COVER_SPACING: float = 2.0 # metros mínimos entre puntos de cobertura de la misma escuadra
+const SOLDIER_COVER_W_PROTECT: float = 3.0 # puntaje: protegido del fuego
+const SOLDIER_COVER_W_FIRE: float = 2.0 # puntaje: puede tirar hacia la amenaza
+const SOLDIER_COVER_W_FIRE_MG: float = 4.0 # la ametralladora prioriza poder tirar
+const SOLDIER_COVER_W_CONCEAL: float = 1.0 # puntaje: oculto por un arbusto
+const SOLDIER_COVER_W_DIST: float = 1.5 # castigo por alejarse de su lugar (a SOLDIER_COVER_SEARCH_M)
+const SOLDIER_COVER_LOS_CHECKS: int = 6 # líneas de visión largas por soldado al elegir (las mejores candidatas)
+const SOLDIER_COVER_REEVAL_DEG: float = 30.0 # si la amenaza se corre más que esto, se vuelve a buscar
+const SOLDIER_NO_THREAT_M: float = 200.0 # sin amenazas conocidas, cubre hacia adelante a esta distancia
+
+# --- Visión de cada soldado ---
+const SOLDIER_OBSERVERS: int = 3 # soldados por escuadra que miran en cada detección (el jefe y dos que rotan)
+const SOLDIER_HEAD_M: float = 0.1 # se lo detecta si se le ve hasta esto por debajo de la cabeza
+const SOLDIER_PROTECTED_SPOT_FACTOR: float = 0.6 # quieto detrás de algo que lo protege, se lo detecta más cerca
+const SOLDIER_PAIR_MARGIN_M: float = 30.0 # escuadras más lejos que el alcance más esto ni se miran
+
+# --- Fuego de cada soldado ---
+const SOLDIER_RIFLE_P_HIT: float = 0.05 # por tiro de fusil a un soldado de pie, quieto y al descubierto, a quemarropa
+const SOLDIER_RIFLE_RELOAD: float = 2.5 # segundos entre tiros (con un azar de ±25 %)
+const SOLDIER_MG_RANGE: float = 350.0
+const SOLDIER_MG_RELOAD: float = 1.5 # entre ráfagas
+const SOLDIER_MG_P_HIT: float = 0.10 # por soldado dentro de la ráfaga
+const SOLDIER_COAX_P_HIT: float = 0.12 # ráfaga de la coaxial, por soldado dentro
+const SOLDIER_BURST_M: float = 3.0 # radio de una ráfaga alrededor del punto apuntado
+const SOLDIER_CROUCH_HIT_FACTOR: float = 0.75 # contra un soldado agachado (cuerpo a tierra: INF_PRONE_HIT_FACTOR)
+const SOLDIER_COVER_HIT_FACTOR: float = 0.2 # contra uno protegido por un obstáculo o el terreno
+const SOLDIER_TARGET_SPREAD: int = 5 # los tiradores de una escuadra se reparten entre estos blancos más cercanos
+const SOLDIER_TARGET_CHECKS: int = 3 # líneas de visión por soldado al elegir blanco (los más cercanos)
+const SOLDIER_SHOT_SUPP_SCALE: float = 0.12 # fuego de área de un soldado: fracción de la supresión del arma a cada escuadra
+
+# --- Supresión de cada soldado ---
+const SOLDIER_SUPP_RIFLE: float = 8.0 # supresión de un tiro de fusil al soldado al que apuntó
+const SOLDIER_SUPP_BURST: float = 15.0 # ... de una ráfaga (ametralladora o coaxial)
+const SOLDIER_SUPP_NEAR_M: float = 5.0 # los soldados a esta distancia del tiro reciben la mitad
+const SOLDIER_SUPP_COVER_FACTOR: float = 0.6 # protegido, recibe esta fracción
+const SOLDIER_SUPP_HALT: float = 0.5 # con más de esta fracción de soldados suprimidos, la escuadra no avanza
+const MORALE_LEADER_LOSS: float = 10.0 # baja extra de moral si cae el jefe
+const SUPP_MG: float = 25.0 # supresión de una ráfaga de ametralladora
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3

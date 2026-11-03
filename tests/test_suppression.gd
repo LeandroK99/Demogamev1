@@ -31,18 +31,19 @@ func test_misses_still_suppress() -> void:
 	world.p_hit_max = 0.0 # nunca aciertan
 	for i: int in 30:
 		b.moving = true
-		world._fire_slot(a, 0)
-		a.reload_left = 0.0
+		world.inf.fire_squad(world, a)
+		for s: Soldier in a.soldiers:
+			s.reload_left = 0.0
 	assert_true(b.suppression >= Config.SUPPRESSED, "suprimida (%.0f)" % b.suppression)
 	assert_true(b.prone, "cuerpo a tierra")
+	assert_eq(b.hp, Config.INF_MEN, "sin bajas")
 
 
 func test_suppressed_squad_does_not_advance() -> void:
 	var world: SimWorld = _world()
 	var sq: Unit = world.add_unit(0, Vector2(48, 80), Unit.Kind.INFANTRY)
 	world.order_move(sq.id, Vector2i(48, 60))
-	sq.suppression = 80.0
-	sq.last_suppressed_tick = 0
+	sq.set_suppression(80.0, 0)
 	world.begin_execute()
 	for i: int in 10:
 		world.step()
@@ -107,8 +108,7 @@ func test_pinned_squad_does_not_fire() -> void:
 	var b: Unit = world.add_unit(1, Vector2(48, 50), Unit.Kind.INFANTRY)
 	_quiet(b)
 	b.moving = true
-	a.suppression = 95.0
-	a.last_suppressed_tick = 0
+	a.set_suppression(95.0, 0)
 	world.update_detection()
 	world.begin_execute()
 	world.step()
@@ -137,6 +137,6 @@ func test_gate_suppressed() -> void:
 	world.begin_execute()
 	world.step()
 	assert_true(a.waiting, "espera a que el enemigo esté suprimido")
-	enemy.suppression = 70.0
+	enemy.set_suppression(70.0, world.total_ticks)
 	world.step()
 	assert_true(not a.waiting, "arranca")

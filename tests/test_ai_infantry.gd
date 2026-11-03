@@ -52,7 +52,7 @@ func test_weak_squad_withdraws() -> void:
 	world.units[4].pos = Vector2(90, 2)
 	world.ai = AICommander.new(1)
 	var sq: Unit = world.add_unit(1, Vector2(48, 30), Unit.Kind.INFANTRY)
-	sq.hp = 2
+	sq.set_men(2)
 	world.known_enemies[1][0] = {"cell": Vector2i(48, 60), "last_seen_turn": world.turn}
 	world.start_plan()
 	assert_eq(sq.order, Unit.Order.WITHDRAW, "diezmada se repliega")

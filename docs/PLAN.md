@@ -299,3 +299,16 @@ Plan completo en el doc "Hull-Down: plan de infantería". La demo de tanques que
 - **26 — Supresión y moral.** Supresión 0..100 por fuego recibido (50 suprimida, 85 inmovilizada; tanque abotonado). Moral; quebrada se retira sola. Orden SUPPRESS (zona) y condición "suprimida".
 - **27 — La loma.** 3 escuadras + 1 tanque por bando, turnos de 45 s, rojo detrás de la cresta con bosque en la contrapendiente. Pelotón mixto: el tanque se queda atrás cubriendo. Objetivo en la cresta.
 - **28 — IA de infantería.** Cobertura con vista, emboscada a 150 m, suprime la última posición conocida, repliega diezmadas. No contraataca.
+
+## Fases 29–35 — Soldados individuales
+
+Plan completo en el doc "Hull-Down: soldados individuales y microcobertura". Reemplaza el modelo de escuadra de las fases 23, 24 y 26: la escuadra (`Unit` de infantería) conserva la orden, la ruta, el pelotón y la moral; cada `Soldier` tiene posición en metros, postura, estado y supresión. La lógica de los soldados vive en `sim/infantry_sim.gd`, para no agrandar `sim_world.gd`.
+
+- **29 — Microcobertura.** `MicroCover` a 1 m (roca 0,6 m, muro 1 m, arbusto 1,2 m que no protege, tronco, cráter) generada desde el `CoverMap` más rocas y cráteres sueltos. `TerrainAnalysis.los_m` en metros: mira la microcobertura solo a 15 m de cada extremo.
+- **30 — Soldados y formaciones.** 9 soldados con rol; cuña, fila y línea a 3 m. El ancla sigue la ruta y espera a los que quedan a más de 6 m. Un impacto hiere (50 %) o mata; el herido se queda. `hp` = soldados en condiciones.
+- **31 — Cobertura por soldado.** Al detenerse, cada uno puntúa las micro-celdas a 6 m de su lugar: protegido (obstáculo hacia la amenaza a menos de 2,5 m, o el terreno), con tiro, oculto, cerca; 2 m de separación. Agachado o cuerpo a tierra según el obstáculo.
+- **32 — Visión por soldado.** Observadores por escuadra: el jefe y dos que rotan. LOS a la cabeza. Alcance según lo que hace cada uno. `visible_soldiers` por bando.
+- **33 — Fuego por soldado.** Fusil (p 0,05), ráfaga de ametralladora y de coaxial (radio 3 m), antitanque. El fuego se reparte entre los 5 blancos más cercanos. Protegido: ×0,2.
+- **34 — Supresión por soldado.** 8 por tiro de fusil, 15 por ráfaga; la mitad a 5 m; ×0,6 protegido. Clavado (85): no tira ni se mueve. La escuadra frena si más de la mitad está suprimida. Moral: bajas (+10 si cae el jefe) y drenaje por la parte suprimida.
+- **35 — Vistas, HUD y rendimiento.** Un muñeco por soldado con su postura (de los enemigos, solo los que se ven); rocas, arbustos y cráteres; HUD con posturas, cubiertos, clavados y heridos; tecla N. Detección escalonada en la ejecución (cada escuadra enemiga cada 1 s). `tests/bench_loma.gd`: unos 2 ms por tick de promedio en la loma.
+

@@ -42,7 +42,10 @@ func test_cover_reduces_hits_and_detection() -> void:
 	var p_open: float = world.hit_probability(shooter, open_sq, Unit.Weapon.RIFLES)
 	var p_pit: float = world.hit_probability(shooter, pit_sq, Unit.Weapon.RIFLES)
 	assert_lt(p_pit, p_open * 0.5, "en el pozo recibe muchos menos impactos")
-	assert_lt(world.infantry_spot_range(pit_sq), world.infantry_spot_range(open_sq), "y se la detecta más cerca")
+	var s_pit: Soldier = pit_sq.soldiers[0] # el jefe, en la celda del pozo
+	var s_open: Soldier = open_sq.soldiers[0]
+	assert_lt(InfantrySim.soldier_spot_range(world, pit_sq, s_pit), InfantrySim.soldier_spot_range(world, open_sq, s_open),
+		"y se la detecta más cerca")
 
 
 func test_tank_slower_in_forest() -> void:
