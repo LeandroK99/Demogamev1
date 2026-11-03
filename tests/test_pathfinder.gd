@@ -45,6 +45,7 @@ func test_straight_without_exposure_weight() -> void:
 
 func test_unit_reaches_target() -> void:
 	var world: SimWorld = SimWorld.new(1, HeightField.new(N))
+	world.p_hit_base = 0.0 # sin bajas: en el llano los bandos se ven
 	var u: Unit = world.units[0]
 	var target: Vector2i = u.cell() + Vector2i(0, -10)
 	assert_true(world.order_move(u.id, target), "orden aceptada")

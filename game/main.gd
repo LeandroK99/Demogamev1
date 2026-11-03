@@ -7,9 +7,9 @@ var terrain_view: TerrainView
 var camera_rig: CameraRTS
 var overlay: Overlay
 var input_controller: InputController
+var turn_controller: TurnController
+var combat_fx: CombatFx
 var unit_views: Array[UnitView] = []
-
-var _tick_accum: float = 0.0
 
 
 func _ready() -> void:
@@ -45,18 +45,26 @@ func _ready() -> void:
 	input_controller.setup(world, camera_rig.camera, terrain_view, unit_views)
 	input_controller.selection_changed.connect(_update_overlay_selection)
 
+	combat_fx = CombatFx.new()
+	add_child(combat_fx)
+	combat_fx.setup(height_field)
+
+	turn_controller = TurnController.new()
+	add_child(turn_controller)
+	turn_controller.setup(world, unit_views, combat_fx)
+	turn_controller.plan_started.connect(_on_plan_started)
+
 	print("Hull-Down OK")
 
 
-## Provisorio hasta la fase 4 (ciclo WeGo): la simulación corre en tiempo real.
-func _process(delta: float) -> void:
-	_tick_accum += delta
-	while _tick_accum >= Config.TICK:
-		world.step()
-		_tick_accum -= Config.TICK
-	for v: UnitView in unit_views:
-		v.sync_from_sim()
+func _process(_delta: float) -> void:
+	input_controller.prune_dead()
 	_update_overlay_selection()
+
+
+## Nuevo turno: la exposición cambió (amenazas conocidas nuevas).
+func _on_plan_started() -> void:
+	overlay.refresh()
 
 
 func _update_overlay_selection() -> void:

@@ -14,6 +14,7 @@ var path: Array[Vector2i] = []
 var order: int = Order.NONE
 var moving: bool = false
 var alive: bool = true
+var shots_received: int = 0 # disparos recibidos (impacten o no)
 
 
 func _init(p_id: int, p_side: int, p_pos: Vector2) -> void:
