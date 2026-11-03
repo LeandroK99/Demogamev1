@@ -515,6 +515,7 @@ const TOWN_HOUSE_MIN_M: Vector2i = Vector2i(8, 7)
 const TOWN_HOUSE_MAX_M: Vector2i = Vector2i(13, 11)
 const TOWN_WINDOW_EVERY_M: int = 3
 const TOWN_BACK_DOOR_P: float = 0.5
+const TOWN_CORRIDOR_M: Vector2i = Vector2i(12, 10) # una casa así de grande tiene pasillo y cuatro cuartos
 const TOWN_SPLIT_M: int = 9 # una casa así de ancha (o de honda) tiene una pared interior
 const TOWN_OBJECTIVE_RADIUS: float = 5.0 # celdas: la plaza que hay que ocupar
 const TOWN_RED_TANK_BACK: int = 22 # celdas detrás de la plaza donde espera el tanque rojo
