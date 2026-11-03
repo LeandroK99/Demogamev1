@@ -90,6 +90,8 @@ func los_m(a: Vector2, a_h: float, b: Vector2, b_h: float) -> bool:
 	if micro != null:
 		var near: float = minf(Config.MICRO_NEAR_M, dist * 0.5)
 		for from_end: int in 2:
+			if not micro.any_near_m(a if from_end == 0 else b):
+				continue # nada cerca de este extremo
 			var s: float = Config.MICRO_SELF_M
 			while s <= near:
 				var tt: float = s / dist if from_end == 0 else 1.0 - s / dist

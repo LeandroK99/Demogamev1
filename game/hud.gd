@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma)"
+	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · N: formación · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma)"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -25,6 +25,11 @@ const PACE_NAMES: Dictionary = {
 	Unit.Pace.CAUTIOUS: "cauto",
 }
 
+const FORMATION_NAMES: Dictionary = {
+	Unit.Formation.WEDGE: "cuña",
+	Unit.Formation.FILE: "fila india",
+	Unit.Formation.LINE: "línea",
+}
 const ROE_NAMES: Dictionary = {
 	Unit.Roe.FREE: "fuego libre",
 	Unit.Roe.RETURN_FIRE: "solo si le disparan",
@@ -124,6 +129,35 @@ static func gate_text(gate: Dictionary) -> String:
 	return "?"
 
 
+
+## Escuadra: cuántos soldados en condiciones hay de pie, agachados y cuerpo a tierra, y cuántos cubiertos.
+static func soldiers_text(u: Unit) -> String:
+	var counts: Array[int] = [0, 0, 0]
+	var covered: int = 0
+	var pinned: int = 0
+	for s: Soldier in u.soldiers:
+		if not s.is_ok():
+			continue
+		counts[s.posture] += 1
+		if s.has_cover and s.protected and not s.moving:
+			covered += 1
+		if s.suppression >= Config.PINNED:
+			pinned += 1
+	var out: String = "De pie %d · agachados %d · cuerpo a tierra %d · cubiertos %d" % [counts[0], counts[1], counts[2], covered]
+	if pinned > 0:
+		out += " · clavados %d" % pinned
+	return out
+
+
+## " (2 heridos)" si la escuadra tiene heridos.
+static func wounded_text(u: Unit) -> String:
+	var n: int = 0
+	for s: Soldier in u.soldiers:
+		if s.state == Soldier.State.WOUNDED:
+			n += 1
+	return " (%d herido%s)" % [n, "" if n == 1 else "s"] if n > 0 else ""
+
+
 ## Rumbo de la grilla como punto cardinal (y crece hacia el sur).
 static func compass(dir: Vector2) -> String:
 	const NAMES: Array[String] = ["este", "sureste", "sur", "suroeste", "oeste", "noroeste", "norte", "noreste"]
@@ -154,7 +188,7 @@ func _unit_text() -> String:
 		if input_controller.selected_platoon() != null:
 			lines.append("Pelotón completo (%d tanques)" % input_controller.selected_ids.size())
 		lines.append("%s %d · sección %s" % [unit_name(sel), sel.id + 1, Platoon.section_letter(plt.section_of(sel.id) if plt != null else -1)])
-		lines.append("%s: %d / %d" % ["Hombres" if sel.is_infantry() else "Vida", sel.hp, sel.max_hp()])
+		lines.append("%s: %d / %d%s" % ["Hombres" if sel.is_infantry() else "Vida", sel.hp, sel.max_hp(), wounded_text(sel)])
 		lines.append("Recarga: %s" % ("lista" if sel.reload_left <= 0.0 else "%.1f s" % sel.reload_left))
 		var order_text: String = ORDER_NAMES.get(sel.order, "?")
 		if sel.is_infantry() and sel.order == Unit.Order.HULLDOWN:
@@ -164,7 +198,8 @@ func _unit_text() -> String:
 		lines.append("Orden: %s" % order_text)
 		lines.append("Mira al %s" % compass(sel.heading))
 		if sel.is_infantry():
-			lines.append("Postura: %s" % ("cuerpo a tierra" if sel.prone else "de pie"))
+			lines.append(soldiers_text(sel))
+			lines.append("Formación: %s" % FORMATION_NAMES.get(sel.formation, "?"))
 			var state: String = ""
 			if sel.broken:
 				state = " · QUEBRADA"

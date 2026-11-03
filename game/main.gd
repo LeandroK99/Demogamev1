@@ -72,11 +72,13 @@ func _start_game(p_seed: int) -> void:
 		var cover_view: CoverView = CoverView.new()
 		_game_root.add_child(cover_view)
 		cover_view.setup(world.cover, height_field)
+		if world.micro != null:
+			cover_view.setup_micro(world.micro, height_field)
 
 	for u: Unit in world.units:
 		var v: UnitView = UnitView.new()
 		_game_root.add_child(v)
-		v.setup(u, height_field)
+		v.setup(u, height_field, world)
 		unit_views.append(v)
 
 	overlay = Overlay.new()

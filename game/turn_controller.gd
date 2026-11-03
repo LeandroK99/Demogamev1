@@ -51,12 +51,12 @@ func _process(delta: float) -> void:
 		while _accum >= Config.TICK:
 			_accum -= Config.TICK
 			for v: UnitView in unit_views:
-				v.prev_pos = v.unit.pos
+				v.remember()
 			world.step()
 			if world.phase == SimWorld.Phase.PLAN or world.game_over:
 				_accum = 0.0
 				for v: UnitView in unit_views:
-					v.prev_pos = v.unit.pos
+					v.remember()
 				plan_started.emit()
 				break
 	for e: Dictionary in world.shot_events:

@@ -237,7 +237,10 @@ func begin_execute() -> void:
 ## lo detecta. Tanque contra tanque, ver _can_spot. Si hay soldados de por medio, la detección es
 ## por soldado (ver InfantrySim.spot_squad y soldiers_spot_tank); una escuadra es visible si se ve
 ## a alguno de sus soldados.
-func update_detection() -> void:
+## full = false (durante la ejecución): cada vez se mira solo la mitad de las escuadras enemigas,
+## alternando; las otras conservan lo de la vez anterior (cada escuadra se actualiza cada
+## 2 * DETECTION_INTERVAL_TICKS). Así la detección por soldado cuesta la mitad.
+func update_detection(full: bool = true) -> void:
 	inf.begin_detection(self)
 	for side: int in 2:
 		var vis: Dictionary = {}
@@ -246,7 +249,9 @@ func update_detection() -> void:
 			if enemy.side == side or not enemy.alive:
 				continue
 			var seen: bool = false
-			if enemy.is_infantry():
+			if enemy.is_infantry() and not full and (enemy.id + inf.round_index()) % 2 == 1:
+				seen = inf.keep_previous(side, enemy, vis_s) and visible_enemies[side].has(enemy.id)
+			elif enemy.is_infantry():
 				seen = inf.spot_squad(self, side, enemy, vis_s)
 			else:
 				for own: Unit in units:
@@ -932,7 +937,7 @@ func step() -> void:
 	tick_in_turn += 1
 	total_ticks += 1
 	if tick_in_turn % Config.DETECTION_INTERVAL_TICKS == 0:
-		update_detection()
+		update_detection(false)
 	_combat()
 	_check_victory()
 	if not game_over and tick_in_turn >= ticks_per_turn:

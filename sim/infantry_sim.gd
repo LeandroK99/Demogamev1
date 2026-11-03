@@ -392,6 +392,22 @@ func soldiers_spot_tank(w: SimWorld, own: Unit, target: Unit) -> bool:
 	return false
 
 
+func round_index() -> int:
+	return _round
+
+
+## Detección escalonada: copia a vis_s lo que el bando veía de esa escuadra la vez anterior.
+## Devuelve si veía a alguno.
+func keep_previous(side: int, enemy: Unit, vis_s: Dictionary) -> bool:
+	var any: bool = false
+	for t: Soldier in enemy.soldiers:
+		var key: int = soldier_key(enemy.id, t.index)
+		if t.is_ok() and visible_soldiers[side].has(key):
+			vis_s[key] = true
+			any = true
+	return any
+
+
 ## ¿El bando ve a ese soldado?
 func is_soldier_visible(side: int, unit_id: int, index: int) -> bool:
 	return visible_soldiers[side].has(soldier_key(unit_id, index))

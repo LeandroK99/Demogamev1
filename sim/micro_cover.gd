@@ -12,6 +12,8 @@ const MICRO_M: float = Config.CELL_SIZE / Config.MICRO_PER_CELL # metros por mic
 var size: int = 0 # micro-celdas por lado
 var types: PackedByteArray = PackedByteArray()
 var heights: PackedFloat32Array = PackedFloat32Array() # altura del obstáculo sobre el terreno (negativa: hundido)
+var _near: PackedByteArray = PackedByteArray() # por celda de 4 m: 1 si hay un obstáculo a <= MICRO_NEAR_M
+var _near_dirty: bool = true
 
 
 func _init(cells: int) -> void:
@@ -61,6 +63,40 @@ func set_type(c: Vector2i, t: int) -> void:
 	if in_bounds(c):
 		types[c.y * size + c.x] = t
 		heights[c.y * size + c.x] = type_height(t)
+		_near_dirty = true
+
+
+## ¿Hay algún obstáculo que tape (altura positiva) a <= MICRO_NEAR_M del punto? Si no, la línea de
+## visión ni mira la microcobertura en ese extremo.
+func any_near_m(p_m: Vector2) -> bool:
+	var cells: int = size / Config.MICRO_PER_CELL
+	if _near_dirty:
+		_rebuild_near(cells)
+	var c: Vector2i = Vector2i(roundi(p_m.x / Config.CELL_SIZE), roundi(p_m.y / Config.CELL_SIZE))
+	if c.x < 0 or c.y < 0 or c.x >= cells or c.y >= cells:
+		return false
+	return _near[c.y * cells + c.x] != 0
+
+
+func _rebuild_near(cells: int) -> void:
+	_near_dirty = false
+	_near.resize(cells * cells)
+	_near.fill(0)
+	var r: int = ceili(Config.MICRO_NEAR_M / Config.CELL_SIZE) + 1
+	var per: int = Config.MICRO_PER_CELL
+	for cy: int in cells:
+		for cx: int in cells:
+			var any: bool = false
+			for k: int in per * per:
+				var i: int = (cy * per + k / per) * size + cx * per + k % per
+				if heights[i] > 0.0:
+					any = true
+					break
+			if not any:
+				continue
+			for dy: int in range(maxi(0, cy - r), mini(cells, cy + r + 1)):
+				for dx: int in range(maxi(0, cx - r), mini(cells, cx + r + 1)):
+					_near[dy * cells + dx] = 1
 
 
 func type_at(c: Vector2i) -> int:

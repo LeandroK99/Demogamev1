@@ -126,6 +126,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_X:
 		_cycle_pace()
 		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_N:
+		_cycle_formation()
+		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_T:
 		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty():
 			pending_mode = "assault"
@@ -347,6 +350,20 @@ func _cycle_pace() -> void:
 	var next: int = (u.pace + 1) % Unit.Pace.size()
 	for id: int in selected_ids:
 		world.set_pace(id, next)
+
+
+## N: formación siguiente (cuña, fila india, línea) para las escuadras seleccionadas.
+func _cycle_formation() -> void:
+	var u: Unit = null
+	for id: int in selected_ids:
+		if world.get_unit(id).is_infantry():
+			u = world.get_unit(id)
+			break
+	if u == null or world.phase != SimWorld.Phase.PLAN:
+		return
+	var next: int = (u.formation + 1) % Unit.Formation.size()
+	for id: int in selected_ids:
+		world.set_formation(id, next)
 
 
 ## C: área de enganche hacia el cursor (arco centrado en el cursor y distancia máxima

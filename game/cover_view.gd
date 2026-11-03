@@ -6,6 +6,8 @@ extends Node3D
 const COLOR_TREE: Color = Color(0.16, 0.36, 0.14)
 const COLOR_WALL: Color = Color(0.55, 0.52, 0.47)
 const COLOR_PIT: Color = Color(0.2, 0.16, 0.12)
+const COLOR_ROCK: Color = Color(0.48, 0.47, 0.45)
+const COLOR_BUSH: Color = Color(0.22, 0.42, 0.16)
 
 
 func setup(cm: CoverMap, hf: HeightField) -> void:
@@ -36,6 +38,40 @@ func setup(cm: CoverMap, hf: HeightField) -> void:
 	_add(cone, COLOR_TREE, trees, Config.FOREST_TREE_H * 0.5)
 	_add(wall, COLOR_WALL, walls, 0.5)
 	_add(pit, COLOR_PIT, pits, 0.05)
+
+
+## Microcobertura: rocas, arbustos y cráteres sueltos (los muros, los pozos y los troncos ya se
+## ven con la cobertura de 4 m).
+func setup_micro(mc: MicroCover, hf: HeightField) -> void:
+	var rocks: Array[Vector3] = []
+	var bushes: Array[Vector3] = []
+	var craters: Array[Vector3] = []
+	for y: int in mc.size:
+		for x: int in mc.size:
+			var t: int = mc.types[y * mc.size + x]
+			if t != MicroCover.Type.ROCK and t != MicroCover.Type.BUSH and t != MicroCover.Type.CRATER:
+				continue
+			var m: Vector2 = MicroCover.center_m(Vector2i(x, y))
+			var p: Vector3 = Vector3(m.x, hf.height_at(m / Config.CELL_SIZE), m.y)
+			match t:
+				MicroCover.Type.ROCK:
+					rocks.append(p)
+				MicroCover.Type.BUSH:
+					bushes.append(p)
+				MicroCover.Type.CRATER:
+					craters.append(p)
+	var rock: BoxMesh = BoxMesh.new()
+	rock.size = Vector3(0.9, Config.MICRO_ROCK_H, 0.9)
+	var bush: SphereMesh = SphereMesh.new()
+	bush.radius = 0.6
+	bush.height = Config.MICRO_BUSH_H
+	var crater: CylinderMesh = CylinderMesh.new()
+	crater.top_radius = 0.6
+	crater.bottom_radius = 0.6
+	crater.height = 0.08
+	_add(rock, COLOR_ROCK, rocks, Config.MICRO_ROCK_H * 0.5)
+	_add(bush, COLOR_BUSH, bushes, Config.MICRO_BUSH_H * 0.5)
+	_add(crater, COLOR_PIT, craters, 0.04)
 
 
 func _add(mesh: PrimitiveMesh, color: Color, points: Array[Vector3], lift: float) -> void:

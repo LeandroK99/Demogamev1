@@ -85,3 +85,29 @@ func test_soldiers_spot_moving_tank_far() -> void:
 	tank.moving = true
 	world.update_detection()
 	assert_true(world.visible_enemies[0].has(tank.id), "en marcha, sí")
+
+
+func test_staggered_detection_alternates_squads() -> void:
+	var world: SimWorld = _world()
+	var a: Unit = world.add_unit(0, Vector2(30, 70), Unit.Kind.INFANTRY)
+	var b: Unit = world.add_unit(0, Vector2(50, 70), Unit.Kind.INFANTRY)
+	a.set_posture(Soldier.Posture.STAND)
+	b.set_posture(Soldier.Posture.STAND)
+	world.update_detection(false)
+	world.update_detection(false)
+	assert_true(world.visible_enemies[1].has(a.id) and world.visible_enemies[1].has(b.id), "en dos rondas se miró a las dos")
+	a.set_posture(Soldier.Posture.PRONE) # a 100 m cuerpo a tierra: deja de verse
+	a.pos = Vector2(30, 85)
+	a.snap_soldiers()
+	world.update_detection(false)
+	world.update_detection(false)
+	assert_true(not world.visible_enemies[1].has(a.id), "en dos rondas se actualizó")
+
+
+func test_micro_near_flag() -> void:
+	var mc: MicroCover = MicroCover.new(N)
+	mc.set_type(MicroCover.cell_of(Vector2(100.0, 100.0)), MicroCover.Type.ROCK)
+	assert_true(mc.any_near_m(Vector2(110.0, 100.0)), "a 10 m de una roca")
+	assert_true(not mc.any_near_m(Vector2(200.0, 100.0)), "a 100 m, nada")
+	mc.set_type(MicroCover.cell_of(Vector2(200.0, 100.0)), MicroCover.Type.CRATER)
+	assert_true(not mc.any_near_m(Vector2(200.0, 100.0)), "el cráter no tapa la vista")
