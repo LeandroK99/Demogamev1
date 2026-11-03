@@ -69,6 +69,7 @@ func move_soldiers(w: SimWorld) -> void:
 			elif s.has_cover and not u.moving:
 				target = s.fire_pos if s.peeking else s.cover_pos
 			target = Vector2(clampf(target.x, 0.0, limit), clampf(target.y, 0.0, limit))
+			s.has_slot_goal = false # (solo vale para este tick: si no, la escuadra esperaría a un lugar viejo)
 			if w.buildings != null:
 				if s.care_target < 0 and s.task_pos.x < 0.0 and not (s.has_cover and not u.moving):
 					target = w.buildings.pull_out(target, u.pos_m()) # su lugar cae en una casa ajena: afuera
@@ -581,24 +582,30 @@ func update_cover(w: SimWorld) -> void:
 			continue
 		var threat: Vector2 = threat_point(w, u)
 		assign_sectors(u, threat)
+		var outside: bool = _house_in(w.buildings, u.pos_m()) < 0
 		var taken: Array[Vector2] = []
 		var pending: Array[Soldier] = []
 		for s: Soldier in u.soldiers:
 			if not s.is_ok():
 				continue
-			if s.has_cover and _threat_moved(u, s, threat):
+			if s.has_cover and w.total_ticks >= s.next_cover_tick and _threat_moved(u, s, threat):
 				s.has_cover = false
 			if s.has_cover and _cover_flanked(w, s):
 				s.has_cover = false # cubierta inválida: le tiran desde donde no lo protege
+				s.next_cover_tick = 0 # busca otra ya
+			if s.has_cover and s.post_pos.x < 0.0 and outside \
+					and s.cover_pos.distance_to(u.slot_pos_m(s.index)) > Config.COVER_STALE_M:
+				s.has_cover = false # su lugar se corrió lejos (saltos, cambio de formación): busca cerca del nuevo
 			if s.has_cover:
 				taken.append(s.cover_pos)
-			else:
+			elif w.total_ticks >= s.next_cover_tick:
 				pending.append(s)
 		if pending.is_empty():
 			continue
 		pending.sort_custom(func(a: Soldier, b: Soldier) -> bool: return _cover_priority(a) < _cover_priority(b))
 		for s: Soldier in pending:
 			choose_cover(w, u, s, _incoming_threat(w, s, threat), taken)
+			s.next_cover_tick = w.total_ticks + Config.SOLDIER_COVER_RETRY_TICKS # no la vuelve a buscar enseguida
 
 
 ## ¿Le tiraron hace poco desde una dirección muy distinta a la de su cobertura, y ahí no lo protege?
@@ -687,7 +694,7 @@ func begin_detection(w: SimWorld) -> void:
 		for k: int in want:
 			obs.append(ok[(_round * want + k) % ok.size()])
 		for s: Soldier in ok:
-			if (s.marksman or s.task_pos.x >= 0.0) and not obs.has(s):
+			if (s.marksman or (s.task_pos.x >= 0.0 and not s.cqb_post)) and not obs.has(s):
 				obs.append(s) # el tirador selecto siempre mira, con su mira; los de la esquina, también
 		_observers[u.id] = obs
 
@@ -830,7 +837,11 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 		var reach: float = Config.MARKSMAN_RANGE if s.marksman else SimWorld.weapon_range(wpn)
 		if s.ammo <= 0:
 			reach = Config.GL_RANGE if s.gl_rounds > 0 else Config.GRENADE_RANGE_M
+		if w.total_ticks < s.next_look_tick:
+			continue # no encontró a quién tirarle hace un momento: vuelve a mirar en un rato
 		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), reach, s.index, s.marksman, s)
+		if t.is_empty():
+			s.next_look_tick = w.total_ticks + Config.SOLDIER_LOOK_TICKS
 		if not t.is_empty():
 			if grenade_at(w, u, s, t["soldier"]) or s.ammo <= 0:
 				continue
@@ -859,7 +870,8 @@ func update_digging(w: SimWorld) -> void:
 			if s.suppression >= Config.DIG_MAX_SUPP or s.peeking:
 				continue
 			s.dig_time += dt
-			if s.dig_time >= Config.DIG_SECONDS:
+			if s.dig_time >= Config.DIG_SECONDS or s.prepared:
+				s.prepared = false
 				s.dig_time = 0.0
 				if w.micro.type_at_m(s.pos) == MicroCover.Type.NONE:
 					w.micro.set_type(MicroCover.cell_of(s.pos), MicroCover.Type.CRATER)

@@ -108,6 +108,11 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 		mc.generate(sim_seed, cm)
 		set_micro(mc)
 		_deploy_loma()
+		if Config.LOMA_RED_PREPARED:
+			for u: Unit in units:
+				if u.side == 1 and u.is_infantry():
+					for so: Soldier in u.soldiers:
+						so.prepared = true # el rojo defiende preparado: arranca en pozos
 	elif scenario == Scenario.PUEBLO:
 		_setup_pueblo(sim_seed)
 	else:
@@ -154,7 +159,8 @@ func _deploy_loma() -> void:
 			var c: Vector2i = _nearest_walkable(Vector2i(x, y), kind)
 			var u: Unit = add_unit(side, Vector2(c), kind)
 			if kind == Unit.Kind.INFANTRY:
-				u.mind.quality = Config.MIND_LOMA_QUALITY[i % Config.MIND_LOMA_QUALITY.size()]
+				var q: Array[int] = Config.LOMA_RED_QUALITY if side == 1 else Config.MIND_LOMA_QUALITY
+				u.mind.quality = q[i % q.size()]
 				inf_ids.append(u.id)
 			else:
 				tank_ids.append(u.id)
@@ -267,6 +273,7 @@ func order_clear(unit_id: int, at_m: Vector2) -> bool:
 	else:
 		_new_intent(u)
 	CqbSim.start_clear(self, u, h, best) # va como MOVE; al llegar se apila (orden CLEAR)
+	u.clear["stand"] = stand
 	return true
 
 
@@ -1964,7 +1971,8 @@ func objective_holder() -> int:
 	var present: Array[bool] = [false, false]
 	var center: Vector2 = Vector2(objective_cell())
 	for u: Unit in units:
-		if u.alive and u.is_infantry() and not u.broken and u.pos.distance_to(center) <= objective_radius():
+		if u.alive and u.is_infantry() and not u.broken and not u.surrendered and u.ok_count() > 0 \
+				and u.pos.distance_to(center) <= objective_radius():
 			present[u.side] = true
 	if present[0] and present[1]:
 		return DRAW

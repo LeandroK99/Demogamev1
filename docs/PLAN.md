@@ -353,3 +353,10 @@ Plan completo en el doc "Hull-Down: plan de las fases 48 a 72" (cuatro PR: A fue
 - **63 — Tirar desde adentro.** Desde el fondo de un cuarto (a 1,8 m o más de una abertura) se lo detecta a 60 m aunque tire. La ametralladora roja abre una aspillera hacia la amenaza y se queda en ella.
 - **64 — Esquinas.** La ruta dobla 40° o más cerca de la esquina de una casa y lo de atrás no se ve: dos soldados cortan la torta en seis pasos (uno de pie y otro agachado); con un contacto nuevo se quedan. Se mide desde el que va más adelante.
 - **65 — Boquetes y tanque con infantería.** I + clic derecho: el tanque abre la pared de un tiro; la escuadra pone su carga (una) y la vuela a los 8 s. Tanque solo pegado a las casas: ×1,5 al antitanque; escoltado: ×0,5.
+- **66 — Apilarse.** Cuartos y portales salen del mapa de 1 m (`RoomMap`). La escuadra se apila de a cuatro pegada a la pared, al costado de la puerta, nunca frente a ella.
+- **67 — Entrada.** El 1 cruza hacia el lado opuesto a la pila, el 2 engancha hacia su lado y el 3 y el 4 toman los puntos del medio; entran a 3 m/s con medio segundo entre uno y otro.
+- **68 — Granada y tiro reflejo.** Antes de entrar se tira una granada al cuarto (la pared baja el daño a ×0,3). A menos de 8 m el que ve primero tira primero: el tiro reflejo gana el duelo cuerpo a cuerpo. La aturdidora quedó afuera.
+- **69 — Pasillos.** Un cuarto angosto y largo se recorre en serpiente: adelante, a un lado, al otro y atrás (360°). La "T rodante" quedó afuera.
+- **70 — Limpiar la casa.** Shift+I + clic derecho: la escuadra va a la puerta, recorre los cuartos en orden (BFS) y marca cada uno; la casa limpia se tiñe en el piso y el techo. Si no llega a la puerta en 120 s, o un cuarto resiste 25 s, abandona.
+- **71 — Defensa roja de casas.** El rojo reparte la escuadra en dos o más cuartos con puestos a cubierto; si cae un cuarto, los de ahí se repliegan al siguiente.
+- **72 — Ajuste final.** Banco IA contra IA en la loma y en el pueblo: ningún bando gana más del 75 % de las semillas. El rojo de la loma arranca con pozos y más veteranos; LOS con edificios primero y búsqueda de blanco espaciada para quedar bajo 4 ms por tick.

@@ -14,6 +14,9 @@ var houses: Array[Rect2i] = [] # en micro-celdas, con las paredes de afuera incl
 var _rects_m: Array[Rect2] = [] # las mismas, en metros
 var version: int = 0 # sube con cada cambio (la vista se rehace)
 var _astar: AStarGrid2D = null # se arma al primer pedido de ruta (y se rehace si cambia algo)
+var _bounds: Rect2 = Rect2() # todas las casas juntas (para descartar rápido)
+var _ground: PackedFloat32Array = PackedFloat32Array() # altura del terreno en cada casa (el pueblo es plano)
+var _ground_hf: HeightField = null
 
 
 func _init(cells: int) -> void:
@@ -67,6 +70,8 @@ func add_house(rect: Rect2i, doors: Array[Vector2i] = [], windows: Array[Vector2
 	houses.append(rect)
 	var a: Vector2 = MicroCover.center_m(rect.position) - Vector2.ONE * MicroCover.MICRO_M * 0.5
 	_rects_m.append(Rect2(a, Vector2(rect.size) * MicroCover.MICRO_M))
+	_bounds = _rects_m[-1] if _rects_m.size() == 1 else _bounds.merge(_rects_m[-1])
+	_ground_hf = null # se recalcula al primer pedido
 	return houses.size() - 1
 
 
@@ -117,12 +122,24 @@ static func opening(t: int) -> Vector2:
 func blocks(hf: HeightField, a: Vector2, ha: float, b: Vector2, hb: float) -> bool:
 	var d: Vector2 = b - a
 	var dist: float = d.length()
-	if dist < 0.01:
+	if dist < 0.01 or _rects_m.is_empty():
 		return false
-	var inv_cell: float = 1.0 / Config.CELL_SIZE
-	for r: Rect2 in _rects_m:
+	var all: Vector2 = _clip(_bounds, a, d)
+	if all.x > all.y:
+		return false # no pasa por el pueblo
+	if _ground_hf != hf:
+		_ground_hf = hf
+		_ground.resize(_rects_m.size())
+		for i: int in _rects_m.size():
+			_ground[i] = hf.height_at(_rects_m[i].get_center() / Config.CELL_SIZE)
+	for i: int in _rects_m.size():
+		var r: Rect2 = _rects_m[i]
 		var span: Vector2 = _clip(r, a, d)
 		if span.x > span.y:
+			continue
+		var g: float = _ground[i]
+		# Toda la recta por encima del techo en esta casa: no la toca
+		if ha + (hb - ha) * span.x - g >= Config.BUILDING_H and ha + (hb - ha) * span.y - g >= Config.BUILDING_H:
 			continue
 		var step: float = Config.BUILDING_LOS_STEP / dist
 		var t: float = span.x
@@ -133,7 +150,7 @@ func blocks(hf: HeightField, a: Vector2, ha: float, b: Vector2, hb: float) -> bo
 			var c: Vector2i = MicroCover.cell_of(p)
 			var ty: int = type_at(c)
 			if ty != Type.NONE:
-				var rel: float = ha + (hb - ha) * t - hf.height_at(p * inv_cell)
+				var rel: float = ha + (hb - ha) * t - g
 				var under: bool = rel < Config.BUILDING_H
 				if under:
 					var o: Vector2 = opening(ty)
@@ -172,6 +189,11 @@ func crosses(a: Vector2, b: Vector2) -> bool:
 	var d: Vector2 = b - a
 	if d.length() < 0.01:
 		return not walkable_m(b)
+	if _rects_m.is_empty():
+		return false
+	var all: Vector2 = _clip(_bounds.grow(MicroCover.MICRO_M), a, d)
+	if all.x > all.y:
+		return false
 	for r: Rect2 in _rects_m:
 		var span: Vector2 = _clip(r.grow(MicroCover.MICRO_M), a, d)
 		if span.x > span.y:

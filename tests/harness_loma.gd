@@ -73,6 +73,30 @@ func _initialize() -> void:
 	quit()
 
 
+## En el pueblo: una casa con rojos conocidos a CLEAR_NEAR_M o menos, sin limpiar -> limpiarla.
+const CLEAR_NEAR_M: float = 70.0
+
+
+func _clear_known_house(w: SimWorld, u: Unit) -> bool:
+	if u.ok_count() < 4:
+		return false # diezmada: no se mete en una casa
+	var best: int = -1
+	var best_d: float = CLEAR_NEAR_M
+	for id: int in w.known_enemies[0]:
+		var e: Unit = w.units[id]
+		if not e.alive or not e.is_infantry() or e.surrendered or e.ok_count() == 0:
+			continue
+		var at: Vector2 = Vector2(w.known_enemies[0][id]["cell"]) * Config.CELL_SIZE
+		var h: int = CqbSim.house_near(w.buildings, at)
+		if h < 0 or int(w.cleared_houses.get(h, -1)) == 0:
+			continue
+		var d: float = w.buildings.rect_m(h).get_center().distance_to(u.pos_m())
+		if d < best_d:
+			best_d = d
+			best = h
+	return best >= 0 and w.order_clear(u.id, w.buildings.rect_m(best).get_center())
+
+
 ## El azul: cada escuadra sin ruta va hacia la cresta (al costado del objetivo según su número); el tanque cubre.
 func _blue_orders(w: SimWorld) -> void:
 	var obj: Vector2i = w.objective_cell()
@@ -81,6 +105,23 @@ func _blue_orders(w: SimWorld) -> void:
 		if u.side != 0 or not u.alive:
 			continue
 		if u.is_infantry():
-			if u.path.is_empty():
-				w.order_move(u.id, w._nearest_walkable(obj + Vector2i((i - 1) * 6, 0), Unit.Kind.INFANTRY))
+			# Los últimos turnos: nada de casas, todos a la plaza (el que la ocupa al final gana)
+			var late: bool = w.turn >= Config.MAX_TURNS - 2
+			if late and w.buildings != null:
+				if not u.clear.is_empty():
+					w.cqb.abort_clear(w, u, "")
+				# A la plaza corriendo y sin improvisar (el jugador haría lo mismo con Y y X)
+				w.set_autonomy(u.id, SquadMind.Autonomy.STRICT)
+				w.set_pace(u.id, Unit.Pace.FAST)
+			if w.buildings != null and not late and u.clear.is_empty() and _clear_known_house(w, u):
+				i += 1
+				continue
+			# En el pueblo la plaza es chica: las escuadras van más juntas, y si quedaron lejos de la plaza
+			# haciendo otra cosa (cortar contacto, cubrirse) se las vuelve a mandar.
+			var town: bool = w.buildings != null
+			var spread: int = 2 if town else 6
+			var far: bool = town and u.pos.distance_to(Vector2(obj)) > w.objective_radius() - 1.0 \
+					and (u.order != Unit.Order.MOVE or late) and not u.broken
+			if (u.path.is_empty() or far) and u.clear.is_empty():
+				w.order_move(u.id, w._nearest_walkable(obj + Vector2i((i - 1) * spread, 0), Unit.Kind.INFANTRY))
 			i += 1

@@ -214,6 +214,9 @@ func _update_clear(w: SimWorld, u: Unit) -> void:
 		abort_clear(w, u, "")
 		return
 	if phase == "approach":
+		if float(w.total_ticks - int(c["t0"])) * Config.TICK > Config.CQB_APPROACH_MAX_SECONDS:
+			abort_clear(w, u, "no llegamos a la puerta")
+			return
 		if u.moving or not u.path.is_empty():
 			return
 		u.order = Unit.Order.CLEAR
@@ -239,6 +242,8 @@ func _update_clear(w: SimWorld, u: Unit) -> void:
 			if elapsed < Config.CQB_DOMINATE_SECONDS:
 				return
 			if enemies_in_room(w, u.side, int(step["room"])) > 0:
+				if elapsed > Config.CQB_ROOM_MAX_SECONDS:
+					abort_clear(w, u, "no podemos con el cuarto, nos quedamos")
 				return # pelean adentro (tiro reflejo); se sigue cuando no quede nadie
 			w.cleared_rooms[int(step["room"])] = u.side
 			c["step"] = int(c["step"]) + 1
