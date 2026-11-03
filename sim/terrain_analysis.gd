@@ -84,7 +84,7 @@ static func dist_m(a: Vector2i, b: Vector2i) -> float:
 
 ## Exposición por celda: fracción de amenazas (a <= MAX_RANGE) que ven el casco.
 ## 0 = cubierta; 1 = vista por todas.
-func exposure_map(threats: Array[Vector2i]) -> PackedFloat32Array:
+func exposure_map(threats: Array[Vector2i], target_h: float = Config.HULL_H) -> PackedFloat32Array:
 	var start_ms: int = Time.get_ticks_msec()
 	var size: int = height_field.size
 	var result: PackedFloat32Array = PackedFloat32Array()
@@ -98,7 +98,7 @@ func exposure_map(threats: Array[Vector2i]) -> PackedFloat32Array:
 			var c: Vector2i = Vector2i(x, y)
 			var seen: int = 0
 			for th: Vector2i in threats:
-				if dist_m(th, c) <= Config.MAX_RANGE and los(th, Config.EYE_H, c, Config.HULL_H):
+				if dist_m(th, c) <= Config.MAX_RANGE and los(th, Config.EYE_H, c, target_h):
 					seen += 1
 			result[y * size + x] = float(seen) * inv
 	print("exposure_map: %d ms (%d amenazas)" % [Time.get_ticks_msec() - start_ms, threats.size()])
@@ -107,7 +107,9 @@ func exposure_map(threats: Array[Vector2i]) -> PackedFloat32Array:
 
 ## Candidatos hull-down alrededor de origin, ordenados por puntaje descendente.
 ## Cada uno: {cell, score, can_fire, hull_hidden}.
-func hulldown_candidates(origin: Vector2i, threats: Array[Vector2i], radius: int) -> Array[Dictionary]:
+## eye_h, hull_h y center_h: alturas de la unidad que busca posición (por defecto, un tanque).
+func hulldown_candidates(origin: Vector2i, threats: Array[Vector2i], radius: int,
+		eye_h: float = Config.EYE_H, hull_h: float = Config.HULL_H, center_h: float = Config.CENTER_H) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var hf: HeightField = height_field
 	for dy: int in range(-radius, radius + 1):
@@ -120,9 +122,9 @@ func hulldown_candidates(origin: Vector2i, threats: Array[Vector2i], radius: int
 			var can_fire: bool = false
 			var hull_hidden: bool = true
 			for th: Vector2i in threats:
-				if not can_fire and dist_m(c, th) <= Config.MAX_RANGE and los(c, Config.EYE_H, th, Config.CENTER_H):
+				if not can_fire and dist_m(c, th) <= Config.MAX_RANGE and los(c, eye_h, th, center_h):
 					can_fire = true
-				if hull_hidden and los(th, Config.EYE_H, c, Config.HULL_H):
+				if hull_hidden and los(th, Config.EYE_H, c, hull_h):
 					hull_hidden = false
 			var score: float = Config.HULLDOWN_W_HIDDEN * float(hull_hidden) \
 				+ Config.HULLDOWN_W_FIRE * float(can_fire) \

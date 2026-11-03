@@ -142,7 +142,7 @@ func _unit_text() -> String:
 		if input_controller.selected_platoon() != null:
 			lines.append("Pelotón completo (%d tanques)" % input_controller.selected_ids.size())
 		lines.append("Tanque %d · sección %s" % [sel.id + 1, Platoon.section_letter(plt.section_of(sel.id) if plt != null else -1)])
-		lines.append("Vida: %d / %d" % [sel.hp, Config.TANK_HP])
+		lines.append("%s: %d / %d" % ["Hombres" if sel.is_infantry() else "Vida", sel.hp, sel.max_hp()])
 		lines.append("Recarga: %s" % ("lista" if sel.reload_left <= 0.0 else "%.1f s" % sel.reload_left))
 		var order_text: String = ORDER_NAMES.get(sel.order, "?")
 		if sel.order == Unit.Order.ATTACK and sel.attack_target >= 0:

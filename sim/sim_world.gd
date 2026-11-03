@@ -10,7 +10,8 @@ const DRAW: int = 2
 
 var height_field: HeightField
 var analysis: TerrainAnalysis
-var pathfinder: Pathfinder
+var pathfinder: Pathfinder # el de los tanques (pathfinders[Unit.Kind.TANK])
+var pathfinders: Array[Pathfinder] = [] # uno por tipo de unidad (índice = Unit.Kind)
 var units: Array[Unit] = []
 var platoons: Array[Platoon] = [] # uno por bando (índice = side)
 var _bound_count: int = 0 # para nombrar las señales de los avances por saltos
@@ -45,9 +46,9 @@ var moving_shooter_factor: float = Config.MOVING_SHOOTER_FACTOR
 var armor_enabled: bool = true
 var p_hit_max: float = Config.P_HIT_MAX
 
-# Exposición por bando (índice = side); vacía = sin calcular
-var _exposure: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array()]
-var _pathfinder_side: int = -1 # bando cuya exposición está cargada en el pathfinder
+# Exposición por bando y tipo (índice = side * 2 + kind); vacía = sin calcular
+var _exposure: Array[PackedFloat32Array] = []
+var _pathfinder_side: Array[int] = [-1, -1] # por tipo: bando cuya exposición está cargada en su pathfinder
 var ai: AICommander = null # IA del bando rojo (null = sin IA)
 
 
@@ -63,7 +64,9 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 	height_field = hf
 	analysis = TerrainAnalysis.new(hf)
 	analysis.smoke = smoke_clouds
-	pathfinder = Pathfinder.new(hf)
+	pathfinders = [Pathfinder.new(hf), Pathfinder.new(hf, Config.INF_MAX_SLOPE)]
+	pathfinder = pathfinders[Unit.Kind.TANK]
+	invalidate_exposure()
 	_deploy()
 	update_detection()
 	start_plan()
@@ -151,7 +154,7 @@ func _can_spot(observer: Unit, target: Unit) -> bool:
 	var d: float = TerrainAnalysis.dist_m(observer.cell(), target.cell())
 	if d > Config.MAX_RANGE:
 		return false
-	if not analysis.los(observer.cell(), Config.EYE_H, target.cell(), Config.CENTER_H):
+	if not analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.center_h()):
 		return false
 	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
 		return true
@@ -160,7 +163,7 @@ func _can_spot(observer: Unit, target: Unit) -> bool:
 	if d > Config.SPOT_RANGE_STATIONARY:
 		return false
 	# Quieto entre los dos alcances: solo si se le ve el casco
-	return analysis.los(observer.cell(), Config.EYE_H, target.cell(), Config.HULL_H)
+	return analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.profile_h())
 
 
 func recently_fired(u: Unit) -> bool:
@@ -171,29 +174,32 @@ func recently_fired(u: Unit) -> bool:
 ## el blanco tiene que ser visible para el bando).
 func _can_see(observer: Unit, target: Unit, target_h: float) -> bool:
 	return TerrainAnalysis.dist_m(observer.cell(), target.cell()) <= Config.MAX_RANGE \
-		and analysis.los(observer.cell(), Config.EYE_H, target.cell(), target_h)
+		and analysis.los(observer.cell(), observer.eye_h(), target.cell(), target_h)
 
 
-## Exposición del bando (se calcula la primera vez que se pide).
-func exposure_for(side: int) -> PackedFloat32Array:
-	if _exposure[side].is_empty():
-		_exposure[side] = analysis.exposure_map(threats_for(side))
-	return _exposure[side]
+## Exposición del bando para un tipo de unidad (se calcula la primera vez que se pide).
+func exposure_for(side: int, kind: int = Unit.Kind.TANK) -> PackedFloat32Array:
+	var i: int = side * 2 + kind
+	if _exposure[i].is_empty():
+		var h: float = Config.INF_STAND_H if kind == Unit.Kind.INFANTRY else Config.HULL_H
+		_exposure[i] = analysis.exposure_map(threats_for(side), h)
+	return _exposure[i]
 
 
 ## Fuerza a recalcular la exposición de ambos bandos.
 func invalidate_exposure() -> void:
-	_exposure = [PackedFloat32Array(), PackedFloat32Array()]
-	_pathfinder_side = -1
+	_exposure = [PackedFloat32Array(), PackedFloat32Array(), PackedFloat32Array(), PackedFloat32Array()]
+	_pathfinder_side = [-1, -1]
 
 
 ## Ruta para una unidad desde from hasta to, con la exposición de su bando (sin la celda from).
 ## Vacía si no hay ruta. No mira la fase: también sirve para rutas decididas en EXECUTE.
 func _route(u: Unit, from: Vector2i, to: Vector2i, covered: bool) -> Array[Vector2i]:
-	if covered and _pathfinder_side != u.side:
-		pathfinder.set_exposure(exposure_for(u.side))
-		_pathfinder_side = u.side
-	var path: Array[Vector2i] = pathfinder.find_path(from, to, covered)
+	var pf: Pathfinder = pathfinders[u.kind]
+	if covered and _pathfinder_side[u.kind] != u.side:
+		pf.set_exposure(exposure_for(u.side, u.kind))
+		_pathfinder_side[u.kind] = u.side
+	var path: Array[Vector2i] = pf.find_path(from, to, covered)
 	if not path.is_empty():
 		path.remove_at(0)
 	return path
@@ -492,7 +498,7 @@ func order_withdraw(unit_id: int, target_cell: Vector2i = Vector2i(-1, -1)) -> b
 		return false
 	var threats: Array[Vector2i] = threats_for(u.side)
 	if not height_field.in_bounds(target_cell):
-		target_cell = lowest_exposure_cell(u.side, u.cell(), Config.WITHDRAW_RADIUS)
+		target_cell = lowest_exposure_cell(u.side, u.cell(), Config.WITHDRAW_RADIUS, u.kind)
 		if target_cell == u.cell():
 			target_cell = _back_target(u)
 	if target_cell == u.cell():
@@ -508,8 +514,9 @@ func order_withdraw(unit_id: int, target_cell: Vector2i = Vector2i(-1, -1)) -> b
 
 
 ## Celda transitable de menor exposición del bando dentro de radius (desempate: la más cercana).
-func lowest_exposure_cell(side: int, origin: Vector2i, radius: int) -> Vector2i:
-	var exposure: PackedFloat32Array = exposure_for(side)
+func lowest_exposure_cell(side: int, origin: Vector2i, radius: int, kind: int = Unit.Kind.TANK) -> Vector2i:
+	var exposure: PackedFloat32Array = exposure_for(side, kind)
+	var pf: Pathfinder = pathfinders[kind]
 	var n: int = height_field.size
 	var best: Vector2i = origin
 	var best_e: float = exposure[origin.y * n + origin.x]
@@ -517,7 +524,7 @@ func lowest_exposure_cell(side: int, origin: Vector2i, radius: int) -> Vector2i:
 	for dy: int in range(-radius, radius + 1):
 		for dx: int in range(-radius, radius + 1):
 			var c: Vector2i = origin + Vector2i(dx, dy)
-			if dx * dx + dy * dy > radius * radius or not pathfinder.is_walkable(c):
+			if dx * dx + dy * dy > radius * radius or not pf.is_walkable(c):
 				continue
 			var e: float = exposure[c.y * n + c.x]
 			var d: float = Vector2(dx, dy).length()
@@ -533,7 +540,7 @@ func _back_target(u: Unit) -> Vector2i:
 	var dir: Vector2 = -u.heading.normalized()
 	for back: int in Config.WITHDRAW_RADIUS:
 		var c: Vector2i = Vector2i((u.pos + dir * float(Config.WITHDRAW_RADIUS - back)).round())
-		if height_field.in_bounds(c) and pathfinder.is_walkable(c):
+		if height_field.in_bounds(c) and pathfinders[u.kind].is_walkable(c):
 			return c
 	return u.cell()
 
@@ -609,7 +616,7 @@ func order_smoke(unit_id: int, cell: Vector2i) -> bool:
 
 func can_smoke_at(u: Unit, cell: Vector2i) -> bool:
 	return TerrainAnalysis.dist_m(u.cell(), cell) <= Config.SMOKE_RANGE \
-		and analysis.los(u.cell(), Config.EYE_H, cell, 1.0)
+		and analysis.los(u.cell(), u.eye_h(), cell, 1.0)
 
 
 ## Fin de turno: cada nube pierde un turno y se van las que llegaron a cero.
@@ -637,7 +644,7 @@ func order_attack(unit_id: int, enemy_id: int) -> bool:
 		return false
 	if phase != Phase.PLAN or not known_enemies[u.side].has(enemy_id):
 		return false
-	if _can_see(u, enemy, Config.CENTER_H) and visible_enemies[u.side].has(enemy_id):
+	if _can_see(u, enemy, enemy.center_h()) and visible_enemies[u.side].has(enemy_id):
 		u.path.clear()
 		u.moving = false
 		u.final_heading = Vector2.ZERO
@@ -660,7 +667,7 @@ func _update_attackers() -> void:
 			u.order = Unit.Order.NONE
 			u.path.clear()
 			u.moving = false
-		elif not u.path.is_empty() and visible_enemies[u.side].has(enemy.id) and _can_see(u, enemy, Config.CENTER_H):
+		elif not u.path.is_empty() and visible_enemies[u.side].has(enemy.id) and _can_see(u, enemy, enemy.center_h()):
 			u.path.clear()
 			u.moving = false
 			u.final_heading = Vector2.ZERO
@@ -689,10 +696,11 @@ func order_hulldown(unit_ids: Array[int], already_reserved: Array[Vector2i] = []
 		if threats.is_empty():
 			target = _advance_target(u.cell())
 		else:
-			var cands: Array[Dictionary] = analysis.hulldown_candidates(u.cell(), threats, Config.HULLDOWN_RADIUS)
+			var cands: Array[Dictionary] = analysis.hulldown_candidates(u.cell(), threats, Config.HULLDOWN_RADIUS,
+				u.eye_h(), u.profile_h(), u.center_h())
 			for c: Dictionary in cands:
 				var cell: Vector2i = c["cell"]
-				if pathfinder.is_walkable(cell) and is_free(cell, reserved):
+				if pathfinders[u.kind].is_walkable(cell) and is_free(cell, reserved):
 					target = cell
 					break
 		if order_move(u.id, target, facing_to_threats(target, threats)):
@@ -820,7 +828,7 @@ func _pick_target(shooter: Unit) -> Unit:
 ## Línea de tiro y dentro del arco y la distancia máxima de enganche del tirador.
 func _can_engage(shooter: Unit, enemy: Unit) -> bool:
 	return TerrainAnalysis.dist_m(shooter.cell(), enemy.cell()) <= shooter.max_engage_m \
-		and in_fire_arc(shooter, enemy.pos) and _can_see(shooter, enemy, Config.CENTER_H)
+		and in_fire_arc(shooter, enemy.pos) and _can_see(shooter, enemy, enemy.center_h())
 
 
 ## ¿La ROE de u le deja abrir fuego ahora?
@@ -900,7 +908,7 @@ func hit_probability(shooter: Unit, target: Unit) -> float:
 	var d: float = TerrainAnalysis.dist_m(shooter.cell(), target.cell())
 	var f_dist: float = clampf(1.0 - d / Config.MAX_RANGE, 0.2, 1.0)
 	var f_hull: float = 1.0
-	if not analysis.los(shooter.cell(), Config.EYE_H, target.cell(), Config.HULL_H):
+	if not analysis.los(shooter.cell(), shooter.eye_h(), target.cell(), target.profile_h()):
 		f_hull = hulldown_hit_factor
 	var f_move: float = 1.0
 	if shooter.moving:
@@ -919,11 +927,12 @@ func hit_probability(shooter: Unit, target: Unit) -> float:
 
 ## Probabilidad de que un tirador quieto en shooter_cell impacte a un blanco en target_cell
 ## con ese heading (para la vista previa de riesgo: sin emboscada ni movimiento del tirador).
-func hit_probability_at(shooter_cell: Vector2i, target_cell: Vector2i, target_heading: Vector2) -> float:
+func hit_probability_at(shooter_cell: Vector2i, target_cell: Vector2i, target_heading: Vector2,
+		target_profile_h: float = Config.HULL_H) -> float:
 	var d: float = TerrainAnalysis.dist_m(shooter_cell, target_cell)
 	var f_dist: float = clampf(1.0 - d / Config.MAX_RANGE, 0.2, 1.0)
 	var f_hull: float = 1.0
-	if not analysis.los(shooter_cell, Config.EYE_H, target_cell, Config.HULL_H):
+	if not analysis.los(shooter_cell, Config.EYE_H, target_cell, target_profile_h):
 		f_hull = hulldown_hit_factor
 	var f_armor: float = 1.0
 	if armor_enabled:
@@ -955,7 +964,7 @@ func route_risk(unit_id: int) -> Dictionary:
 	var worst: int = -1
 	for c: Vector2i in u.path:
 		var delta: Vector2 = Vector2(c) - pos
-		var speed: float = speed_at(c) * pace_speed_factor(pace) * (Config.REVERSE_SPEED_FACTOR if u.reversing else 1.0)
+		var speed: float = speed_at(c, u.kind) * pace_speed_factor(pace) * (Config.REVERSE_SPEED_FACTOR if u.reversing else 1.0)
 		var dt: float = delta.length() * Config.CELL_SIZE / maxf(speed, 0.01)
 		if not u.reversing and delta.length() > 0.0001:
 			heading = delta.normalized()
@@ -964,11 +973,11 @@ func route_risk(unit_id: int) -> Dictionary:
 		for i: int in threats.size():
 			var th: Vector2i = threats[i]
 			if TerrainAnalysis.dist_m(th, c) > minf(spot_m, Config.MAX_RANGE) \
-					or not analysis.los(th, Config.EYE_H, c, Config.CENTER_H):
+					or not analysis.los(th, Config.EYE_H, c, u.center_h()):
 				continue
 			seen_here = true
 			seeing[i] = true
-			hits += dt / Config.RELOAD_SECONDS * hit_probability_at(th, c, heading)
+			hits += dt / Config.RELOAD_SECONDS * hit_probability_at(th, c, heading, u.profile_h())
 			worst = maxi(worst, aspect_from(heading, Vector2(c), Vector2(th)))
 		if seen_here:
 			exposed_s += dt
@@ -1021,13 +1030,15 @@ func _end_turn() -> void:
 	start_plan()
 
 
-func speed_at(c: Vector2i) -> float:
-	var t: float = clampf(height_field.slope_at(c) / Config.PATH_MAX_SLOPE, 0.0, 1.0)
-	return Config.TANK_SPEED * lerpf(1.0, Config.SLOPE_SPEED_PENALTY, t)
+func speed_at(c: Vector2i, kind: int = Unit.Kind.TANK) -> float:
+	var max_slope: float = Config.INF_MAX_SLOPE if kind == Unit.Kind.INFANTRY else Config.PATH_MAX_SLOPE
+	var base: float = Config.INF_SPEED if kind == Unit.Kind.INFANTRY else Config.TANK_SPEED
+	var t: float = clampf(height_field.slope_at(c) / max_slope, 0.0, 1.0)
+	return base * lerpf(1.0, Config.SLOPE_SPEED_PENALTY, t)
 
 
 func _advance(u: Unit, dt: float) -> void:
-	var budget_m: float = speed_at(u.cell()) * pace_speed_factor(effective_pace(u)) * dt
+	var budget_m: float = speed_at(u.cell(), u.kind) * pace_speed_factor(effective_pace(u)) * dt
 	if u.reversing:
 		budget_m *= Config.REVERSE_SPEED_FACTOR
 	while budget_m > 0.0 and not u.path.is_empty():

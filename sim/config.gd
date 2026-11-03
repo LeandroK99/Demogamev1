@@ -30,6 +30,15 @@ const ARMOR_FRONT_FACTOR: float = 0.6 # multiplicador de impacto si el tirador e
 const ARMOR_FLANK_FACTOR: float = 1.0
 const ARMOR_REAR_FACTOR: float = 1.4
 
+# --- Infantería ---
+const INF_MEN: int = 9 # hombres por escuadra
+const INF_EYE_H: float = 1.7 # altura del ojo de pie
+const INF_STAND_H: float = 1.0 # perfil de una escuadra de pie (agachada, en movimiento)
+const INF_PRONE_H: float = 0.4 # perfil cuerpo a tierra
+const INF_CENTER_FRACTION: float = 0.6 # fracción del perfil a la que se apunta
+const INF_SPEED: float = 1.5 # m/s en llano
+const INF_MAX_SLOPE: float = 8.0 # metros; la infantería sube pendientes que el tanque no
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3

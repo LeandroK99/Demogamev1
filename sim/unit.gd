@@ -1,6 +1,8 @@
 class_name Unit
 extends RefCounted
-## Un tanque de la simulación.
+## Una unidad de la simulación: un tanque o una escuadra de infantería (ver kind).
+
+enum Kind { TANK, INFANTRY }
 
 enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW }
 ## Reglas de fuego: libre, solo si te dispararon hace poco, o retener.
@@ -9,6 +11,7 @@ enum Roe { FREE, RETURN_FIRE, HOLD }
 enum Pace { NORMAL, FAST, CAUTIOUS }
 
 var id: int = 0
+var kind: int = Kind.TANK
 var side: int = 0 # 0 azul, 1 rojo
 var pos: Vector2 = Vector2.ZERO # en celdas, continua
 var heading: Vector2 = Vector2(0.0, -1.0) # dirección de marcha en la grilla
@@ -28,6 +31,7 @@ var scoot_fired: bool = false # disparar y replegarse: ya hizo su disparo
 var reversing: bool = false # marcha atrás: no gira el casco al moverse
 var order: int = Order.NONE
 var moving: bool = false
+var prone: bool = false # infantería cuerpo a tierra
 var waiting: bool = false # tiene ruta pero espera la condición del tramo actual
 var alive: bool = true
 var last_fire_tick: int = -1000000 # tick global del último disparo
@@ -40,12 +44,40 @@ var last_fired_upon_tick: int = -1000000 # tick global del último disparo recib
 var pace: int = Pace.NORMAL # ritmo; dura hasta que se cambie (ASSAULT siempre va rápido)
 
 
-func _init(p_id: int, p_side: int, p_pos: Vector2) -> void:
+func _init(p_id: int, p_side: int, p_pos: Vector2, p_kind: int = Kind.TANK) -> void:
 	id = p_id
 	side = p_side
 	pos = p_pos
+	kind = p_kind
+	hp = max_hp()
 	heading = Vector2(0.0, -1.0) if side == 0 else Vector2(0.0, 1.0)
 
 
 func cell() -> Vector2i:
 	return Vector2i(roundi(pos.x), roundi(pos.y))
+
+
+func is_infantry() -> bool:
+	return kind == Kind.INFANTRY
+
+
+## Vida máxima: impactos para destruir un tanque, hombres de una escuadra.
+func max_hp() -> int:
+	return Config.INF_MEN if is_infantry() else Config.TANK_HP
+
+
+## Altura del ojo (o la óptica) sobre el terreno.
+func eye_h() -> float:
+	return Config.INF_EYE_H if is_infantry() else Config.EYE_H
+
+
+## Altura del perfil que hay que ver para "verle el casco" (o a la escuadra entera).
+func profile_h() -> float:
+	if is_infantry():
+		return Config.INF_PRONE_H if prone else Config.INF_STAND_H
+	return Config.HULL_H
+
+
+## Altura a la que se apunta (y que hay que ver para detectarla).
+func center_h() -> float:
+	return profile_h() * Config.INF_CENTER_FRACTION if is_infantry() else Config.CENTER_H
