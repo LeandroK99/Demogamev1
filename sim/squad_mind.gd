@@ -5,7 +5,7 @@ extends RefCounted
 ## las opciones está en MindSim; acá queda el estado y la regla para cambiar de opción.
 
 ## FOLLOW cumple la orden del jugador; las demás son decisiones propias.
-enum Option { FOLLOW, CONTACT_DRILL, RELOCATE, AMBUSH, BREAK_CONTACT, BOUND, FLANK, RESCUE, NEAR_AMBUSH, CROSS }
+enum Option { FOLLOW, CONTACT_DRILL, RELOCATE, AMBUSH, BREAK_CONTACT, BOUND, FLANK, RESCUE, NEAR_AMBUSH, CROSS, CORNER }
 ## Estricta: solo cumple la orden. Normal: reacciona (drill, reubicarse, emboscar, rescatar).
 ## Normal también avanza por fuego y movimiento. Alta: además flanquea y rompe el contacto sola
 ## (solo diezmada de verdad).
@@ -19,9 +19,9 @@ enum Quality { VETERAN, REGULAR, GREEN }
 
 ## Para la radio y el HUD.
 const OPTION_NAMES: Array[String] = ["sigue la orden", "contacto", "se reubica", "emboscada",
-	"rompe el contacto", "avanza por saltos", "flanquea", "rescata un herido", "asalta la emboscada", "cruza la zona de peligro"]
+	"rompe el contacto", "avanza por saltos", "flanquea", "rescata un herido", "asalta la emboscada", "cruza la zona de peligro", "corta la torta en la esquina"]
 ## Ícono de intención sobre la escuadra (vacío = cumple la orden).
-const INTENT_SHORT: Array[String] = ["", "CONTACTO", "REUBICA", "EMBOSCADA", "SE REPLIEGA", "SALTOS", "FLANQUEA", "RESCATE", "ASALTO", "CRUZA"]
+const INTENT_SHORT: Array[String] = ["", "CONTACTO", "REUBICA", "EMBOSCADA", "SE REPLIEGA", "SALTOS", "FLANQUEA", "RESCATE", "ASALTO", "CRUZA", "ESQUINA"]
 const AUTONOMY_NAMES: Array[String] = ["estricta", "normal", "alta"]
 const QUALITY_NAMES: Array[String] = ["veterano", "regular", "novato"]
 
@@ -51,6 +51,7 @@ var bound_alternate: bool = true # el último salto fue alternado (si no, sucesi
 var path_order: int = 0 # la orden con la que iba en marcha
 var had_path: bool = false # el tick anterior tenía ruta (para detectar la llegada y consolidar)
 var crawling: bool = false # clavada en marcha: repta en vez de quedarse quieta (fase 53)
+var corner: Dictionary = {} # la esquina ciega que vio al pensar (fase 64)
 var rushing: bool = false # bajo fuego, los que avanzan van a carreras cortas (ver InfantrySim)
 var pending: Dictionary = {} # enemigos con un aviso de radio en camino
 var halted_since: int = -1 # tick desde el que la supresión la tiene frenada (-1 = no lo está)
@@ -65,7 +66,7 @@ static func allowed(p_autonomy: int, opt: int) -> bool:
 	match opt:
 		Option.FOLLOW:
 			return true
-		Option.CONTACT_DRILL, Option.RELOCATE, Option.AMBUSH, Option.RESCUE, Option.BOUND, Option.NEAR_AMBUSH, Option.CROSS:
+		Option.CONTACT_DRILL, Option.RELOCATE, Option.AMBUSH, Option.RESCUE, Option.BOUND, Option.NEAR_AMBUSH, Option.CROSS, Option.CORNER:
 			return p_autonomy >= Autonomy.NORMAL
 	return p_autonomy >= Autonomy.HIGH
 

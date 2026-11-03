@@ -242,7 +242,7 @@ func infantry_position(world: SimWorld, u: Unit, threats: Array[Vector2i], reser
 
 ## Reparte los papeles la primera vez (solo en la loma, con dos escuadras o más).
 func assign_roles(world: SimWorld) -> void:
-	if not roles.is_empty() or world.scenario != SimWorld.Scenario.LOMA:
+	if not roles.is_empty() or not world.has_objective():
 		return
 	var squads: Array[Unit] = []
 	for u: Unit in world.units:
@@ -269,8 +269,27 @@ func role_anchor(world: SimWorld, role: int) -> Vector2i:
 		Role.RESERVE:
 			off = Config.AI_DEPTH_RESERVE
 	var c: Vector2i = world.objective_cell() + Vector2i(off.x, off.y * forward().y)
+	if world.buildings != null:
+		return _house_near(world, c)
 	var n: int = world.height_field.size - 1
 	return world._nearest_walkable(Vector2i(clampi(c.x, 0, n), clampi(c.y, 0, n)), Unit.Kind.INFANTRY)
+
+
+## En el pueblo: la celda del centro de la casa más cercana a c (que no tenga ya otra escuadra).
+func _house_near(world: SimWorld, c: Vector2i) -> Vector2i:
+	var bm: BuildingMap = world.buildings
+	var best: Vector2i = c
+	var best_d: float = INF
+	for r: Rect2i in bm.houses:
+		var center_m: Vector2 = MicroCover.center_m(r.position + r.size / 2)
+		var cell: Vector2i = Vector2i((center_m / Config.CELL_SIZE).round())
+		if anchors.values().has(cell):
+			continue
+		var d: float = Vector2(cell).distance_to(Vector2(c))
+		if d < best_d:
+			best = cell
+			best_d = d
+	return best
 
 
 func role_of(unit_id: int) -> int:

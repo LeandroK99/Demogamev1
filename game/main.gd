@@ -23,6 +23,8 @@ func _ready() -> void:
 	var args: PackedStringArray = OS.get_cmdline_user_args()
 	if args.has("--loma"):
 		scenario = SimWorld.Scenario.LOMA
+	if args.has("--pueblo"):
+		scenario = SimWorld.Scenario.PUEBLO
 	_build_environment()
 	_start_game(map_seed)
 	if args.has("--autoplay"):
@@ -33,8 +35,8 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	var key: InputEventKey = event as InputEventKey
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_L:
-		# L: alterna entre la demo de tanques y la loma (reinicia la partida)
-		scenario = SimWorld.Scenario.LOMA if scenario == SimWorld.Scenario.TANKS else SimWorld.Scenario.TANKS
+		# L: tanques -> la loma -> el pueblo (reinicia la partida)
+		scenario = (scenario + 1) % 3
 		_start_game(map_seed)
 		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_R:
@@ -74,6 +76,11 @@ func _start_game(p_seed: int) -> void:
 		cover_view.setup(world.cover, height_field)
 		if world.micro != null:
 			cover_view.setup_micro(world.micro, height_field)
+
+	if world.buildings != null:
+		var bv: BuildingView = BuildingView.new()
+		_game_root.add_child(bv)
+		bv.setup(world.buildings, height_field, camera_rig)
 
 	for u: Unit in world.units:
 		var v: UnitView = UnitView.new()

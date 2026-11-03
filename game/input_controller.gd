@@ -155,6 +155,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_V:
 		_order_overwatch_at(get_viewport().get_mouse_position())
 		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_I:
+		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty() and world.buildings != null:
+			pending_mode = "breach"
+		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_M:
 		_mission_at(get_viewport().get_mouse_position(), key.shift_pressed)
 		return
@@ -277,6 +281,12 @@ func _right_pressed(screen: Vector2, direct: bool, append: bool) -> void:
 		var p: Platoon = selected_platoon()
 		if p != null:
 			world.order_platoon_bound(p.id, world.height_field.world_to_cell(hit as Vector3))
+		return
+	if pending_mode == "breach":
+		pending_mode = ""
+		var at: Vector2 = Vector2((hit as Vector3).x, (hit as Vector3).z)
+		for id: int in selected_ids:
+			world.order_breach(id, at)
 		return
 	if pending_mode == "assault":
 		pending_mode = ""
@@ -560,15 +570,15 @@ func _draw_paths() -> void:
 		if u.attack_target >= 0 and world.known_enemies[PLAYER_SIDE].has(u.attack_target):
 			var cell: Vector2i = world.known_enemies[PLAYER_SIDE][u.attack_target]["cell"]
 			_seg(segs, colors, start + Vector3.UP * 2.0, _ground(Vector2(cell)) + Vector3.UP * 2.0, COLOR_ATTACK)
-	# Objetivo de la loma: un círculo sobre la cresta
-	if world.scenario == SimWorld.Scenario.LOMA:
+	# Objetivo de la loma (o la plaza del pueblo): un círculo
+	if world.has_objective():
 		var oc: Vector2 = Vector2(world.objective_cell())
 		var steps: int = 24
 		for i: int in steps:
 			var a0: float = TAU * float(i) / float(steps)
 			var a1: float = TAU * float(i + 1) / float(steps)
-			_seg(segs, colors, _ground(oc + Vector2.from_angle(a0) * Config.LOMA_OBJECTIVE_RADIUS),
-				_ground(oc + Vector2.from_angle(a1) * Config.LOMA_OBJECTIVE_RADIUS), COLOR_WAYPOINT)
+			_seg(segs, colors, _ground(oc + Vector2.from_angle(a0) * world.objective_radius()),
+				_ground(oc + Vector2.from_angle(a1) * world.objective_radius()), COLOR_WAYPOINT)
 	# Vista previa mientras se arrastra el derecho
 	if _rdragging and _rdrag_facing != Vector2.ZERO:
 		var t: Vector3 = _rdrag_target as Vector3

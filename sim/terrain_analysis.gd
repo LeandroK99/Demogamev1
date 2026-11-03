@@ -8,6 +8,7 @@ var height_field: HeightField
 var smoke: Array[Dictionary] = []
 var cover: CoverMap = null # bosques que cortan la línea de visión (null = sin cobertura)
 var micro: MicroCover = null # microcobertura a 1 m para los soldados (null = sin)
+var buildings: BuildingMap = null # casas (fase 60); null = sin
 
 
 func _init(hf: HeightField) -> void:
@@ -53,6 +54,8 @@ func los(from_cell: Vector2i, from_h: float, to_cell: Vector2i, to_h: float) -> 
 			if forest_left < 0.0:
 				return false
 		t += t_step
+	if buildings != null and buildings.blocks(hf, Vector2(ax, ay) * Config.CELL_SIZE, ha, Vector2(ax + dx, ay + dy) * Config.CELL_SIZE, ha + dh):
+		return false
 	if smoke.is_empty():
 		return true
 	return not _smoke_blocks(Vector2(ax, ay), Vector2(dx, dy), ha, dh)
@@ -100,6 +103,8 @@ func los_m(a: Vector2, a_h: float, b: Vector2, b_h: float) -> bool:
 				if o > 0.0 and ha + (hb - ha) * tt < hf.height_at(p * inv_cell) + o:
 					return false
 				s += Config.MICRO_LOS_STEP
+	if buildings != null and buildings.blocks(hf, a, ha, b, hb):
+		return false
 	if smoke.is_empty():
 		return true
 	return not _smoke_blocks(a * inv_cell, d * inv_cell, ha, hb - ha)

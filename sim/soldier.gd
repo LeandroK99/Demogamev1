@@ -67,6 +67,14 @@ var fpl_dir: Vector2 = Vector2.ZERO
 var dig_time: float = 0.0 # segundos cavando en su lugar (fase 57)
 var bursts_here: int = 0 # ráfagas desde su posición actual (la ametralladora cambia de lugar)
 var avoid_pos: Vector2 = Vector2(-1.0, -1.0) # posición que dejó por estar ubicada
+var route: PackedVector2Array = PackedVector2Array() # con casas: puntos por los que va (fase 60)
+var route_goal: Vector2 = Vector2.ZERO # destino para el que se armó la ruta
+var slot_goal: Vector2 = Vector2.ZERO # su lugar en la formación, corrido afuera de una casa ajena
+var has_slot_goal: bool = false
+var task_pos: Vector2 = Vector2(-1.0, -1.0) # tarea suelta (cortar la torta, fase 64): va acá, no a su lugar
+var task_posture: int = -1 # ... y en esta postura (-1 = la de siempre)
+var post_pos: Vector2 = Vector2(-1.0, -1.0) # puesto fijo (la ametralladora en la aspillera, fase 63)
+var unreachable: bool = false # no hay ruta a su lugar: la escuadra no lo espera
 var marksman: bool = false # tirador selecto (fase 54): fusil con mira, ve y tira más lejos
 
 

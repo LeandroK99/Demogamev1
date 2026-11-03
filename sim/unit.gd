@@ -8,7 +8,7 @@ enum Kind { TANK, INFANTRY }
 ## tira con la suya: fusil, ametralladora (MG, en ráfagas) o antitanque.
 enum Weapon { CANNON, COAX, RIFLES, AT, MG, GRENADE }
 
-enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW, SUPPRESS }
+enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW, SUPPRESS, BREACH }
 ## Reglas de fuego: libre, solo si te dispararon hace poco, o retener.
 enum Roe { FREE, RETURN_FIRE, HOLD }
 ## Ritmo de marcha: normal, rápido (más veloz, tira peor) o cauto (lento, se detecta como si estuviera quieto).
@@ -52,6 +52,9 @@ var waiting: bool = false # tiene ruta pero espera la condición del tramo actua
 var alive: bool = true
 var last_fire_tick: int = -1000000 # tick global del último disparo
 var smoke_charges: int = Config.SMOKE_CHARGES
+var breach_charges: int = Config.BREACH_CHARGES # cargas de demolición (infantería, fase 65)
+var breach_m: Vector2 = Vector2(-1.0, -1.0) # orden BREACH: la pared a abrir (metros)
+var breach_time: float = 0.0 # segundos poniendo la carga
 var shots_received: int = 0 # disparos recibidos (impacten o no)
 var roe: int = Roe.FREE # reglas de fuego; duran hasta que se cambien (no las borra otra orden)
 var fire_arc_dir: Vector2 = Vector2.ZERO # centro del arco de tiro (cero = sin arco)
@@ -124,8 +127,9 @@ static func formation_offset(i: int, f: int, side: float = 1.0) -> Vector2:
 	var s: float = Config.SOLDIER_SPACING
 	match f:
 		Formation.ECHELON:
-			# En diagonal hacia atrás y hacia el lado del escalón
-			return Vector2(side * float(i) * s, float(i) * s * 0.7)
+			# En diagonal hacia atrás y hacia el lado del escalón, apretado (tan ancho como un brazo de
+			# la cuña: si no, abierta en terreno limpio medía 50 m)
+			return Vector2(side * float(i) * s * 0.5, float(i) * s * 0.5)
 		Formation.FILE:
 			return Vector2(0.0, float(i) * s)
 		Formation.LINE:

@@ -6,7 +6,7 @@ extends RefCounted
 enum Phase { PLAN, EXECUTE }
 ## TANKS: la demo original (4 tanques por bando, sin cobertura). LOMA: infantería y un tanque
 ## por bando, con cobertura; el rojo defiende la cresta central.
-enum Scenario { TANKS, LOMA }
+enum Scenario { TANKS, LOMA, PUEBLO }
 enum Aspect { FRONT, FLANK, REAR }
 const NO_WINNER: int = -1
 const DRAW: int = 2
@@ -66,6 +66,8 @@ var scenario: int = Scenario.TANKS
 var _forcing: bool = false # órdenes que da la propia simulación (una retirada por moral quebrada)
 var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
 var micro: MicroCover = null # microcobertura a 1 m (piedras, cráteres, pircas); null = sin ella
+var buildings: BuildingMap = null # casas a 1 m (fase 60); null = sin
+var facade: PackedByteArray = PackedByteArray() # por celda: distancia (celdas) a una casa, hasta FACADE_MAX (fase 62); 255 lejos
 var inf: InfantrySim = InfantrySim.new() # los soldados de las escuadras
 var minds: MindSim = MindSim.new() # la autonomía de las escuadras
 ## Radio: lo que las escuadras deciden por su cuenta. {tick, turn, side, unit, text}, el último al final.
@@ -102,6 +104,8 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 		mc.generate(sim_seed, cm)
 		set_micro(mc)
 		_deploy_loma()
+	elif scenario == Scenario.PUEBLO:
+		_setup_pueblo(sim_seed)
 	else:
 		_deploy()
 	update_detection()
@@ -154,6 +158,135 @@ func _deploy_loma() -> void:
 		platoons.append(Platoon.new(side, side, secs))
 
 
+## El pueblo (fase 61): terreno aplanado en el centro con casas, calles y plaza; sin bosques ni
+## microcobertura suelta adentro. El azul entra desde el sur como en la loma; el rojo defiende
+## desde las casas (ver AICommander) y su tanque espera detrás de la plaza.
+func _setup_pueblo(sim_seed: int) -> void:
+	ticks_per_turn = roundi(Config.LOMA_TURN_SECONDS / Config.TICK)
+	var bm: BuildingMap = TownGenerator.build(height_field, sim_seed)
+	# El terreno cambió: los A* se rehacen
+	pathfinders = [Pathfinder.new(height_field), Pathfinder.new(height_field, Config.INF_MAX_SLOPE)]
+	pathfinder = pathfinders[Unit.Kind.TANK]
+	var area: Rect2i = TownGenerator.area_cells(height_field)
+	var cm: CoverMap = CoverMap.new(height_field.size)
+	cm.generate(sim_seed)
+	for y: int in range(area.position.y, area.end.y):
+		for x: int in range(area.position.x, area.end.x):
+			cm.set_type(Vector2i(x, y), CoverMap.Type.NONE)
+	set_cover(cm)
+	var mc: MicroCover = MicroCover.new(height_field.size)
+	mc.generate(sim_seed, cm)
+	var per: int = Config.MICRO_PER_CELL
+	for y: int in range(area.position.y * per - per / 2, area.end.y * per - per / 2):
+		for x: int in range(area.position.x * per - per / 2, area.end.x * per - per / 2):
+			mc.set_type(Vector2i(x, y), MicroCover.Type.NONE)
+	set_micro(mc)
+	set_buildings(bm)
+	_deploy_loma()
+	# El rojo: escuadras a las casas de sus papeles (AICommander), el tanque detrás de la plaza
+	for u: Unit in units:
+		if u.side == 1 and not u.is_infantry():
+			var c: Vector2i = objective_cell() - Vector2i(0, Config.TOWN_RED_TANK_BACK)
+			u.pos = Vector2(_nearest_walkable(c, Unit.Kind.TANK))
+	if ai != null:
+		ai.assign_roles(self)
+		for id: int in ai.roles:
+			var u: Unit = units[id]
+			u.pos = Vector2(ai.anchors[id])
+			u.snap_soldiers()
+			inf.prepare_house(self, u, Vector2(objective_cell().x, height_field.size - 1) * Config.CELL_SIZE)
+
+
+## Abrir un boquete (fase 65) en la pared más cercana a at_m. Un tanque lo abre de un cañonazo
+## desde donde está (con línea de visión a la pared); una escuadra va hasta la pared y pone una
+## carga. Solo en PLAN.
+func order_breach(unit_id: int, at_m: Vector2) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if not _can_order(u) or buildings == null:
+		return false
+	var c: Vector2i = buildings.nearest_wall(at_m)
+	if c.x < 0:
+		return false
+	var face: Vector2 = buildings.outside_of(c, 0.6)
+	if u.is_infantry():
+		if u.breach_charges <= 0:
+			return false
+		var stand: Vector2 = buildings.outside_of(c, 1.5)
+		if not order_move(unit_id, _nearest_walkable(Vector2i((stand / Config.CELL_SIZE).round()), Unit.Kind.INFANTRY)):
+			return false
+		u.breach_m = MicroCover.center_m(c)
+		u.breach_time = 0.0
+		return true # va como MOVE; al llegar pone la carga
+	else:
+		if face.distance_to(u.pos_m()) > Config.BREACH_TANK_RANGE_M:
+			return false
+		_new_intent(u)
+		u.path.clear()
+		u.waypoints.clear()
+		u.moving = false
+		_face(u, face / Config.CELL_SIZE)
+	u.order = Unit.Order.BREACH
+	u.breach_m = MicroCover.center_m(c)
+	u.breach_time = 0.0
+	return true
+
+
+## Boquetes pendientes: el tanque tira cuando está listo y ve la pared; la escuadra, al llegar,
+## pone la carga y a los BREACH_CHARGE_SECONDS vuela la pared (y lo que haya detrás).
+func _update_breaches() -> void:
+	if buildings == null:
+		return
+	for u: Unit in units:
+		if not u.alive or u.breach_m.x < 0.0:
+			continue
+		if u.order != Unit.Order.BREACH and u.order != Unit.Order.NONE and u.order != Unit.Order.MOVE:
+			_finish_breach(u) # le dieron otra orden
+			continue
+		var c: Vector2i = MicroCover.cell_of(u.breach_m)
+		if buildings.type_at(c) != BuildingMap.Type.WALL and buildings.type_at(c) != BuildingMap.Type.WINDOW:
+			_finish_breach(u)
+			continue
+		var face: Vector2 = buildings.outside_of(c, 0.6)
+		if u.is_infantry():
+			if u.moving or not u.path.is_empty() or u.pos_m().distance_to(face) > Config.BREACH_REACH_M + Config.CELL_SIZE:
+				continue
+			u.breach_time += Config.TICK
+			if u.breach_time >= Config.BREACH_CHARGE_SECONDS:
+				u.breach_charges -= 1
+				_blow(u, c)
+		elif u.reload_left <= 0.0 and analysis.los_m(u.pos_m(), Config.EYE_H, face, 1.0):
+			u.reload_left = weapon_reload(Unit.Weapon.CANNON)
+			u.last_fire_tick = total_ticks
+			shot_events.append({"shooter": u.id, "target": -1, "hit": true, "aspect": Aspect.FRONT, "weapon": Unit.Weapon.AT,
+				"from_m": u.pos_m(), "from_h": Config.EYE_H, "to_m": face, "to_h": 1.2})
+			_blow(u, c)
+
+
+func _blow(u: Unit, c: Vector2i) -> void:
+	buildings.breach(c)
+	inf.explode(self, MicroCover.center_m(c), u, u.pos_m()) # lo que haya detrás de la pared lo siente
+	radio(u, "¡boquete abierto!")
+	invalidate_exposure()
+	_finish_breach(u)
+
+
+func _finish_breach(u: Unit) -> void:
+	u.breach_m = Vector2(-1.0, -1.0)
+	u.breach_time = 0.0
+	if u.order == Unit.Order.BREACH:
+		u.order = Unit.Order.NONE
+
+
+## ¿El escenario tiene un objetivo a ocupar (la cresta, la plaza)?
+func has_objective() -> bool:
+	return scenario == Scenario.LOMA or scenario == Scenario.PUEBLO
+
+
+## Radio (celdas) del objetivo.
+func objective_radius() -> float:
+	return Config.TOWN_OBJECTIVE_RADIUS if scenario == Scenario.PUEBLO else Config.LOMA_OBJECTIVE_RADIUS
+
+
 ## Celda transitable para el tipo más cercana a c (c si ya lo es).
 func _nearest_walkable(c: Vector2i, kind: int) -> Vector2i:
 	var pf: Pathfinder = pathfinders[kind]
@@ -182,6 +315,62 @@ func set_cover(cm: CoverMap) -> void:
 func set_micro(mc: MicroCover) -> void:
 	micro = mc
 	analysis.micro = mc
+
+
+## Casas (fase 60): cortan la vista y las balas, los soldados entran por las puertas y el tanque
+## no pasa por encima.
+func set_buildings(bm: BuildingMap) -> void:
+	buildings = bm
+	analysis.buildings = bm
+	var pf: Pathfinder = pathfinders[Unit.Kind.TANK]
+	for c: Vector2i in bm.footprint_cells():
+		if height_field.in_bounds(c):
+			pf.astar.set_point_solid(c, true)
+			pf.astar_direct.set_point_solid(c, true)
+	_build_facade(bm)
+	invalidate_exposure()
+
+
+## Distancia de cada celda a la casa más cercana (BFS hasta FACADE_MAX) y, con eso, la ruta de
+## infantería: pegada a las fachadas no cuesta nada, por el medio de la calle cuesta FACADE_OPEN_COST
+## y por adentro de las casas FACADE_HOUSE_COST.
+func _build_facade(bm: BuildingMap) -> void:
+	var n: int = height_field.size
+	facade.resize(n * n)
+	facade.fill(255)
+	var frontier: Array[Vector2i] = []
+	for c: Vector2i in bm.footprint_cells():
+		if height_field.in_bounds(c):
+			facade[c.y * n + c.x] = 0
+			frontier.append(c)
+	for d: int in range(1, Config.FACADE_MAX + 1):
+		var next: Array[Vector2i] = []
+		for c: Vector2i in frontier:
+			for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 1), Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1)]:
+				var t: Vector2i = c + o
+				if height_field.in_bounds(t) and facade[t.y * n + t.x] == 255:
+					facade[t.y * n + t.x] = d
+					next.append(t)
+		frontier = next
+	var costs: PackedFloat32Array = PackedFloat32Array()
+	costs.resize(n * n)
+	for i: int in costs.size():
+		var f: int = facade[i]
+		costs[i] = Config.FACADE_HOUSE_COST if f == 0 else (Config.FACADE_OPEN_COST if f >= 2 and f <= Config.FACADE_MAX else 0.0)
+	pathfinders[Unit.Kind.INFANTRY].set_extra_cost(costs)
+
+
+## Distancia (celdas) de c a la casa más cercana; 255 lejos del pueblo o sin casas.
+func facade_at(c: Vector2i) -> int:
+	if facade.is_empty() or not height_field.in_bounds(c):
+		return 255
+	return facade[c.y * height_field.size + c.x]
+
+
+## ¿c es la calle abierta (ni pegada a una fachada ni adentro de una casa)?
+func is_street(c: Vector2i) -> bool:
+	var f: int = facade_at(c)
+	return f >= 2 and f <= Config.FACADE_MAX
 
 
 ## Cobertura de la celda para la infantería (0 sin cobertura).
@@ -1148,6 +1337,7 @@ func step() -> void:
 	inf.update_formations(self)
 	inf.update_digging(self)
 	inf.update_surrender(self)
+	_update_breaches()
 	_tick_smoke()
 	tick_in_turn += 1
 	total_ticks += 1
@@ -1695,8 +1885,8 @@ func _end_turn() -> void:
 		var red: int = alive_count(1)
 		game_over = true
 		winner = DRAW if blue == red else (0 if blue > red else 1)
-		if scenario == Scenario.LOMA:
-			# La loma: el azul gana solo si ocupa la cresta sin rojos; en disputa, empate; si no, gana el rojo
+		if has_objective():
+			# La loma (y el pueblo): el azul gana solo si ocupa la cresta sin rojos; en disputa, empate; si no, gana el rojo
 			var holder: int = objective_holder()
 			winner = 0 if holder == 0 else (DRAW if holder == DRAW else 1)
 		phase = Phase.PLAN
@@ -1708,6 +1898,8 @@ func _end_turn() -> void:
 
 ## Centro del objetivo de la loma: el eje de la cresta en el medio del mapa.
 func objective_cell() -> Vector2i:
+	if scenario == Scenario.PUEBLO:
+		return TownGenerator.center_cell(height_field)
 	var x: int = height_field.size / 2
 	return Vector2i(x, roundi(height_field.ridge_center_y(float(x))))
 
@@ -1718,7 +1910,7 @@ func objective_holder() -> int:
 	var present: Array[bool] = [false, false]
 	var center: Vector2 = Vector2(objective_cell())
 	for u: Unit in units:
-		if u.alive and u.is_infantry() and not u.broken and u.pos.distance_to(center) <= Config.LOMA_OBJECTIVE_RADIUS:
+		if u.alive and u.is_infantry() and not u.broken and u.pos.distance_to(center) <= objective_radius():
 			present[u.side] = true
 	if present[0] and present[1]:
 		return DRAW
