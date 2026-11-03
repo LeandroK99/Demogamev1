@@ -271,6 +271,13 @@ const MEDIC_INDEX: int = 8 # el soldado 9 es el médico (en lugar de un fusilero
 const MEDIC_STABILIZE_SECONDS: float = 15.0 # lo que tarda el médico en estabilizar a un herido...
 const BUDDY_STABILIZE_SECONDS: float = 40.0 # ... y un compañero sin entrenamiento
 const CARE_REACH_M: float = 1.0 # a esta distancia del herido ya lo puede atender
+const RESCUE_SCORE: float = 3.5 # rescatar a un herido al descubierto
+const RESCUE_FIRED_SECONDS: float = 10.0 # solo bajo fuego reciente (si no, alcanza con atenderlo)
+const RESCUE_SEARCH_M: float = 10.0 # busca adónde arrastrarlo a esta distancia
+const DRAG_SPEED: float = 0.6 # m/s arrastrando a un herido
+const EVAC_SPEED: float = 0.8 # m/s del herido y el camillero hacia atrás
+const EVAC_SECONDS: float = 60.0 # a los que evacúan les toma esto salir del campo
+const MORALE_EVAC: float = 5.0 # la escuadra recupera moral por cada herido evacuado
 
 # --- Reflejos del soldado ---
 const REFLEX_DIVE_SUPP: float = 8.0 # un tiro que le suma esto en marcha y al descubierto lo tira al suelo

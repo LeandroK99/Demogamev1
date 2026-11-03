@@ -4,7 +4,8 @@ extends RefCounted
 ## el soldado tiene su posición en metros, su postura, su estado y su supresión.
 
 enum Posture { STAND, CROUCH, PRONE }
-enum State { OK, WOUNDED, DEAD }
+## Evacuando: herido (o camillero) que va hacia atrás; evacuado: fuera del campo.
+enum State { OK, WOUNDED, DEAD, EVACUATING, EVACUATED }
 ## Jefe, fusilero, ametralladorista, proveedor, tirador antitanque y médico (reemplaza a un fusilero).
 enum Role { LEADER, RIFLE, MG, ASSISTANT, AT, MEDIC }
 
@@ -43,6 +44,11 @@ var bleed_left: float = 0.0 # herido sin estabilizar: segundos hasta morir desan
 var stabilized: bool = false # herido estabilizado: ya no se desangra
 var care_target: int = -1 # índice del herido de su escuadra que está atendiendo (-1 = ninguno)
 var care_time: float = 0.0 # segundos que lleva atendiéndolo
+var drag_target: int = -1 # rescate: índice del herido que va a buscar y arrastrar a cubierto
+var drag_dest: Vector2 = Vector2.ZERO # adónde lo arrastra
+var dragged: bool = false # herido al que están arrastrando
+var evac_left: float = 0.0 # evacuando: segundos hasta salir del campo
+var evac_wounded: bool = false # evacuando: es el herido (si no, el camillero)
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:

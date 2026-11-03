@@ -240,6 +240,8 @@ func _new_intent(u: Unit) -> void:
 		for s: Soldier in u.soldiers:
 			s.hold_pos = false # ningún equipo queda clavado como base de fuego
 			s.suppress_m = Vector2(-1.0, -1.0)
+			s.drag_target = -1
+			s.dragged = false
 
 
 func begin_autonomous() -> void:
@@ -698,6 +700,40 @@ func set_formation(unit_id: int, f: int) -> bool:
 
 
 ## Ritmo de una unidad (solo en PLAN). Dura hasta que se cambie.
+## Orden de evacuar (en PLAN): cada herido sale hacia el borde propio con un camillero (un fusilero
+## o el proveedor, el más cercano); a los EVAC_SECONDS los dos dejan el campo. Siempre queda al
+## menos uno en condiciones. Devuelve cuántos heridos evacúa.
+func order_evacuate(unit_id: int) -> int:
+	var u: Unit = get_unit(unit_id)
+	if not _can_order(u) or not u.is_infantry():
+		return 0
+	var n: int = 0
+	for t: Soldier in u.soldiers:
+		if t.state != Soldier.State.WOUNDED or u.ok_count() <= 1:
+			continue
+		var bearer: Soldier = null
+		var best_d: float = INF
+		for s: Soldier in u.soldiers:
+			if s.is_ok() and s.role in [Soldier.Role.RIFLE, Soldier.Role.ASSISTANT] and s.pos.distance_to(t.pos) < best_d:
+				bearer = s
+				best_d = s.pos.distance_to(t.pos)
+		if bearer == null:
+			break
+		for s: Soldier in [t, bearer]:
+			s.state = Soldier.State.EVACUATING
+			s.evac_left = Config.EVAC_SECONDS
+			s.evac_wounded = s == t
+			s.care_target = -1
+			s.drag_target = -1
+			s.has_cover = false
+		bearer.pos = t.pos + Vector2(0.6, 0.0)
+		n += 1
+	u.hp = u.ok_count()
+	if n > 0:
+		radio(u, "evacuamos %d herido%s" % [n, "" if n == 1 else "s"])
+	return n
+
+
 ## Autonomía de una escuadra (en cualquier fase). Bajarla a estricta la hace volver a la orden.
 func set_autonomy(unit_id: int, autonomy: int) -> bool:
 	var u: Unit = get_unit(unit_id)
@@ -1067,6 +1103,7 @@ func step() -> void:
 	inf.update_peeks(self)
 	inf.update_wounded(self)
 	inf.update_care(self)
+	inf.update_evac(self)
 	_tick_smoke()
 	tick_in_turn += 1
 	total_ticks += 1

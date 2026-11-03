@@ -104,3 +104,46 @@ func test_no_care_on_the_move() -> void:
 	for i: int in 250:
 		world.step()
 	assert_true(not s.stabilized, "en marcha no se atiende")
+
+
+func test_rescue_drags_exposed_wounded_to_cover() -> void:
+	var world: SimWorld = _world()
+	var sq: Unit = world.add_unit(0, Vector2(48, 50), Unit.Kind.INFANTRY)
+	var t: Soldier = _wound(world, sq, 5)
+	t.bleed_left = 1000.0
+	# Una roca 6 m detrás del herido: ahí lo pueden arrastrar
+	var rock: Vector2 = t.pos + Vector2(0.0, 5.0)
+	world.micro.set_type(MicroCover.cell_of(rock), MicroCover.Type.ROCK)
+	world.micro.set_type(MicroCover.cell_of(rock + Vector2(1.0, 0.0)), MicroCover.Type.ROCK)
+	world.begin_execute()
+	world.step()
+	var threat: Vector2 = Vector2(48, 50) * Config.CELL_SIZE + Vector2(0.0, 150.0) # del sur: la roca queda entre medio
+	sq.mind.learn(4, threat, 1000000, true)
+	sq.last_fired_upon_tick = world.total_ticks
+	assert_true(MindSim.wounded_exposed(world, t, threat), "al descubierto")
+	world.mind_think_now(sq)
+	assert_eq(sq.mind.option, O.RESCUE, "lo van a buscar")
+	assert_eq(world.smoke_clouds.size(), 1, "con humo")
+	assert_true(sq.soldiers[1].suppress_m.x >= 0.0, "la ametralladora cubre")
+	for i: int in 400:
+		if i % 50 == 0:
+			sq.last_fired_upon_tick = world.total_ticks
+		world.step()
+	assert_true(InfantrySim.is_protected_from(world, t, threat), "lo arrastraron detrás de la roca")
+	assert_true(sq.mind.option != O.RESCUE, "terminó el rescate")
+
+
+func test_evacuate_wounded_with_bearer() -> void:
+	var world: SimWorld = _world()
+	var sq: Unit = world.add_unit(0, Vector2(48, 50), Unit.Kind.INFANTRY)
+	var t: Soldier = _wound(world, sq, 5)
+	assert_eq(world.order_evacuate(sq.id), 1, "evacúa al herido")
+	assert_eq(t.state, Soldier.State.EVACUATING, "sale")
+	assert_eq(sq.ok_count(), 7, "con un camillero")
+	var y: float = t.pos.y
+	world.begin_execute()
+	for i: int in roundi(Config.EVAC_SECONDS / Config.TICK) + 2:
+		world.step()
+	assert_lt(y, t.pos.y, "hacia el borde propio (sur)")
+	assert_eq(t.state, Soldier.State.EVACUATED, "fuera del campo")
+	assert_true(not t.is_bleeding(), "no se desangró")

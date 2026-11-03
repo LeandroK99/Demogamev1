@@ -202,7 +202,97 @@ func score_options(w: SimWorld, u: Unit) -> Dictionary:
 	_score_break(w, u, s)
 	_score_bound(w, u, s)
 	_score_flank(w, u, s)
+	_score_rescue(w, u, s)
 	return s
+
+
+## --- Rescate ---
+## Quieta y bajo fuego, con un herido tirado al descubierto: humo de mano entre el herido y la
+## amenaza, el equipo A bate la amenaza y el médico (o un fusilero) va y lo arrastra a cubierto a
+## DRAG_SPEED; ahí lo atienden.
+
+func _score_rescue(w: SimWorld, u: Unit, s: Dictionary) -> void:
+	var m: SquadMind = u.mind
+	if m.option == SquadMind.Option.RESCUE:
+		var t: Soldier = u.soldiers[int(m.data.get("wounded", 0))]
+		var r: int = int(m.data.get("rescuer", -1))
+		if t.state == Soldier.State.WOUNDED and r >= 0 and u.soldiers[r].drag_target >= 0:
+			s[SquadMind.Option.RESCUE] = Config.RESCUE_SCORE + 1.0
+		return
+	if u.moving or not w.fired_upon_within(u, Config.RESCUE_FIRED_SECONDS):
+		return
+	if m.option not in [SquadMind.Option.FOLLOW, SquadMind.Option.CONTACT_DRILL]:
+		return
+	var threat: Vector2 = w.inf.threat_point(w, u)
+	for t: Soldier in u.soldiers:
+		if t.state == Soldier.State.WOUNDED and wounded_exposed(w, t, threat) and _rescuer(u, t) != null:
+			m.rescue_index = t.index
+			s[SquadMind.Option.RESCUE] = Config.RESCUE_SCORE
+			return
+
+
+## ¿El herido está a la vista y sin nada que lo proteja de la amenaza?
+static func wounded_exposed(w: SimWorld, t: Soldier, threat: Vector2) -> bool:
+	if InfantrySim.is_protected_from(w, t, threat):
+		return false
+	return w.analysis.los_m(threat, Config.INF_EYE_H, t.pos, Config.SOLDIER_CENTER_PRONE + InfantrySim.ground_offset(w, t.pos))
+
+
+## El médico si puede; si no, el fusilero o proveedor más cercano que no esté clavado.
+static func _rescuer(u: Unit, t: Soldier) -> Soldier:
+	return InfantrySim.caregiver(u, t)
+
+
+## Adónde arrastrarlo: el punto protegido más cercano a RESCUE_SEARCH_M; si no hay, 8 m hacia atrás.
+func drag_spot(w: SimWorld, t: Soldier, threat: Vector2) -> Vector2:
+	var best: Vector2 = Vector2(-1.0, -1.0)
+	var best_d: float = INF
+	var c0: Vector2i = MicroCover.cell_of(t.pos)
+	var ri: int = ceili(Config.RESCUE_SEARCH_M / MicroCover.MICRO_M)
+	var limit: float = float(w.height_field.size - 1) * Config.CELL_SIZE
+	for dy: int in range(-ri, ri + 1):
+		for dx: int in range(-ri, ri + 1):
+			var p: Vector2 = MicroCover.center_m(c0 + Vector2i(dx, dy))
+			var d: float = p.distance_to(t.pos)
+			if d > Config.RESCUE_SEARCH_M or d >= best_d or p.x < 0.0 or p.y < 0.0 or p.x > limit or p.y > limit:
+				continue
+			if w.micro != null and MicroCover.protects(w.micro.type_at_m(p)):
+				continue
+			var ev: Dictionary = InfantrySim.evaluate_spot(w, p, threat)
+			if bool(ev["protected"]):
+				best = p
+				best_d = d
+	if best.x >= 0.0:
+		return best
+	var away: Vector2 = (t.pos - threat).normalized()
+	var p: Vector2 = t.pos + away * 8.0
+	return Vector2(clampf(p.x, 0.0, limit), clampf(p.y, 0.0, limit))
+
+
+func _start_rescue(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	var t: Soldier = u.soldiers[m.rescue_index]
+	var threat: Vector2 = w.inf.threat_point(w, u)
+	var r: Soldier = _rescuer(u, t)
+	if r == null:
+		return
+	m.data["wounded"] = t.index
+	m.data["rescuer"] = r.index
+	r.care_target = -1
+	r.drag_target = t.index
+	t.dragged = true # nadie más lo atiende hasta que esté a cubierto
+	for s: Soldier in u.soldiers:
+		if s.care_target == t.index:
+			s.care_target = -1
+			s.care_time = 0.0
+	r.drag_dest = drag_spot(w, t, threat)
+	# Humo entre el herido y la amenaza, y fuego de cobertura del equipo A
+	var d: float = t.pos.distance_to(threat)
+	if d > 1.0:
+		w.hand_smoke(u, t.pos + (threat - t.pos) / d * minf(Config.INF_SMOKE_DIST_M, d * 0.5))
+	for s: Soldier in u.soldiers:
+		if s.team == 0 and s.is_ok() and s != r:
+			s.suppress_m = threat
 
 
 ## --- Equipos de fuego: avanzar por saltos ---
@@ -524,6 +614,8 @@ func _enter(w: SimWorld, u: Unit, opt: int) -> void:
 			m.reacted[-1 - m.flank_enemy] = true # no vuelve a flanquear al mismo
 			if not autonomous_move(w, u, m.target_cell):
 				m.hold = true
+		SquadMind.Option.RESCUE:
+			_start_rescue(w, u)
 		SquadMind.Option.BREAK_CONTACT:
 			throw_smoke_toward(w, u, w.inf.threat_point(w, u))
 			w.begin_autonomous()
@@ -544,6 +636,12 @@ func _exit(w: SimWorld, u: Unit, opt: int) -> void:
 				w.radio(u, "¡fuego!")
 		SquadMind.Option.BOUND:
 			_release_teams(u)
+		SquadMind.Option.RESCUE:
+			_release_teams(u)
+			for s: Soldier in u.soldiers:
+				if s.drag_target >= 0:
+					u.soldiers[s.drag_target].dragged = false
+				s.drag_target = -1
 		SquadMind.Option.FLANK:
 			m.saved = {} # en el flanco se queda: de ahí tira
 		SquadMind.Option.BREAK_CONTACT:
@@ -568,6 +666,8 @@ func _announce(opt: int) -> String:
 			return "avanzamos por saltos"
 		SquadMind.Option.FLANK:
 			return "los fijan ustedes, nosotros flanqueamos"
+		SquadMind.Option.RESCUE:
+			return "¡herido al descubierto! humo, cobertura y lo sacamos"
 	return SquadMind.OPTION_NAMES[opt]
 
 

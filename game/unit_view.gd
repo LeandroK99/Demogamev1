@@ -158,7 +158,10 @@ func _sync_soldiers(alpha: float) -> void:
 			shown = _mode != Display.HIDDEN and _mode != Display.GHOST
 		mi.visible = shown
 		if _mode == Display.NORMAL:
-			mi.material_override = _mat_normal if s.is_ok() else (_mat_wounded if s.state == Soldier.State.WOUNDED else _mat_dead)
+			var hurt: bool = s.state == Soldier.State.WOUNDED or s.state == Soldier.State.EVACUATING
+			mi.material_override = _mat_normal if s.is_ok() else (_mat_wounded if hurt else _mat_dead)
+		if s.state == Soldier.State.EVACUATED:
+			mi.visible = false # ya salió del campo
 		else:
 			mi.material_override = _mat_dead
 

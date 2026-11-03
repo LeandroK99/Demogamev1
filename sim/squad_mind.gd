@@ -39,6 +39,7 @@ var reacted: Dictionary = {} # enemigos (id) que ya provocaron un drill de conta
 var contacts: Dictionary = {}
 var target_cell: Vector2i = Vector2i(-1, -1) # destino de la opción que se mueve (reubicarse, flanquear)
 var flank_enemy: int = -1 # contacto que está flanqueando
+var rescue_index: int = -1 # herido elegido para rescatar
 var pending: Dictionary = {} # enemigos con un aviso de radio en camino
 var halted_since: int = -1 # tick desde el que la supresión la tiene frenada (-1 = no lo está)
 

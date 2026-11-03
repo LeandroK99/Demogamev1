@@ -136,6 +136,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty():
 			pending_mode = "assault"
 		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_P:
+		if world.phase == SimWorld.Phase.PLAN:
+			for id: int in selected_ids:
+				world.order_evacuate(id)
+		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_B:
 		if world.phase == SimWorld.Phase.PLAN:
 			for id: int in selected_ids:

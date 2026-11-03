@@ -33,6 +33,9 @@ func move_soldiers(w: SimWorld) -> void:
 		var speed: float = w.speed_at(u.cell(), Unit.Kind.INFANTRY) * SimWorld.pace_speed_factor(SimWorld.effective_pace(u))
 		var step_m: float = speed * Config.SOLDIER_CATCHUP * Config.TICK
 		for s: Soldier in u.soldiers:
+			if s.drag_target >= 0 and s.is_ok() and s.suppression < Config.PINNED:
+				_drag(w, u, s, speed)
+				continue
 			if not s.is_ok() or s.suppression >= Config.PINNED or s.dive_until > w.total_ticks or s.hold_pos:
 				s.moving = false # herido, clavado, recién tirado al suelo o base de fuego: se queda donde está
 				continue
@@ -57,6 +60,50 @@ func move_soldiers(w: SimWorld) -> void:
 			s.pos += d / dist * minf(step_m, dist)
 
 
+## Rescate: el rescatista va hasta el herido y lo arrastra a DRAG_SPEED hasta drag_dest.
+func _drag(_w: SimWorld, u: Unit, s: Soldier, speed: float) -> void:
+	var t: Soldier = u.soldiers[s.drag_target]
+	var to_w: Vector2 = t.pos - s.pos
+	if to_w.length() > Config.CARE_REACH_M:
+		s.moving = true
+		s.heading = to_w.normalized()
+		s.pos += to_w.normalized() * minf(speed * Config.SOLDIER_CATCHUP * Config.TICK, to_w.length())
+		return
+	var d: Vector2 = s.drag_dest - t.pos
+	if d.length() <= Config.SOLDIER_ARRIVE_M:
+		t.dragged = false
+		s.drag_target = -1 # llegó: ahora lo atienden
+		s.moving = false
+		return
+	t.dragged = true
+	s.moving = true
+	var step: Vector2 = d.normalized() * minf(Config.DRAG_SPEED * Config.TICK, d.length())
+	t.pos += step
+	s.pos = t.pos - d.normalized() * 0.6
+	s.heading = -d.normalized() # tira de él caminando hacia atrás
+
+
+## Evacuación: el herido y su camillero van hacia el borde propio; a los EVAC_SECONDS salen del campo.
+func update_evac(w: SimWorld) -> void:
+	var limit: float = float(w.height_field.size - 1) * Config.CELL_SIZE
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		var back: Vector2 = Vector2(0.0, 1.0) if u.side == 0 else Vector2(0.0, -1.0)
+		for s: Soldier in u.soldiers:
+			if s.state != Soldier.State.EVACUATING:
+				continue
+			s.pos += back * Config.EVAC_SPEED * Config.TICK
+			s.pos = Vector2(clampf(s.pos.x, 0.0, limit), clampf(s.pos.y, 0.0, limit))
+			s.heading = back
+			s.evac_left -= Config.TICK
+			if s.evac_left <= 0.0:
+				s.state = Soldier.State.EVACUATED
+				if s.evac_wounded:
+					u.morale = minf(100.0, u.morale + Config.MORALE_EVAC) # el herido quedó en buenas manos
+					w.radio(u, "soldado %d evacuado" % (s.index + 1))
+
+
 ## Soldado en condiciones al azar (para un impacto en la escuadra sin soldado elegido). null si no hay.
 func random_ok(w: SimWorld, u: Unit) -> Soldier:
 	var ok: Array[Soldier] = []
@@ -69,7 +116,7 @@ func random_ok(w: SimWorld, u: Unit) -> Soldier:
 ## Un impacto en un soldado: herido (SOLDIER_WOUND_P) o muerto; un herido que recibe otro, muere.
 ## Actualiza los hombres de la escuadra (hp = soldiers en condiciones).
 func hit_soldier(w: SimWorld, u: Unit, s: Soldier) -> void:
-	if s.state == Soldier.State.DEAD:
+	if s.state == Soldier.State.DEAD or s.state == Soldier.State.EVACUATED:
 		return
 	if s.state == Soldier.State.OK and w.rng.randf() < Config.SOLDIER_WOUND_P:
 		s.state = Soldier.State.WOUNDED
@@ -154,7 +201,7 @@ static func _stop_care(s: Soldier) -> void:
 static func _worst_wounded(u: Unit) -> Soldier:
 	var best: Soldier = null
 	for s: Soldier in u.soldiers:
-		if s.is_bleeding() and (best == null or s.bleed_left < best.bleed_left):
+		if s.is_bleeding() and not s.dragged and (best == null or s.bleed_left < best.bleed_left):
 			best = s
 	return best
 
@@ -164,7 +211,7 @@ static func caregiver(u: Unit, t: Soldier) -> Soldier:
 	var best: Soldier = null
 	var best_d: float = INF
 	for s: Soldier in u.soldiers:
-		if not s.is_ok() or s.suppression >= Config.PINNED:
+		if not s.is_ok() or s.suppression >= Config.PINNED or s.drag_target >= 0:
 			continue
 		if s.role == Soldier.Role.MEDIC:
 			return s
@@ -759,7 +806,7 @@ func _burst(w: SimWorld, su: Unit, moving: bool, from: Vector2, eye: float, side
 		if not tu.alive or tu.side != side or not tu.is_infantry() or tu.pos_m().distance_to(at) > Config.SOLDIER_LAG_M * 4.0:
 			continue
 		for t: Soldier in tu.soldiers:
-			if t.state == Soldier.State.DEAD or t.pos.distance_to(at) > Config.SOLDIER_BURST_M:
+			if t.state == Soldier.State.DEAD or t.state == Soldier.State.EVACUATED or t.pos.distance_to(at) > Config.SOLDIER_BURST_M:
 				continue
 			if w.rng.randf() < soldier_hit_p(w, su, moving, from, eye, tu, t, wpn, false, ss) * factor:
 				w.damage_soldier(tu, t)
