@@ -44,3 +44,10 @@ const HULLDOWN_MAX_SLOPE: float = 3.0 # metros; celdas más empinadas no son can
 const HULLDOWN_W_HIDDEN: float = 3.0 # peso de "casco oculto" en el puntaje
 const HULLDOWN_W_FIRE: float = 2.0 # peso de "puede disparar" en el puntaje
 const HULLDOWN_DIST_DIV: float = 10.0 # celdas de distancia que restan 1 punto
+
+# --- Unidades y movimiento ---
+const UNITS_PER_SIDE: int = 4
+const DEPLOY_SPACING: int = 8 # celdas entre tanques al desplegar
+const DEPLOY_EDGE_MARGIN: int = 6 # celdas desde el borde del mapa
+const PATH_MAX_SLOPE: float = 4.0 # metros; celdas más empinadas son intransitables
+const PATH_SLOPE_COST: float = 1.0 # costo extra en el A* a pendiente máxima

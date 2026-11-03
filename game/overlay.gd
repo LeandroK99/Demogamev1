@@ -7,23 +7,25 @@ const COLOR_SAFE: Color = Color(0.1, 0.75, 0.2)
 const COLOR_MID: Color = Color(0.95, 0.85, 0.1)
 const COLOR_EXPOSED: Color = Color(0.9, 0.15, 0.1)
 
+const PLAYER_SIDE: int = 0
+
 var terrain_view: TerrainView
+var world: SimWorld
 var analysis: TerrainAnalysis
-var threats: Array[Vector2i] = [] # amenazas conocidas por el bando azul
 var selected_cell: Vector2i = Vector2i(-1, -1)
 
 var _show_exposure: bool = false
 var _show_candidates: bool = false
 var _show_los: bool = false
-var _exposure_cache: PackedFloat32Array = PackedFloat32Array()
 var _markers: Node3D = Node3D.new()
 var _lines_mesh: ImmediateMesh = ImmediateMesh.new()
 var _line_material: StandardMaterial3D = StandardMaterial3D.new()
 
 
-func setup(tv: TerrainView, ta: TerrainAnalysis) -> void:
+func setup(tv: TerrainView, p_world: SimWorld) -> void:
 	terrain_view = tv
-	analysis = ta
+	world = p_world
+	analysis = p_world.analysis
 	add_child(_markers)
 	var lines: MeshInstance3D = MeshInstance3D.new()
 	lines.mesh = _lines_mesh
@@ -33,11 +35,17 @@ func setup(tv: TerrainView, ta: TerrainAnalysis) -> void:
 	_line_material.no_depth_test = true
 
 
-## Actualiza amenazas y unidad seleccionada; recalcula los overlays activos.
-func set_context(p_threats: Array[Vector2i], p_selected: Vector2i) -> void:
-	threats = p_threats
-	selected_cell = p_selected
-	_exposure_cache = PackedFloat32Array()
+## Celda de la unidad seleccionada ((-1, -1) = ninguna); recalcula overlays 2 y 3.
+func set_selected_cell(cell: Vector2i) -> void:
+	if cell == selected_cell:
+		return
+	selected_cell = cell
+	_refresh_candidates()
+	_refresh_los()
+
+
+## Recalcula todos los overlays activos (por ejemplo, si cambió la exposición).
+func refresh() -> void:
 	_refresh()
 
 
@@ -67,12 +75,11 @@ func _refresh_exposure() -> void:
 	if not _show_exposure:
 		terrain_view.clear_overlay()
 		return
-	if _exposure_cache.is_empty():
-		_exposure_cache = analysis.exposure_map(threats)
+	var exposure: PackedFloat32Array = world.exposure_for(PLAYER_SIDE)
 	var colors: PackedColorArray = PackedColorArray()
-	colors.resize(_exposure_cache.size())
-	for i: int in _exposure_cache.size():
-		colors[i] = exposure_color(_exposure_cache[i])
+	colors.resize(exposure.size())
+	for i: int in exposure.size():
+		colors[i] = exposure_color(exposure[i])
 	terrain_view.set_overlay_colors(colors)
 
 
@@ -88,6 +95,7 @@ func _refresh_candidates() -> void:
 		child.queue_free()
 	if not _show_candidates or not analysis.height_field.in_bounds(selected_cell):
 		return
+	var threats: Array[Vector2i] = world.threats_for(PLAYER_SIDE)
 	var cands: Array[Dictionary] = analysis.hulldown_candidates(selected_cell, threats, Config.HULLDOWN_RADIUS)
 	for i: int in mini(CANDIDATE_COUNT, cands.size()):
 		var c: Dictionary = cands[i]
@@ -109,6 +117,7 @@ func _refresh_candidates() -> void:
 func _refresh_los() -> void:
 	_lines_mesh.clear_surfaces()
 	var hf: HeightField = analysis.height_field
+	var threats: Array[Vector2i] = world.threats_for(PLAYER_SIDE)
 	if not _show_los or not hf.in_bounds(selected_cell) or threats.is_empty():
 		return
 	_lines_mesh.surface_begin(Mesh.PRIMITIVE_LINES, _line_material)
