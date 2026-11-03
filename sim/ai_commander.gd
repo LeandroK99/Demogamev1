@@ -5,7 +5,8 @@ extends RefCounted
 ##   1. hp == 1 -> retroceder a la celda de menor exposición dentro de AI_RETREAT_RADIUS.
 ##   2. Hay amenazas y la celda actual no es hull-down -> orden HULLDOWN.
 ##   3. Ya está en hull-down y puede disparar a una amenaza -> OVERWATCH hacia las amenazas.
-##      (si está oculto pero no puede disparar, también HULLDOWN: busca desde dónde tirar).
+##      (si está oculto pero no puede disparar: con una sola amenaza, SCOOT, asoma, tira y
+##      vuelve; con más, HULLDOWN, busca desde dónde tirar).
 ##   4. Sin amenazas -> avanzar a la cresta por delante, a una posición hull-down
 ##      contra un observador hipotético del lado enemigo.
 
@@ -39,6 +40,8 @@ func issue_orders(world: SimWorld) -> void:
 					u.moving = false
 					u.order = Unit.Order.HOLD
 				reserved.append(u.cell())
+			elif state["hull_hidden"] and threats.size() == 1 and _scoot(world, u, threats, reserved):
+				reserved.append(u.cell())
 			else:
 				hulldown_ids.append(u.id)
 		else:
@@ -61,6 +64,19 @@ static func evaluate_cell(world: SimWorld, cell: Vector2i, threats: Array[Vector
 				and world.analysis.los(cell, Config.EYE_H, th, Config.CENTER_H):
 			fire = true
 	return {"hull_hidden": hidden, "can_fire": fire}
+
+
+## Oculto y sin tiro contra una sola amenaza: asomar a la celda más cercana con tiro.
+func _scoot(world: SimWorld, u: Unit, threats: Array[Vector2i], reserved: Array[Vector2i]) -> bool:
+	var best: Vector2i = u.cell()
+	var best_d: float = INF
+	for c: Dictionary in world.analysis.hulldown_candidates(u.cell(), threats, Config.AI_SCOOT_RADIUS):
+		var cell: Vector2i = c["cell"]
+		var d: float = Vector2(cell).distance_to(Vector2(u.cell()))
+		if c["can_fire"] and d < best_d and world.pathfinder.is_walkable(cell) and SimWorld.is_free(cell, reserved):
+			best = cell
+			best_d = d
+	return best != u.cell() and world.order_scoot(u.id, best)
 
 
 ## Retroceder: la celda transitable de menor exposición (desempate: la más cercana).

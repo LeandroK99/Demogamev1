@@ -69,6 +69,10 @@ const FIRE_REVEAL_SECONDS: float = 3.0 # tras disparar, se lo detecta a MAX_RANG
 const OVERWATCH_HALF_ANGLE_DEG: float = 35.0 # semiángulo del sector de tiro
 const OVERWATCH_FIRST_SHOT_FACTOR: float = 1.5 # primer disparo del turno contra un blanco en movimiento
 
+# --- Disparar y replegarse ---
+const REVERSE_SPEED_FACTOR: float = 0.6 # velocidad en reversa (volviendo a cubierto mirando al enemigo)
+const AI_SCOOT_RADIUS: int = 6 # celdas para buscar una posición de tiro desde la que asomar
+
 # --- Orden hull-down e IA ---
 const HULLDOWN_MIN_SEPARATION: float = 3.0 # celdas mínimas entre destinos de una misma orden
 const NO_THREAT_ADVANCE: int = 20 # celdas hacia el centro si no hay amenazas conocidas

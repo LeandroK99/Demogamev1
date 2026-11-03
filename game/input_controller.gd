@@ -5,6 +5,7 @@ extends Node
 ## Con Ctrl, la ruta es directa (la más corta) en vez de la más cubierta.
 ## Con Shift, la orden agrega un tramo (waypoint) al final de la ruta actual.
 ## V: vigilancia con el sector apuntando al cursor.
+## F y después clic derecho: disparar y replegarse desde esa posición. Esc cancela.
 
 const CLICK_PICK_PX: float = 30.0 # radio en píxeles para seleccionar con un clic
 const DRAG_MIN_PX: float = 8.0 # menos que esto es un clic, no un recuadro
@@ -14,12 +15,16 @@ const COLOR_PATH: Color = Color(1.0, 0.9, 0.2)
 const COLOR_PATH_DIRECT: Color = Color(1.0, 0.5, 0.1)
 const COLOR_WAYPOINT: Color = Color(1.0, 1.0, 1.0)
 const COLOR_OVERWATCH: Color = Color(0.4, 1.0, 0.6)
+const COLOR_SCOOT: Color = Color(0.9, 0.5, 1.0)
 const OVERWATCH_ARC_STEPS: int = 12
 const COLOR_FACING: Color = Color(0.3, 0.9, 1.0)
 const COLOR_ATTACK: Color = Color(1.0, 0.25, 0.2)
 const FACING_ARROW_CELLS: float = 4.0 # largo de la flecha de orientación
 
 signal selection_changed
+
+## Orden pendiente de un clic (la tecla ya se apretó): "" = ninguna.
+var pending_mode: String = ""
 
 var world: SimWorld
 var camera: Camera3D
@@ -84,6 +89,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		# H: hull-down para las seleccionadas (solo en PLAN)
 		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty():
 			world.order_hulldown(selected_ids)
+		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_F:
+		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty():
+			pending_mode = "scoot"
+		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_ESCAPE:
+		pending_mode = ""
 		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_V:
 		_order_overwatch_at(get_viewport().get_mouse_position())
@@ -175,6 +187,12 @@ func _right_pressed(screen: Vector2, direct: bool, append: bool) -> void:
 	var hit: Variant = terrain_view.raycast(camera.project_ray_origin(screen), camera.project_ray_normal(screen))
 	if hit == null:
 		return
+	if pending_mode == "scoot":
+		pending_mode = ""
+		var cells: Dictionary = _formation_cells(world.height_field.world_to_cell(hit as Vector3), Vector2.ZERO)
+		for id: int in cells:
+			world.order_scoot(id, cells[id])
+		return
 	_rdragging = true
 	_rdrag_start = screen
 	_rdrag_target = hit
@@ -233,18 +251,26 @@ func _enemy_at(screen: Vector2) -> UnitView:
 ## Mover en línea: los tanques se reparten perpendiculares a la orientación
 ## (o a lo ancho si no hay orientación), ordenados por su posición actual.
 func _issue_move(target: Vector2i, facing: Vector2, covered: bool, append: bool) -> void:
+	var cells: Dictionary = _formation_cells(target, facing)
+	for id: int in cells:
+		if not world.order_move(id, cells[id], facing, covered, append):
+			world.order_move(id, target, facing, covered, append) # si la celda desplazada no sirve, al punto exacto
+
+
+## Celda de cada seleccionada (id -> Vector2i) para una orden en línea alrededor de target.
+func _formation_cells(target: Vector2i, facing: Vector2) -> Dictionary:
 	var perp: Vector2 = Vector2(-facing.y, facing.x) if facing != Vector2.ZERO else Vector2(1.0, 0.0)
 	var ids: Array[int] = selected_ids.duplicate()
 	ids.sort_custom(func(a: int, b: int) -> bool:
 		return world.get_unit(a).pos.dot(perp) < world.get_unit(b).pos.dot(perp))
 	var n: int = ids.size()
 	var limit: int = world.height_field.size - 1
+	var out: Dictionary = {}
 	for i: int in n:
 		var off: Vector2 = perp * (float(i) - float(n - 1) * 0.5) * FORMATION_GAP
 		var c: Vector2i = Vector2i((Vector2(target) + off).round())
-		var cell: Vector2i = Vector2i(clampi(c.x, 0, limit), clampi(c.y, 0, limit))
-		if not world.order_move(ids[i], cell, facing, covered, append):
-			world.order_move(ids[i], target, facing, covered, append) # si la celda desplazada no sirve, al punto exacto
+		out[ids[i]] = Vector2i(clampi(c.x, 0, limit), clampi(c.y, 0, limit))
+	return out
 
 
 ## Rutas planificadas (amarillo cubierta, naranja directa), orientación final (celeste) y blanco de ataque (rojo).
@@ -274,6 +300,8 @@ func _draw_paths() -> void:
 			_arrow(segs, colors, Vector2(u.path.back()), u.final_heading, COLOR_FACING)
 		if u.order == Unit.Order.OVERWATCH:
 			_sector(segs, colors, u)
+		if u.order == Unit.Order.SCOOT and not u.scoot_fired and not u.path.is_empty():
+			_dashed(segs, colors, Vector2(u.path.back()), Vector2(u.return_cell), COLOR_SCOOT)
 		if u.attack_target >= 0 and world.known_enemies[PLAYER_SIDE].has(u.attack_target):
 			var cell: Vector2i = world.known_enemies[PLAYER_SIDE][u.attack_target]["cell"]
 			_seg(segs, colors, start + Vector3.UP * 2.0, _ground(Vector2(cell)) + Vector3.UP * 2.0, COLOR_ATTACK)
@@ -333,3 +361,10 @@ func _sector(segs: PackedVector3Array, colors: PackedColorArray, u: Unit) -> voi
 		if i > 0:
 			_seg(segs, colors, _ground(prev), _ground(p), COLOR_OVERWATCH)
 		prev = p
+
+
+## Línea punteada entre dos celdas (vuelta de disparar y replegarse).
+func _dashed(segs: PackedVector3Array, colors: PackedColorArray, a: Vector2, b: Vector2, color: Color) -> void:
+	var n: int = maxi(2, roundi(a.distance_to(b)))
+	for i: int in range(0, n, 2):
+		_seg(segs, colors, _ground(a.lerp(b, float(i) / n)), _ground(a.lerp(b, float(i + 1) / n)), color)

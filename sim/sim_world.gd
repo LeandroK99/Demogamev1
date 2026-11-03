@@ -206,6 +206,7 @@ func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.Z
 		u.waypoints.append({"cell": target_cell, "direct": not covered})
 	u.order = Unit.Order.MOVE
 	u.moving = not u.path.is_empty()
+	u.reversing = false
 	u.attack_target = -1
 	u.final_heading = facing.normalized() if facing != Vector2.ZERO else Vector2.ZERO
 	if not u.moving and u.final_heading != Vector2.ZERO:
@@ -224,10 +225,40 @@ func order_overwatch(unit_id: int, dir: Vector2) -> bool:
 	u.moving = false
 	u.attack_target = -1
 	u.final_heading = Vector2.ZERO
+	u.reversing = false
 	u.overwatch_dir = dir.normalized()
 	u.heading = u.overwatch_dir
 	u.order = Unit.Order.OVERWATCH
 	return true
+
+
+## Orden SCOOT: ir a fire_cell por la ruta cubierta, hacer un disparo y volver en reversa
+## (mirando al blanco) a la celda de partida. Si no tiene a quién tirar, espera en fire_cell.
+func order_scoot(unit_id: int, fire_cell: Vector2i) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or fire_cell == u.cell():
+		return false
+	var origin: Vector2i = u.cell()
+	if not order_move(unit_id, fire_cell):
+		return false
+	u.order = Unit.Order.SCOOT
+	u.return_cell = origin
+	u.scoot_fired = false
+	return true
+
+
+## Tras el disparo de una orden SCOOT: ruta cubierta de vuelta, en reversa, mirando al blanco.
+func _start_scoot_return(u: Unit, target: Unit) -> void:
+	u.scoot_fired = true
+	_face(u, target.pos)
+	u.final_heading = u.heading
+	u.path = _route(u, u.cell(), u.return_cell, true)
+	u.waypoints.clear()
+	if not u.path.is_empty():
+		u.waypoints.append({"cell": u.return_cell, "direct": false})
+	u.direct_route = false
+	u.moving = not u.path.is_empty()
+	u.reversing = u.moving
 
 
 ## ¿Está el punto at (en celdas) dentro del sector de vigilancia de u?
@@ -388,6 +419,8 @@ func _combat() -> void:
 				target.moving = false
 				target.path.clear()
 		shooter.overwatch_ready = false
+		if shooter.order == Unit.Order.SCOOT and not shooter.scoot_fired:
+			_start_scoot_return(shooter, target)
 		shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit, "aspect": aspect_of(target, shooter.pos)})
 
 
@@ -489,11 +522,13 @@ func speed_at(c: Vector2i) -> float:
 
 func _advance(u: Unit, dt: float) -> void:
 	var budget_m: float = speed_at(u.cell()) * dt
+	if u.reversing:
+		budget_m *= Config.REVERSE_SPEED_FACTOR
 	while budget_m > 0.0 and not u.path.is_empty():
 		var target: Vector2 = Vector2(u.path[0])
 		var delta: Vector2 = target - u.pos
 		var d_m: float = delta.length() * Config.CELL_SIZE
-		if d_m > 0.0001:
+		if d_m > 0.0001 and not u.reversing:
 			u.heading = delta.normalized()
 		if d_m <= budget_m:
 			u.pos = target
@@ -509,5 +544,6 @@ func _advance(u: Unit, dt: float) -> void:
 	if not u.moving:
 		if u.final_heading != Vector2.ZERO:
 			u.heading = u.final_heading
-		if u.order == Unit.Order.MOVE:
+		if u.order == Unit.Order.MOVE or (u.order == Unit.Order.SCOOT and u.scoot_fired):
 			u.order = Unit.Order.NONE
+		u.reversing = false

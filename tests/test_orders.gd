@@ -163,3 +163,39 @@ func test_overwatch_ambush_bonus() -> void:
 	assert_true(is_equal_approx(p_ambush, p_normal * Config.OVERWATCH_FIRST_SHOT_FACTOR), "emboscada ×1,5 (%.3f vs %.3f)" % [p_ambush, p_normal])
 	blue.overwatch_ready = false
 	assert_true(is_equal_approx(world.hit_probability(blue, red), p_normal), "después del primer disparo, normal")
+
+
+## Pared de 3 m a lo ancho en y = 50: detrás (y > 50) el azul queda oculto del rojo al norte.
+func _scoot_world() -> SimWorld:
+	var hf: HeightField = HeightField.new(N)
+	for x: int in N:
+		hf.set_height(Vector2i(x, 50), 3.0)
+	var world: SimWorld = SimWorld.new(7, hf, false)
+	for u: Unit in world.units:
+		u.alive = u.id == 0 or u.id == 4
+	return world
+
+
+func test_scoot_fires_and_returns() -> void:
+	var world: SimWorld = _scoot_world()
+	var blue: Unit = world.units[0]
+	var red: Unit = world.units[4]
+	blue.pos = Vector2(48, 53) # detrás de la pared
+	red.pos = Vector2(48, 25) # 100 m al norte
+	red.moving = true # para que el azul lo detecte al asomar
+	red.reload_left = 1000.0
+	world.p_hit_base = 0.0
+	var home: Vector2i = blue.cell()
+	assert_true(world.order_scoot(0, Vector2i(54, 50)), "orden aceptada")
+	assert_eq(blue.order, Unit.Order.SCOOT, "orden SCOOT")
+	world.begin_execute()
+	var fired: bool = false
+	for i: int in world.ticks_per_turn - 1:
+		world.step()
+		red.moving = true
+		if blue.scoot_fired:
+			fired = true
+	assert_true(fired, "hizo su disparo")
+	assert_eq(blue.cell(), home, "volvió a la celda de partida")
+	assert_true(blue.heading.dot((red.pos - blue.pos).normalized()) > 0.8, "quedó mirando al blanco (%s)" % blue.heading)
+	assert_eq(blue.order, Unit.Order.NONE, "la orden terminó")

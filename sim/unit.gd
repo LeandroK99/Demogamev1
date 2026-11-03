@@ -2,7 +2,7 @@ class_name Unit
 extends RefCounted
 ## Un tanque de la simulación.
 
-enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH }
+enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT }
 
 var id: int = 0
 var side: int = 0 # 0 azul, 1 rojo
@@ -17,6 +17,9 @@ var waypoints: Array[Dictionary] = [] # fin de cada tramo de la ruta: {cell: Vec
 var attack_target: int = -1 # id del enemigo a atacar (-1 = ninguno)
 var overwatch_dir: Vector2 = Vector2.ZERO # centro del sector de tiro en vigilancia
 var overwatch_ready: bool = false # le queda el disparo de emboscada de este turno
+var return_cell: Vector2i = Vector2i.ZERO # disparar y replegarse: celda cubierta a la que vuelve
+var scoot_fired: bool = false # disparar y replegarse: ya hizo su disparo
+var reversing: bool = false # marcha atrás: no gira el casco al moverse
 var order: int = Order.NONE
 var moving: bool = false
 var alive: bool = true

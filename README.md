@@ -22,6 +22,7 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | Clic derecho sobre un rojo | Atacar: avanza por la ruta cubierta hasta tener línea de tiro, frena y lo prioriza como blanco (solo rojos visibles o fantasmas) |
 | H | Hull-down: cada tanque seleccionado busca una posición con el casco cubierto |
 | V | Vigilancia: el tanque se queda quieto mirando hacia el cursor y solo dispara dentro de un sector de ±35°. Arranca cada turno con la recarga lista y su primer disparo contra un blanco en movimiento tiene ×1,5 |
+| F y clic derecho | Disparar y replegarse: va a esa posición, hace un disparo y vuelve en reversa a donde estaba, mirando al blanco. Esc cancela |
 | Espacio | Ejecutar el turno |
 | 1 | Overlay de exposición azul (verde = cubierto, rojo = visto por todos los enemigos conocidos) |
 | 2 | Mejores posiciones hull-down de la unidad seleccionada |
