@@ -41,10 +41,45 @@ func test_determinism() -> void:
 
 
 func test_detected_on_open_ground() -> void:
-	# Control: sin pared, a 83 celdas (332 m) en el llano sí se ven
+	# Control: sin pared, a 83 celdas (332 m) en el llano se ven si se mueven
+	var world: SimWorld = _flat_world()
+	for u: Unit in world.units:
+		u.moving = true
+	world.update_detection()
+	assert_eq(world.visible_enemies[0].size(), 4, "azules ven a los 4 rojos en movimiento")
+
+
+func test_stationary_not_spotted_far() -> void:
+	# Quietos a 332 m: fuera de SPOT_RANGE_STATIONARY, nadie ve a nadie
 	var world: SimWorld = _flat_world()
 	world.update_detection()
-	assert_eq(world.visible_enemies[0].size(), 4, "azules ven a los 4 rojos")
+	assert_eq(world.visible_enemies[0].size(), 0, "rojos quietos a 332 m no se detectan")
+	# A 200 m, quieto y con el casco a la vista: sí
+	world.units[4].pos = world.units[0].pos + Vector2(0.0, -50.0)
+	world.update_detection()
+	assert_true(world.visible_enemies[0].has(4), "rojo quieto a 200 m detectado")
+
+
+func test_firing_reveals_shooter() -> void:
+	# Un rojo detrás de la pared le dispara a un azul visible (por ejemplo, gracias a otro rojo):
+	# el azul no lo ve, pero queda como fantasma en known_enemies.
+	var world: SimWorld = _flat_world()
+	for u: Unit in world.units:
+		u.alive = u.id == 0 or u.id == 4
+	var blue: Unit = world.units[0]
+	var red: Unit = world.units[4]
+	red.pos = blue.pos + Vector2(0.0, -70.0) # 280 m, quieto: el azul no lo detecta
+	blue.moving = true # el rojo sí detecta al azul en movimiento
+	world.update_detection()
+	assert_true(world.visible_enemies[1].has(0), "el rojo ve al azul que se mueve")
+	assert_true(not world.visible_enemies[0].has(4), "el azul no ve al rojo quieto")
+	world.known_enemies[0].clear()
+	world.begin_execute()
+	world._combat()
+	assert_true(world.known_enemies[0].has(4), "el fogonazo delata al rojo")
+	assert_true(world.recently_fired(red), "recién disparó")
+	world.update_detection()
+	assert_true(world.visible_enemies[0].has(4), "recién disparado se lo detecta a 280 m")
 
 
 func test_wall_hides_tank() -> void:

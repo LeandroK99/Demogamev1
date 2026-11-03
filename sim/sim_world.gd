@@ -15,6 +15,7 @@ var units: Array[Unit] = []
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var turn: int = 1
 var tick_in_turn: int = 0
+var total_ticks: int = 0 # ticks desde el comienzo de la partida
 var phase: int = Phase.PLAN
 var ticks_per_turn: int = roundi(Config.TURN_SECONDS / Config.TICK)
 var winner: int = NO_WINNER # 0 azul, 1 rojo, DRAW empate
@@ -103,7 +104,7 @@ func begin_execute() -> void:
 
 
 ## Quién ve a quién: un enemigo es visible para un bando si alguna unidad viva
-## de ese bando ve su centro a <= MAX_RANGE.
+## de ese bando lo detecta (ver _can_spot).
 func update_detection() -> void:
 	for side: int in 2:
 		var vis: Dictionary = {}
@@ -111,13 +112,38 @@ func update_detection() -> void:
 			if enemy.side == side or not enemy.alive:
 				continue
 			for own: Unit in units:
-				if own.side == side and own.alive and _can_see(own, enemy, Config.CENTER_H):
+				if own.side == side and own.alive and _can_spot(own, enemy):
 					vis[enemy.id] = true
 					known_enemies[side][enemy.id] = {"cell": enemy.cell(), "last_seen_turn": turn}
 					break
 		visible_enemies[side] = vis
 
 
+## Detección: LOS al centro del blanco y distancia dentro del alcance de detección, que depende
+## de lo que hace el blanco: en movimiento o recién disparado, MAX_RANGE; quieto,
+## SPOT_RANGE_STATIONARY; quieto y con el casco oculto para el observador, SPOT_RANGE_HULLDOWN.
+func _can_spot(observer: Unit, target: Unit) -> bool:
+	var d: float = TerrainAnalysis.dist_m(observer.cell(), target.cell())
+	if d > Config.MAX_RANGE:
+		return false
+	if not analysis.los(observer.cell(), Config.EYE_H, target.cell(), Config.CENTER_H):
+		return false
+	if target.moving or recently_fired(target):
+		return true
+	if d <= Config.SPOT_RANGE_HULLDOWN:
+		return true
+	if d > Config.SPOT_RANGE_STATIONARY:
+		return false
+	# Quieto entre los dos alcances: solo si se le ve el casco
+	return analysis.los(observer.cell(), Config.EYE_H, target.cell(), Config.HULL_H)
+
+
+func recently_fired(u: Unit) -> bool:
+	return float(total_ticks - u.last_fire_tick) * Config.TICK < Config.FIRE_REVEAL_SECONDS
+
+
+## Línea de tiro: LOS al centro del blanco a <= MAX_RANGE (para disparar, además
+## el blanco tiene que ser visible para el bando).
 func _can_see(observer: Unit, target: Unit, target_h: float) -> bool:
 	return TerrainAnalysis.dist_m(observer.cell(), target.cell()) <= Config.MAX_RANGE \
 		and analysis.los(observer.cell(), Config.EYE_H, target.cell(), target_h)
@@ -162,7 +188,7 @@ func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.Z
 
 
 ## Orden ATTACK: avanzar por la ruta cubierta hacia la última posición conocida del enemigo,
-## detenerse apenas tenga línea de tiro y priorizarlo como blanco. Solo enemigos conocidos.
+## detenerse apenas tenga línea de tiro y el bando lo vea y priorizarlo como blanco. Solo enemigos conocidos.
 func order_attack(unit_id: int, enemy_id: int) -> bool:
 	var u: Unit = get_unit(unit_id)
 	var enemy: Unit = get_unit(enemy_id)
@@ -193,7 +219,7 @@ func _update_attackers() -> void:
 			u.order = Unit.Order.NONE
 			u.path.clear()
 			u.moving = false
-		elif not u.path.is_empty() and _can_see(u, enemy, Config.CENTER_H):
+		elif not u.path.is_empty() and visible_enemies[u.side].has(enemy.id) and _can_see(u, enemy, Config.CENTER_H):
 			u.path.clear()
 			u.moving = false
 			u.final_heading = Vector2.ZERO
@@ -279,6 +305,7 @@ func step() -> void:
 		if u.alive and not u.path.is_empty():
 			_advance(u, Config.TICK)
 	tick_in_turn += 1
+	total_ticks += 1
 	if tick_in_turn % Config.DETECTION_INTERVAL_TICKS == 0:
 		update_detection()
 	_combat()
@@ -298,6 +325,9 @@ func _combat() -> void:
 		if target == null:
 			continue
 		shooter.reload_left = Config.RELOAD_SECONDS
+		shooter.last_fire_tick = total_ticks
+		# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
+		known_enemies[target.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
 		target.shots_received += 1
 		var hit: bool = rng.randf() < hit_probability(shooter, target)
 		if hit:

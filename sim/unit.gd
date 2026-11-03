@@ -17,6 +17,7 @@ var attack_target: int = -1 # id del enemigo a atacar (-1 = ninguno)
 var order: int = Order.NONE
 var moving: bool = false
 var alive: bool = true
+var last_fire_tick: int = -1000000 # tick global del último disparo
 var shots_received: int = 0 # disparos recibidos (impacten o no)
 
 

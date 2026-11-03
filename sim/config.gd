@@ -61,6 +61,9 @@ const PATH_SLOPE_COST: float = 1.0 # costo extra en el A* a pendiente máxima
 
 # --- Detección ---
 const DETECTION_INTERVAL_TICKS: int = 5 # cada cuántos ticks se recalcula quién ve a quién
+const SPOT_RANGE_STATIONARY: float = 220.0 # metros: alcance para detectar a un blanco quieto
+const SPOT_RANGE_HULLDOWN: float = 150.0 # metros: blanco quieto con el casco oculto para el observador
+const FIRE_REVEAL_SECONDS: float = 3.0 # tras disparar, se lo detecta a MAX_RANGE aunque esté quieto
 
 # --- Orden hull-down e IA ---
 const HULLDOWN_MIN_SEPARATION: float = 3.0 # celdas mínimas entre destinos de una misma orden

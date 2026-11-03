@@ -30,6 +30,11 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | Q / E o botón medio | Rotar la cámara |
 | R / Shift+R | Reiniciar con la misma semilla / con un mapa nuevo |
 
+### Reglas de combate
+
+- **Blindaje:** un tanque recibe menos impactos de frente (×0,6) que de flanco (×1) o por detrás (×1,4). Al ir a hull-down mira hacia las amenazas; con el clic derecho arrastrado elegís vos la orientación. El casco no gira solo.
+- **Detección:** a un tanque en movimiento se lo detecta hasta 350 m; quieto, hasta 220 m, y quieto con el casco oculto, hasta 150 m. Disparar te delata: el enemigo sabe de dónde vino el tiro y durante 3 s te ve a 350 m.
+
 Ganás si destruís a los 4 rojos. Si se llega al turno 12, gana el bando con más tanques vivos.
 
 ## Tests

@@ -81,6 +81,7 @@ func test_attack_target_has_priority() -> void:
 func test_attack_ends_when_target_dies() -> void:
 	var ids: Array[int] = [0, 4]
 	var world: SimWorld = _world(ids)
+	world.units[4].moving = true # en movimiento se lo detecta a 332 m
 	world.update_detection()
 	assert_true(world.order_attack(0, 4), "orden aceptada")
 	world.units[4].alive = false
