@@ -117,6 +117,17 @@ const AI_INF_AMBUSH_RANGE: float = 150.0 # metros: la escuadra roja no abre fueg
 const AI_INF_POSITION_RADIUS: int = 6 # celdas para buscar cobertura alrededor de la escuadra
 const AI_INF_W_COVER: float = 3.0 # puntaje de la cobertura al elegir posición
 const AI_INF_W_VIEW: float = 2.0 # puntaje de ver hacia adelante (o a las amenazas)
+const AI_DEPTH_FORWARD: Vector2i = Vector2i(-6, 0) # defensa en profundidad de la loma: celdas desde el objetivo
+const AI_DEPTH_MAIN: Vector2i = Vector2i(6, -5) # (x al costado; y hacia atrás, del lado rojo)...
+const AI_DEPTH_RESERVE: Vector2i = Vector2i(0, -12)
+const AI_DEPTH_ANCHOR_SLACK: int = 3 # más lejos que esto de su lugar, la escuadra vuelve
+const AI_MONITOR_TICKS: int = 20 # durante la ejecución, el comandante rojo mira la situación cada 2 s
+const AI_PRESSED_SECONDS: float = 10.0 # adelantada frenada este tiempo (o diezmada): se repliega
+const AI_PRESSED_ENEMY_M: float = 50.0 # ... o con un enemigo a menos de esto
+const AI_REINFORCE_FIRED_SECONDS: float = 10.0 # una escuadra a la que le tiraron hace menos pide refuerzo
+const AI_FRESH_MEN: int = 5 # una escuadra con al menos estos hombres y poca supresión está fresca
+const AI_COUNTER_RADIUS: float = 12.0 # celdas: azules a esta distancia del objetivo cuentan para el contraataque
+const AI_COUNTER_FROM: float = 25.0 # celdas: la escuadra que contraataca está a menos de esto del objetivo
 const AI_INF_SUPPRESS_MAX: float = 30.0 # suprime una zona solo si su propia supresión es menor
 
 # --- Microcobertura (1 m) ---

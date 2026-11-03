@@ -12,7 +12,17 @@ extends RefCounted
 ## Las escuadras de infantería tienen su propia lógica (ver _infantry_orders): defienden
 ## desde la cobertura, emboscan a corta distancia, suprimen y se repliegan diezmadas.
 
+## Defensa en profundidad (la loma): adelantada en la cresta, línea principal en la contrapendiente
+## y reserva atrás. Durante la ejecución (monitor) la adelantada se repliega si la aprietan, la
+## reserva refuerza a la que está en contacto y, si los azules en el objetivo quedan débiles, contraataca.
+enum Role { FORWARD, MAIN, RESERVE }
+const ROLE_NAMES: Array[String] = ["adelantada", "principal", "reserva"]
+
 var side: int = 1
+var roles: Dictionary = {} # unit id -> Role
+var anchors: Dictionary = {} # unit id -> celda de su puesto (la de su papel o la del refuerzo)
+var _reinforcing: int = -1 # la reserva que ya salió a reforzar
+var _counterattacked: bool = false
 
 
 func _init(p_side: int) -> void:
@@ -25,6 +35,7 @@ func forward() -> Vector2i:
 
 
 func issue_orders(world: SimWorld) -> void:
+	assign_roles(world)
 	var threats: Array[Vector2i] = world.threats_for(side)
 	var hulldown_ids: Array[int] = []
 	var reserved: Array[Vector2i] = []
@@ -194,19 +205,22 @@ func _hidden_infantry_target(world: SimWorld, u: Unit) -> Vector2i:
 
 ## Mejor celda para la escuadra a <= AI_INF_POSITION_RADIUS: cobertura + vista a las amenazas
 ## (o a un punto AI_CREST_PROBE_DIST celdas adelante), sin repetir celdas reservadas.
-func infantry_position(world: SimWorld, u: Unit, threats: Array[Vector2i], reserved: Array[Vector2i]) -> Vector2i:
+func infantry_position(world: SimWorld, u: Unit, threats: Array[Vector2i], reserved: Array[Vector2i],
+		center: Vector2i = Vector2i(-1, -1)) -> Vector2i:
+	if center.x < 0:
+		center = u.cell()
 	var targets: Array[Vector2i] = threats.duplicate()
 	if targets.is_empty():
-		var probe: Vector2i = u.cell() + forward() * Config.AI_CREST_PROBE_DIST
+		var probe: Vector2i = center + forward() * Config.AI_CREST_PROBE_DIST
 		var n: int = world.height_field.size - 1
 		targets.append(Vector2i(clampi(probe.x, 0, n), clampi(probe.y, 0, n)))
 	var pf: Pathfinder = world.pathfinders[Unit.Kind.INFANTRY]
-	var best: Vector2i = u.cell()
+	var best: Vector2i = u.cell() if center == u.cell() else center
 	var best_score: float = -INF
 	var r: int = Config.AI_INF_POSITION_RADIUS
 	for dy: int in range(-r, r + 1):
 		for dx: int in range(-r, r + 1):
-			var c: Vector2i = u.cell() + Vector2i(dx, dy)
+			var c: Vector2i = center + Vector2i(dx, dy)
 			if dx * dx + dy * dy > r * r or not pf.is_walkable(c):
 				continue
 			if c != u.cell() and not SimWorld.is_free(c, reserved):
@@ -222,3 +236,124 @@ func infantry_position(world: SimWorld, u: Unit, threats: Array[Vector2i], reser
 				best = c
 				best_score = score
 	return best
+
+
+## --- Defensa en profundidad ---
+
+## Reparte los papeles la primera vez (solo en la loma, con dos escuadras o más).
+func assign_roles(world: SimWorld) -> void:
+	if not roles.is_empty() or world.scenario != SimWorld.Scenario.LOMA:
+		return
+	var squads: Array[Unit] = []
+	for u: Unit in world.units:
+		if u.side == side and u.alive and u.is_infantry():
+			squads.append(u)
+	if squads.size() < 2:
+		return
+	for i: int in squads.size():
+		var role: int = Role.MAIN
+		if i == 0:
+			role = Role.FORWARD
+		elif i == 2:
+			role = Role.RESERVE
+		roles[squads[i].id] = role
+		anchors[squads[i].id] = role_anchor(world, role)
+
+
+## Celda del puesto de un papel: desde el objetivo, al costado y hacia el lado propio.
+func role_anchor(world: SimWorld, role: int) -> Vector2i:
+	var off: Vector2i = Config.AI_DEPTH_MAIN
+	match role:
+		Role.FORWARD:
+			off = Config.AI_DEPTH_FORWARD
+		Role.RESERVE:
+			off = Config.AI_DEPTH_RESERVE
+	var c: Vector2i = world.objective_cell() + Vector2i(off.x, off.y * forward().y)
+	var n: int = world.height_field.size - 1
+	return world._nearest_walkable(Vector2i(clampi(c.x, 0, n), clampi(c.y, 0, n)), Unit.Kind.INFANTRY)
+
+
+func role_of(unit_id: int) -> int:
+	return int(roles.get(unit_id, -1))
+
+
+## Durante la ejecución, cada AI_MONITOR_TICKS: repliegue de la adelantada, refuerzo y contraataque.
+func monitor(world: SimWorld) -> void:
+	if roles.is_empty():
+		return
+	_monitor_withdraw(world)
+	_monitor_reinforce(world)
+	_monitor_counterattack(world)
+
+
+## La adelantada diezmada, frenada mucho tiempo o con un enemigo encima: a la línea principal.
+func _monitor_withdraw(world: SimWorld) -> void:
+	for id: int in roles:
+		var u: Unit = world.units[id]
+		if not u.alive or roles[id] != Role.FORWARD:
+			continue
+		var halted_s: float = float(world.total_ticks - u.mind.halted_since) * Config.TICK if u.mind.halted_since >= 0 else 0.0
+		var close: bool = false
+		for e: Unit in world.units:
+			if e.side != side and e.alive and world.visible_enemies[side].has(e.id) \
+					and e.pos_m().distance_to(u.pos_m()) <= Config.AI_PRESSED_ENEMY_M:
+				close = true
+		if u.ok_count() <= Config.BREAK_MEN or halted_s >= Config.AI_PRESSED_SECONDS or close:
+			var main: Vector2i = role_anchor(world, Role.MAIN) + Vector2i(-3, 0)
+			main = world._nearest_walkable(main, Unit.Kind.INFANTRY)
+			if world.command_move(id, main):
+				roles[id] = Role.MAIN
+				anchors[id] = main
+				world.radio(u, "la adelantada se repliega a la línea principal")
+
+
+## La reserva fresca va a reforzar a la escuadra en contacto (una vez).
+func _monitor_reinforce(world: SimWorld) -> void:
+	if _reinforcing >= 0:
+		return
+	var reserve: Unit = null
+	for id: int in roles:
+		if roles[id] == Role.RESERVE and world.units[id].alive:
+			reserve = world.units[id]
+	if reserve == null or not _fresh(world, reserve):
+		return
+	for id: int in roles:
+		var u: Unit = world.units[id]
+		if u == reserve or not u.alive or not world.fired_upon_within(u, Config.AI_REINFORCE_FIRED_SECONDS):
+			continue
+		var c: Vector2i = u.cell() - forward() * 3 + Vector2i(3, 0)
+		var n: int = world.height_field.size - 1
+		c = world._nearest_walkable(Vector2i(clampi(c.x, 0, n), clampi(c.y, 0, n)), Unit.Kind.INFANTRY)
+		if world.command_move(reserve.id, c):
+			_reinforcing = reserve.id
+			roles[reserve.id] = Role.MAIN
+			anchors[reserve.id] = c
+			world.radio(reserve, "la reserva refuerza a la %s" % ROLE_NAMES[roles[id]])
+		return
+
+
+## Azules en el objetivo, todos débiles (diezmados o frenados): asalto de una escuadra fresca cercana (una vez).
+func _monitor_counterattack(world: SimWorld) -> void:
+	if _counterattacked:
+		return
+	var obj: Vector2 = Vector2(world.objective_cell())
+	var blues: int = 0
+	for e: Unit in world.units:
+		if e.side == side or not e.alive or not e.is_infantry() or e.pos.distance_to(obj) > Config.AI_COUNTER_RADIUS:
+			continue
+		blues += 1
+		if e.ok_count() > Config.BREAK_MEN and not world.inf.halted(e):
+			return # hay uno entero: todavía no
+	if blues == 0:
+		return
+	for id: int in roles:
+		var u: Unit = world.units[id]
+		if u.alive and _fresh(world, u) and u.pos.distance_to(obj) <= Config.AI_COUNTER_FROM:
+			if world.command_move(id, world.objective_cell(), true):
+				_counterattacked = true
+				world.radio(u, "¡contraataque!")
+			return
+
+
+func _fresh(_world: SimWorld, u: Unit) -> bool:
+	return u.ok_count() >= Config.AI_FRESH_MEN and u.suppression < Config.DRILL_CALM_SUPP and not u.broken

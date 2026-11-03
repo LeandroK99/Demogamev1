@@ -248,6 +248,19 @@ func end_autonomous() -> void:
 	_autonomous -= 1
 
 
+## Orden del comandante (la IA del bando) en plena ejecución: manda sobre lo que la escuadra
+## hacía por su cuenta. assault: asalto directo en vez de marcha cubierta.
+func command_move(unit_id: int, target: Vector2i, assault: bool = false) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive:
+		return false
+	_new_intent(u)
+	begin_autonomous()
+	var ok: bool = order_assault(unit_id, target) if assault else order_move(unit_id, target)
+	end_autonomous()
+	return ok
+
+
 ## La escuadra piensa ya (tests y eventos).
 func mind_think_now(u: Unit) -> void:
 	minds.think(self, u)
@@ -1011,6 +1024,8 @@ func step() -> void:
 	if game_over:
 		return
 	_update_attackers()
+	if ai != null and phase == Phase.EXECUTE and total_ticks % Config.AI_MONITOR_TICKS == 0:
+		ai.monitor(self)
 	minds.update(self)
 	for u: Unit in units:
 		if not u.alive or u.path.is_empty():
