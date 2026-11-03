@@ -1147,6 +1147,7 @@ func step() -> void:
 	inf.update_grenades(self)
 	inf.update_formations(self)
 	inf.update_digging(self)
+	inf.update_surrender(self)
 	_tick_smoke()
 	tick_in_turn += 1
 	total_ticks += 1
@@ -1186,6 +1187,8 @@ func _lose_morale(u: Unit, amount: float) -> void:
 		return
 	u.morale = maxf(0.0, u.morale - amount)
 	if u.morale < Config.MORALE_BREAK:
+		if not u.broken:
+			u.broken_tick = total_ticks
 		u.broken = true
 
 
@@ -1323,6 +1326,17 @@ func damage_soldier(u: Unit, s: Soldier) -> void:
 		if s.role == Soldier.Role.LEADER and u.mind != null:
 			minds.on_leader_lost(self, u)
 	_check_dead(u)
+
+
+## La escuadra se rinde: fuera de combate (los soldados quedan, sin pelear).
+func surrender(u: Unit) -> void:
+	u.surrendered = true
+	u.alive = false
+	u.moving = false
+	u.path.clear()
+	u.waypoints.clear()
+	radio(u, "¡nos rendimos!")
+	decision_counts["se rinde"] = int(decision_counts.get("se rinde", 0)) + 1
 
 
 func _check_dead(u: Unit) -> void:

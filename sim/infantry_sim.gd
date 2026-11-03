@@ -783,6 +783,45 @@ func update_digging(w: SimWorld) -> void:
 						w.dug_events.pop_front() # la vista los consume; sin vista (tests), que no crezca
 
 
+## Parte de los soldados en condiciones de u que están en un pozo (o un cráter).
+static func dug_fraction(w: SimWorld, u: Unit) -> float:
+	if w.micro == null:
+		return 0.0
+	var n: int = 0
+	var dug: int = 0
+	for s: Soldier in u.soldiers:
+		if s.is_ok():
+			n += 1
+			if w.micro.type_at_m(s.pos) == MicroCover.Type.CRATER:
+				dug += 1
+	return float(dug) / float(n) if n > 0 else 0.0
+
+
+## --- Rendición (fase 59) ---
+## Escuadra quebrada hace SURRENDER_AFTER_SECONDS, con un enemigo conocido a menos de
+## SURRENDER_ENEMY_M y sin ruta de repliegue (la mayoría clavada, o sin camino): se rinde.
+func update_surrender(w: SimWorld) -> void:
+	if w.total_ticks % 10 != 0:
+		return
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry() or not u.broken or u.mind == null:
+			continue
+		if float(w.total_ticks - u.broken_tick) * Config.TICK < Config.SURRENDER_AFTER_SECONDS:
+			continue
+		if not u.path.is_empty() and not halted(u):
+			continue # todavía tiene por dónde irse
+		if not _enemy_within(u, Config.SURRENDER_ENEMY_M):
+			continue
+		w.surrender(u)
+
+
+func _enemy_within(u: Unit, meters: float) -> bool:
+	for id: int in u.mind.contacts:
+		if Vector2(u.mind.contacts[id]["pos"]).distance_to(u.pos_m()) <= meters:
+			return true
+	return false
+
+
 ## Al tomar una posición (llegó al final de un asalto, o al objetivo de la loma): reparte la munición
 ## entre los fusileros (incluida la de los caídos) y lo avisa. Los sectores y los pozos salen solos.
 func consolidate(w: SimWorld, u: Unit) -> void:

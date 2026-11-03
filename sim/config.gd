@@ -487,3 +487,8 @@ const PLT_FLANK_ARRIVE_CELLS: int = 3 # la maniobra llegó a su puesto de flanco
 const PLT_FIX_MAX_SECONDS: float = 90.0 # flanqueando más que esto: asaltan desde donde estén
 const PLT_ASSAULT_MAX_SECONDS: float = 135.0 # asaltando más que esto: todos al objetivo
 
+# --- Contraataque local y rendición (fase 59) ---
+const COUNTER_DUG_FRACTION: float = 0.5 # el atacante en el objetivo con menos de esto en pozos: todavía no se afirmó
+const SURRENDER_ENEMY_M: float = 50.0 # quebrada, con el enemigo a menos de esto...
+const SURRENDER_AFTER_SECONDS: float = 8.0 # ... quebrada hace más de esto ...
+# ... y sin ruta de repliegue (clavada o sin camino): se rinde

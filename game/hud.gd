@@ -308,5 +308,5 @@ func _unit_text() -> String:
 	lines.append("Disparos recibidos")
 	for u: Unit in world.units:
 		if u.side == PLAYER_SIDE:
-			lines.append("%s %d: %d%s" % [unit_name(u), u.id + 1, u.shots_received, "" if u.alive else " (destruido)"])
+			lines.append("%s %d: %d%s" % [unit_name(u), u.id + 1, u.shots_received, "" if u.alive else (" (rendida)" if u.surrendered else " (destruido)")])
 	return "\n".join(lines)
