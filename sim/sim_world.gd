@@ -1365,11 +1365,38 @@ func _end_turn() -> void:
 		var red: int = alive_count(1)
 		game_over = true
 		winner = DRAW if blue == red else (0 if blue > red else 1)
+		if scenario == Scenario.LOMA:
+			# La loma: el azul gana solo si ocupa la cresta sin rojos; en disputa, empate; si no, gana el rojo
+			var holder: int = objective_holder()
+			winner = 0 if holder == 0 else (DRAW if holder == DRAW else 1)
 		phase = Phase.PLAN
 		return
 	turn += 1
 	tick_in_turn = 0
 	start_plan()
+
+
+## Centro del objetivo de la loma: el eje de la cresta en el medio del mapa.
+func objective_cell() -> Vector2i:
+	var x: int = height_field.size / 2
+	return Vector2i(x, roundi(height_field.ridge_center_y(float(x))))
+
+
+## Quién ocupa el objetivo: el bando con infantería viva y sin quebrar a <= LOMA_OBJECTIVE_RADIUS
+## (y el otro sin ninguna), DRAW si los dos, NO_WINNER si nadie.
+func objective_holder() -> int:
+	var present: Array[bool] = [false, false]
+	var center: Vector2 = Vector2(objective_cell())
+	for u: Unit in units:
+		if u.alive and u.is_infantry() and not u.broken and u.pos.distance_to(center) <= Config.LOMA_OBJECTIVE_RADIUS:
+			present[u.side] = true
+	if present[0] and present[1]:
+		return DRAW
+	if present[0]:
+		return 0
+	if present[1]:
+		return 1
+	return NO_WINNER
 
 
 func speed_at(c: Vector2i, kind: int = Unit.Kind.TANK) -> float:

@@ -61,6 +61,8 @@ Con **L** cambiás al escenario de infantería. Cada bando tiene 3 escuadras de 
 - **Armas:** el tanque usa el cañón contra tanques y la coaxial contra infantería. La escuadra usa fusiles contra infantería y un antitanque de 150 m con 2 cargas contra tanques (mejor por el flanco o la cola). Con 3 hombres o menos tira a la mitad.
 - **Cobertura:** el bosque corta la línea de visión después de 2 celdas y frena al tanque a la mitad. Bosque, muro y pozo reducen los impactos y la detección contra la infantería.
 - **Supresión y moral:** cada disparo recibido suprime aunque no impacte. Suprimida (desde 50), la escuadra no avanza y tira peor; desde 85 no tira. Un tanque suprimido se abotona y ve a la mitad de distancia. Las bajas y la supresión bajan la moral; con menos de 25 la escuadra se quiebra, se retira sola e ignora órdenes hasta recuperarse.
+- **Objetivo:** el círculo blanco sobre la cresta. Al llegar al turno 12, ganás si tenés infantería sin quebrar adentro y el rojo no; si los dos tienen, es empate; si no, gana el rojo. Destruir a todo el bando contrario también gana.
+- **IA roja:** sus escuadras buscan cobertura con vista a las rutas de acercamiento y no abren fuego a más de 150 m salvo que las ataquen. Suprimen la última posición conocida de tu infantería y se repliegan cuando quedan diezmadas. Defienden, no contraatacan.
 - **Pelotón mixto:** con el pelotón seleccionado (doble clic), la infantería va al objetivo y el tanque se queda 48 m detrás, cubriéndola.
 
 Ganás si destruís a los 4 rojos. Si se llega al turno 12, gana el bando con más tanques vivos.

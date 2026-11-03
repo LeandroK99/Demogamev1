@@ -109,7 +109,15 @@ const LOMA_FOREST_FROM: int = 3 # bosque de la contrapendiente: de esta distanci
 const LOMA_FOREST_TO: int = 8 # ... hasta esta
 const LOMA_FOREST_X_STEP: int = 18 # celdas entre manchas de bosque a lo largo de la cresta
 const LOMA_FOREST_HALF_W: int = 6 # medio ancho (en x) de cada mancha
+const LOMA_OBJECTIVE_RADIUS: float = 8.0 # celdas alrededor del centro de la cresta que hay que ocupar
 const TANK_SUPPORT_BACK: float = 12.0 # celdas: el tanque de un pelotón mixto se queda esto detrás de la infantería
+
+# --- IA de infantería ---
+const AI_INF_AMBUSH_RANGE: float = 150.0 # metros: la escuadra roja no abre fuego más lejos si no la atacaron
+const AI_INF_POSITION_RADIUS: int = 6 # celdas para buscar cobertura alrededor de la escuadra
+const AI_INF_W_COVER: float = 3.0 # puntaje de la cobertura al elegir posición
+const AI_INF_W_VIEW: float = 2.0 # puntaje de ver hacia adelante (o a las amenazas)
+const AI_INF_SUPPRESS_MAX: float = 30.0 # suprime una zona solo si su propia supresión es menor
 
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex

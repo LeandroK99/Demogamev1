@@ -285,3 +285,17 @@ Salen de la evaluación del brief de órdenes e interfaz. Todo con tanques; la i
 - **18 — Vista previa de riesgo.** `route_risk`: duración, segundos expuestos, impactos esperados contra amenazas conocidas, peor cara del blindaje y nivel. La ruta expuesta se pinta en rojo.
 
 Siguen (interfaz): mockups de los 7 estados, 19 menú radial, 20 HUD fijo con minimapa y símbolos OTAN, 21 contactos inciertos y dificultad.
+
+---
+
+## Fases 22–28 — Infantería y "La loma"
+
+Plan completo en el doc "Hull-Down: plan de infantería". La demo de tanques queda igual (escenario `TANKS`); la infantería vive en el escenario `LOMA` (tecla L).
+
+- **22 — Tipos de unidad.** `Unit.kind` y alturas por unidad (`eye_h`, `profile_h`, `center_h`); un `Pathfinder` y un mapa de exposición por tipo.
+- **23 — Escuadra.** 9 hombres, 1,5 m/s, pendiente máxima 8 m, cuerpo a tierra a los 3 s quieta; detección 250 / 120 / 60 m. Hull-down = tomar posición.
+- **24 — Armas.** Dos slots por unidad: cañón + coaxial, fusiles + antitanque (150 m, 2 cargas). Un impacto = un hombre.
+- **25 — Cobertura.** `CoverMap` (bosque, muro, pozo). El bosque corta la LOS tras 2 celdas y frena al tanque; la cobertura baja impactos y detección contra infantería.
+- **26 — Supresión y moral.** Supresión 0..100 por fuego recibido (50 suprimida, 85 inmovilizada; tanque abotonado). Moral; quebrada se retira sola. Orden SUPPRESS (zona) y condición "suprimida".
+- **27 — La loma.** 3 escuadras + 1 tanque por bando, turnos de 45 s, rojo detrás de la cresta con bosque en la contrapendiente. Pelotón mixto: el tanque se queda atrás cubriendo. Objetivo en la cresta.
+- **28 — IA de infantería.** Cobertura con vista, emboscada a 150 m, suprime la última posición conocida, repliega diezmadas. No contraataca.

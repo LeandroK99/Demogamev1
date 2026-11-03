@@ -68,3 +68,18 @@ func test_tank_scenario_unchanged() -> void:
 	assert_eq(world.units.size(), Config.UNITS_PER_SIDE * 2, "4 tanques por bando")
 	assert_true(world.cover == null, "sin cobertura")
 	assert_eq(world.ticks_per_turn, roundi(Config.TURN_SECONDS / Config.TICK), "turnos de 30 s")
+
+
+func test_objective_holder() -> void:
+	var world: SimWorld = _loma()
+	var obj: Vector2 = Vector2(world.objective_cell())
+	for u: Unit in world.units:
+		if u.is_infantry():
+			u.pos = Vector2(5, 5) if u.side == 1 else Vector2(90, 90)
+	assert_eq(world.objective_holder(), SimWorld.NO_WINNER, "nadie en la cresta")
+	world.units[0].pos = obj
+	assert_eq(world.objective_holder(), 0, "el azul la ocupa")
+	world.units[4].pos = obj + Vector2(2, 0)
+	assert_eq(world.objective_holder(), SimWorld.DRAW, "en disputa")
+	world.units[4].broken = true
+	assert_eq(world.objective_holder(), 0, "un rojo quebrado no cuenta")

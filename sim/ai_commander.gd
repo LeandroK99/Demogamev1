@@ -9,6 +9,8 @@ extends RefCounted
 ##      vuelve; con más, HULLDOWN, busca desde dónde tirar).
 ##   4. Sin amenazas -> avanzar a la cresta por delante, a una posición hull-down
 ##      contra un observador hipotético del lado enemigo.
+## Las escuadras de infantería tienen su propia lógica (ver _infantry_orders): defienden
+## desde la cobertura, emboscan a corta distancia, suprimen y se repliegan diezmadas.
 
 var side: int = 1
 
@@ -30,6 +32,10 @@ func issue_orders(world: SimWorld) -> void:
 		if u.side != side or not u.alive:
 			continue
 		world.set_engagement(u.id, Vector2.ZERO, Config.MAX_RANGE)
+		if u.is_infantry():
+			_infantry_orders(world, u, threats, reserved)
+			reserved.append(world.destination(u))
+			continue
 		if u.hp == 1 and not threats.is_empty():
 			_retreat(world, u)
 			reserved.append(world.destination(u))
@@ -138,3 +144,81 @@ func crest_target(world: SimWorld, from: Vector2i, reserved: Array[Vector2i]) ->
 			return cell
 	var fallback: Vector2i = crest - fwd * 2
 	return fallback if world.pathfinder.is_walkable(fallback) else from
+
+
+## --- Infantería ---
+
+## Una escuadra roja: emboscada a corta distancia desde la cobertura.
+##   1. Diezmada (<= INF_WEAK_MEN) con amenazas -> retirarse a la celda menos expuesta.
+##   2. Hay infantería enemiga conocida que no ve, a tiro -> suprimir esa zona.
+##   3. Si no -> tomar (o mantener) la mejor posición cercana: cobertura y vista hacia
+##      las amenazas (o hacia adelante si no hay).
+func _infantry_orders(world: SimWorld, u: Unit, threats: Array[Vector2i], reserved: Array[Vector2i]) -> void:
+	var ambush_m: float = Config.RIFLES_RANGE if world.fired_upon_recently(u) else Config.AI_INF_AMBUSH_RANGE
+	world.set_engagement(u.id, Vector2.ZERO, ambush_m)
+	if u.hp <= Config.INF_WEAK_MEN and not threats.is_empty():
+		if world.order_withdraw(u.id):
+			return
+	var target: Vector2i = _hidden_infantry_target(world, u)
+	if target.x >= 0 and u.suppression < Config.AI_INF_SUPPRESS_MAX and world.order_suppress(u.id, target):
+		return
+	var best: Vector2i = infantry_position(world, u, threats, reserved)
+	if best == u.cell():
+		u.path.clear()
+		u.waypoints.clear()
+		u.moving = false
+		u.order = Unit.Order.HOLD
+	elif world.order_move(u.id, best):
+		u.order = Unit.Order.HULLDOWN
+
+
+## Infantería enemiga conocida, no visible ahora, a tiro de fusil y con línea de visión a su celda.
+func _hidden_infantry_target(world: SimWorld, u: Unit) -> Vector2i:
+	var known: Dictionary = world.known_enemies[side]
+	var best: Vector2i = Vector2i(-1, -1)
+	var best_d: float = INF
+	for id: int in known:
+		var enemy: Unit = world.units[id]
+		var info: Dictionary = known[id]
+		if not enemy.alive or not enemy.is_infantry() or world.visible_enemies[side].has(id):
+			continue
+		if int(info["last_seen_turn"]) < world.turn - 1:
+			continue
+		var cell: Vector2i = info["cell"]
+		var d: float = TerrainAnalysis.dist_m(u.cell(), cell)
+		if d < best_d and world.can_suppress_at(u, cell):
+			best = cell
+			best_d = d
+	return best
+
+
+## Mejor celda para la escuadra a <= AI_INF_POSITION_RADIUS: cobertura + vista a las amenazas
+## (o a un punto AI_CREST_PROBE_DIST celdas adelante), sin repetir celdas reservadas.
+func infantry_position(world: SimWorld, u: Unit, threats: Array[Vector2i], reserved: Array[Vector2i]) -> Vector2i:
+	var targets: Array[Vector2i] = threats.duplicate()
+	if targets.is_empty():
+		var probe: Vector2i = u.cell() + forward() * Config.AI_CREST_PROBE_DIST
+		var n: int = world.height_field.size - 1
+		targets.append(Vector2i(clampi(probe.x, 0, n), clampi(probe.y, 0, n)))
+	var pf: Pathfinder = world.pathfinders[Unit.Kind.INFANTRY]
+	var best: Vector2i = u.cell()
+	var best_score: float = -INF
+	var r: int = Config.AI_INF_POSITION_RADIUS
+	for dy: int in range(-r, r + 1):
+		for dx: int in range(-r, r + 1):
+			var c: Vector2i = u.cell() + Vector2i(dx, dy)
+			if dx * dx + dy * dy > r * r or not pf.is_walkable(c):
+				continue
+			if c != u.cell() and not SimWorld.is_free(c, reserved):
+				continue
+			var view: bool = false
+			for t: Vector2i in targets:
+				if world.analysis.los(c, Config.INF_EYE_H, t, 1.0):
+					view = true
+					break
+			var score: float = Config.AI_INF_W_COVER * world.cover_at(c) + Config.AI_INF_W_VIEW * float(view) \
+				- Vector2(dx, dy).length() / Config.HULLDOWN_DIST_DIV
+			if score > best_score + 0.0001:
+				best = c
+				best_score = score
+	return best

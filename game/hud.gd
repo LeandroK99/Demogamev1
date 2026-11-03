@@ -87,7 +87,10 @@ func _process(_delta: float) -> void:
 	var phase_text: String = "PLANIFICAR (Espacio: ejecutar)"
 	if world.phase == SimWorld.Phase.EXECUTE:
 		phase_text = "EJECUTANDO %d / %d s" % [world.tick_in_turn / 10, roundi(world.ticks_per_turn * Config.TICK)]
-	var scen: String = "La loma" if world.scenario == SimWorld.Scenario.LOMA else "Tanques"
+	var scen: String = "Tanques"
+	if world.scenario == SimWorld.Scenario.LOMA:
+		var holders: Dictionary = {0: "azul", 1: "rojo", SimWorld.DRAW: "en disputa", SimWorld.NO_WINNER: "nadie"}
+		scen = "La loma (cresta: %s)" % holders.get(world.objective_holder(), "?")
 	_status.text = "%s · Turno %d / %d · %s · ×%d\nAzules vivos: %d · Rojos vivos: %d · Semilla %d" % [
 		scen, world.turn, Config.MAX_TURNS, phase_text, roundi(turn_controller.speed()),
 		world.alive_count(0), world.alive_count(1), map_seed]
