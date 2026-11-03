@@ -23,6 +23,10 @@ func update(w: SimWorld) -> void:
 			if not m.is_following():
 				switch_to(w, u, SquadMind.Option.FOLLOW) # la retirada por moral manda
 			continue
+		if m.disorganized_until >= 0:
+			if m.is_disorganized(w.total_ticks):
+				continue # sin jefe: cada uno se cubre donde está
+			_new_leader(w, u)
 		_smoke_reflex(w, u)
 		if w.total_ticks >= m.next_think_tick:
 			m.next_think_tick = w.total_ticks + think_interval(u)
@@ -133,9 +137,44 @@ func throw_smoke_toward(w: SimWorld, u: Unit, threat: Vector2) -> bool:
 	return w.hand_smoke(u, from + (threat - from) / d * minf(Config.INF_SMOKE_DIST_M, d * 0.5))
 
 
-## Ticks entre decisiones.
-func think_interval(_u: Unit) -> int:
-	return Config.MIND_THINK_TICKS
+## Ticks entre decisiones (según el jefe).
+func think_interval(u: Unit) -> int:
+	return u.mind.think_ticks()
+
+
+## --- Mando ---
+
+## Cayó el jefe: deja lo que hacía (guarda la orden) y queda desorganizada un rato.
+func on_leader_lost(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	if not m.is_following():
+		switch_to(w, u, SquadMind.Option.FOLLOW)
+	var secs: float = w.mind_rng.randf_range(Config.LEADERLESS_MIN_SECONDS, Config.LEADERLESS_MAX_SECONDS)
+	m.disorganized_until = w.total_ticks + roundi(secs / Config.TICK)
+	w.radio(u, "¡cayó el jefe!")
+
+
+## Pasada la desorganización, el segundo toma el mando (un fusilero o el proveedor si hay; si no,
+## cualquiera). Manda peor: la calidad baja un escalón.
+func _new_leader(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	m.disorganized_until = -1
+	var pick: Soldier = null
+	for s: Soldier in u.soldiers:
+		if s.is_ok() and (s.role == Soldier.Role.RIFLE or s.role == Soldier.Role.ASSISTANT):
+			pick = s
+			break
+	if pick == null:
+		for s: Soldier in u.soldiers:
+			if s.is_ok():
+				pick = s
+				break
+	if pick == null:
+		return
+	pick.role = Soldier.Role.LEADER
+	m.quality = mini(m.quality + 1, SquadMind.Quality.GREEN)
+	m.next_think_tick = w.total_ticks
+	w.radio(u, "el soldado %d toma el mando" % (pick.index + 1))
 
 
 ## Puntúa las opciones permitidas y cambia si corresponde.
@@ -143,9 +182,11 @@ func think(w: SimWorld, u: Unit) -> void:
 	var m: SquadMind = u.mind
 	var all: Dictionary = score_options(w, u)
 	var p_scores: Dictionary = {}
+	var noise: float = m.score_noise()
 	for opt: int in all:
 		if SquadMind.allowed(m.autonomy, opt):
-			p_scores[opt] = all[opt]
+			var e: float = w.mind_rng.randf_range(-noise, noise) if noise > 0.0 and opt != SquadMind.Option.FOLLOW else 0.0
+			p_scores[opt] = float(all[opt]) + e
 	m.scores = p_scores
 	var next: int = SquadMind.choose(m.option, m.since_tick, p_scores, w.total_ticks)
 	if next != m.option:

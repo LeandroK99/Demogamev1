@@ -9,13 +9,18 @@ enum Option { FOLLOW, CONTACT_DRILL, RELOCATE, AMBUSH, BREAK_CONTACT, BOUND, FLA
 ## Estricta: solo cumple la orden. Normal: reacciona (drill, reubicarse, emboscar, rescatar).
 ## Alta: además maniobra (saltos, flanqueo) y rompe el contacto sola.
 enum Autonomy { STRICT, NORMAL, HIGH }
+## Calidad del jefe: cada cuánto piensa y cuánto se equivoca al puntuar.
+enum Quality { VETERAN, REGULAR, GREEN }
 
 ## Para la radio y el HUD.
 const OPTION_NAMES: Array[String] = ["sigue la orden", "contacto", "se reubica", "emboscada",
 	"rompe el contacto", "avanza por saltos", "flanquea", "rescata un herido"]
 const AUTONOMY_NAMES: Array[String] = ["estricta", "normal", "alta"]
+const QUALITY_NAMES: Array[String] = ["veterano", "regular", "novato"]
 
 var autonomy: int = Autonomy.NORMAL
+var quality: int = Quality.REGULAR
+var disorganized_until: int = -1 # cayó el jefe: hasta este tick no piensa ni avanza
 var option: int = Option.FOLLOW
 var since_tick: int = 0 # tick global en que empezó la opción actual
 var next_think_tick: int = 0
@@ -88,6 +93,30 @@ func learn(enemy_id: int, pos: Vector2, tick: int, exact: bool) -> bool:
 		return false
 	contacts[enemy_id] = {"pos": pos, "tick": tick, "exact": exact}
 	return old.is_empty()
+
+
+## Ticks entre decisiones según el jefe.
+func think_ticks() -> int:
+	match quality:
+		Quality.VETERAN:
+			return Config.MIND_THINK_TICKS_VETERAN
+		Quality.GREEN:
+			return Config.MIND_THINK_TICKS_GREEN
+	return Config.MIND_THINK_TICKS
+
+
+## Error al puntuar según el jefe (amplitud del ruido).
+func score_noise() -> float:
+	match quality:
+		Quality.VETERAN:
+			return Config.MIND_NOISE_VETERAN
+		Quality.GREEN:
+			return Config.MIND_NOISE_GREEN
+	return Config.MIND_NOISE_REGULAR
+
+
+func is_disorganized(now: int) -> bool:
+	return now < disorganized_until
 
 
 func is_following() -> bool:

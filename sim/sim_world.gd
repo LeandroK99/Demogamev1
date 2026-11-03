@@ -138,6 +138,7 @@ func _deploy_loma() -> void:
 			var c: Vector2i = _nearest_walkable(Vector2i(x, y), kind)
 			var u: Unit = add_unit(side, Vector2(c), kind)
 			if kind == Unit.Kind.INFANTRY:
+				u.mind.quality = Config.MIND_LOMA_QUALITY[i % Config.MIND_LOMA_QUALITY.size()]
 				inf_ids.append(u.id)
 			else:
 				tank_ids.append(u.id)
@@ -1023,8 +1024,8 @@ func step() -> void:
 		if u.is_infantry() and inf.halted(u):
 			u.moving = false # la mayoría suprimida: cuerpo a tierra, no avanza
 			continue
-		if u.mind != null and u.mind.hold:
-			u.moving = false # la escuadra decidió frenar (ver MindSim)
+		if u.mind != null and (u.mind.hold or u.mind.is_disorganized(total_ticks)):
+			u.moving = false # la escuadra decidió frenar o cayó el jefe (ver MindSim)
 			continue
 		if u.is_infantry() and inf.lagging(u):
 			u.moving = true # el ancla espera a los rezagados
@@ -1209,6 +1210,8 @@ func damage_soldier(u: Unit, s: Soldier) -> void:
 	inf.hit_soldier(self, u, s)
 	if was_ok:
 		_lose_morale(u, Config.MORALE_PER_CASUALTY + (Config.MORALE_LEADER_LOSS if s.role == Soldier.Role.LEADER else 0.0))
+		if s.role == Soldier.Role.LEADER and u.mind != null:
+			minds.on_leader_lost(self, u)
 	_check_dead(u)
 
 
