@@ -156,7 +156,124 @@ func think(w: SimWorld, u: Unit) -> void:
 func score_options(w: SimWorld, u: Unit) -> Dictionary:
 	var s: Dictionary = {SquadMind.Option.FOLLOW: Config.MIND_FOLLOW_SCORE}
 	_score_drill(w, u, s)
+	_score_relocate(w, u, s)
+	_score_ambush(w, u, s)
+	_score_break(w, u, s)
 	return s
+
+
+## --- Reubicarse ---
+## Quieta, bajo fuego y con la mitad o más al descubierto: busca a <= RELOCATE_RADIUS una celda
+## tapada por el terreno o con cobertura y va por la ruta cubierta. Ya ubicada, se queda hasta que
+## se calma.
+
+func _score_relocate(w: SimWorld, u: Unit, s: Dictionary) -> void:
+	var m: SquadMind = u.mind
+	if m.option == SquadMind.Option.RELOCATE:
+		if not u.path.is_empty() or w.fired_upon_within(u, Config.DRILL_CALM_SECONDS):
+			s[SquadMind.Option.RELOCATE] = Config.RELOCATE_SCORE + 1.0
+		return
+	if u.moving or u.order == Unit.Order.ASSAULT or not w.fired_upon_within(u, Config.RELOCATE_FIRED_SECONDS):
+		return
+	if not (m.option == SquadMind.Option.FOLLOW and u.path.is_empty()) and m.option != SquadMind.Option.CONTACT_DRILL:
+		return
+	var exposed: float = exposed_fraction(u)
+	if exposed < Config.RELOCATE_EXPOSED:
+		return
+	var best: Vector2i = relocate_cell(w, u)
+	if best == u.cell():
+		return
+	m.target_cell = best
+	s[SquadMind.Option.RELOCATE] = Config.RELOCATE_SCORE + exposed
+
+
+## Fracción de soldados en condiciones que no están protegidos.
+static func exposed_fraction(u: Unit) -> float:
+	var n: int = 0
+	var bad: int = 0
+	for s: Soldier in u.soldiers:
+		if s.is_ok():
+			n += 1
+			if not (s.has_cover and s.protected):
+				bad += 1
+	return float(bad) / float(n) if n > 0 else 0.0
+
+
+## Mejor celda cercana contra la amenaza de la escuadra (la propia si ninguna es bastante mejor).
+func relocate_cell(w: SimWorld, u: Unit) -> Vector2i:
+	var threat_m: Vector2 = w.inf.threat_point(w, u)
+	var threat: Vector2i = Vector2i((threat_m / Config.CELL_SIZE).round())
+	threat = Vector2i(clampi(threat.x, 0, w.height_field.size - 1), clampi(threat.y, 0, w.height_field.size - 1))
+	var pf: Pathfinder = w.pathfinders[Unit.Kind.INFANTRY]
+	var origin: Vector2i = u.cell()
+	var base: float = _position_value(w, origin, threat)
+	var best: Vector2i = origin
+	var best_score: float = base + Config.RELOCATE_MIN_GAIN
+	var r: int = Config.RELOCATE_RADIUS
+	for dy: int in range(-r, r + 1):
+		for dx: int in range(-r, r + 1):
+			var c: Vector2i = origin + Vector2i(dx, dy)
+			if dx * dx + dy * dy > r * r or c == origin or not pf.is_walkable(c):
+				continue
+			var score: float = _position_value(w, c, threat) - Vector2(dx, dy).length() / Config.HULLDOWN_DIST_DIV
+			if score > best_score:
+				best = c
+				best_score = score
+	return best
+
+
+func _position_value(w: SimWorld, c: Vector2i, threat: Vector2i) -> float:
+	var v: float = Config.RELOCATE_W_COVER * w.cover_at(c)
+	if not w.analysis.los(threat, Config.INF_EYE_H, c, Config.INF_STAND_H):
+		v += Config.RELOCATE_W_DEFILADE
+	if w.micro != null and w.micro.any_near_m(Vector2(c) * Config.CELL_SIZE):
+		v += Config.RELOCATE_W_MICRO
+	return v
+
+
+## --- Emboscada ---
+## Quieta, sin ruta, sin haber tirado ni recibido fuego, con enemigos acercándose a menos de
+## AMBUSH_WATCH_M: retiene el fuego hasta que el más cercano esté a AMBUSH_FIRE_M (o le tiren).
+
+func _score_ambush(w: SimWorld, u: Unit, s: Dictionary) -> void:
+	var m: SquadMind = u.mind
+	if not u.path.is_empty() or u.order == Unit.Order.SUPPRESS:
+		return
+	if m.option != SquadMind.Option.AMBUSH and (m.option != SquadMind.Option.FOLLOW or u.roe == Unit.Roe.HOLD):
+		return
+	if w.fired_upon_within(u, Config.AMBUSH_QUIET_SECONDS if m.option != SquadMind.Option.AMBUSH else 1.0):
+		return
+	if m.option != SquadMind.Option.AMBUSH and float(w.total_ticks - u.last_fire_tick) * Config.TICK < Config.AMBUSH_QUIET_SECONDS:
+		return
+	var nearest: float = _nearest_contact_m(u)
+	if nearest <= Config.AMBUSH_FIRE_M or nearest > Config.AMBUSH_WATCH_M:
+		return
+	s[SquadMind.Option.AMBUSH] = Config.AMBUSH_SCORE
+
+
+func _nearest_contact_m(u: Unit) -> float:
+	var best: float = INF
+	for id: int in u.mind.contacts:
+		best = minf(best, (u.mind.contacts[id]["pos"] as Vector2).distance_to(u.pos_m()))
+	return best
+
+
+## --- Romper el contacto ---
+## Diezmada, con la moral baja o frenada mucho tiempo, y bajo fuego: humo hacia la amenaza y
+## repliegue a la celda menos expuesta. Ya replegada y sin fuego un rato, lo deja (y no retoma
+## la orden: se queda donde se replegó).
+
+func _score_break(w: SimWorld, u: Unit, s: Dictionary) -> void:
+	var m: SquadMind = u.mind
+	if m.option == SquadMind.Option.BREAK_CONTACT:
+		if not u.path.is_empty() or w.fired_upon_within(u, Config.BREAK_CALM_SECONDS):
+			s[SquadMind.Option.BREAK_CONTACT] = Config.BREAK_SCORE
+		return
+	if u.order == Unit.Order.WITHDRAW or not w.fired_upon_within(u, Config.RELOCATE_FIRED_SECONDS):
+		return
+	var halted_s: float = float(w.total_ticks - m.halted_since) * Config.TICK if m.halted_since >= 0 else 0.0
+	if u.ok_count() <= Config.BREAK_MEN or u.morale < Config.BREAK_MORALE or halted_s >= Config.BREAK_HALTED_SECONDS:
+		s[SquadMind.Option.BREAK_CONTACT] = Config.BREAK_SCORE
 
 
 ## --- Drill de contacto ---
@@ -215,11 +332,36 @@ func _enter(w: SimWorld, u: Unit, opt: int) -> void:
 			m.data["calm_since"] = w.total_ticks
 			for id: int in m.contacts:
 				m.reacted[id] = true
+		SquadMind.Option.RELOCATE:
+			if not autonomous_move(w, u, m.target_cell, SimWorld.facing_to_threats(m.target_cell, w.threats_for(u.side))):
+				m.hold = true
+		SquadMind.Option.AMBUSH:
+			m.hold = false
+			m.data["roe"] = u.roe
+			u.roe = Unit.Roe.HOLD
+		SquadMind.Option.BREAK_CONTACT:
+			throw_smoke_toward(w, u, w.inf.threat_point(w, u))
+			w.begin_autonomous()
+			var ok: bool = w.order_withdraw(u.id)
+			w.end_autonomous()
+			m.rerouted = true
+			m.hold = not ok
 
 
-func _exit(_w: SimWorld, u: Unit, _opt: int) -> void:
-	u.mind.hold = false
-	u.mind.cover_m = Config.SOLDIER_COVER_SEARCH_M
+func _exit(w: SimWorld, u: Unit, opt: int) -> void:
+	var m: SquadMind = u.mind
+	m.hold = false
+	m.cover_m = Config.SOLDIER_COVER_SEARCH_M
+	match opt:
+		SquadMind.Option.AMBUSH:
+			u.roe = int(m.data.get("roe", Unit.Roe.FREE))
+			if _nearest_contact_m(u) <= Config.AMBUSH_FIRE_M or w.fired_upon_within(u, 1.0):
+				w.radio(u, "¡fuego!")
+		SquadMind.Option.BREAK_CONTACT:
+			m.saved = {} # replegada: no vuelve a meterse donde la estaban castigando
+			u.path.clear()
+			u.waypoints.clear()
+			u.moving = false
 
 
 ## Lo que dice por radio al tomar una decisión.
@@ -227,6 +369,12 @@ func _announce(opt: int) -> String:
 	match opt:
 		SquadMind.Option.CONTACT_DRILL:
 			return "¡contacto! a cubierto y fuego"
+		SquadMind.Option.RELOCATE:
+			return "nos movemos a mejor posición"
+		SquadMind.Option.AMBUSH:
+			return "emboscada, retengan el fuego"
+		SquadMind.Option.BREAK_CONTACT:
+			return "rompemos el contacto, humo y atrás"
 	return SquadMind.OPTION_NAMES[opt]
 
 

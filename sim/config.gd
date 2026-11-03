@@ -208,6 +208,23 @@ const DRILL_SPOT_M: float = 200.0 # ve a un enemigo nuevo a menos que esto: cont
 const DRILL_COVER_M: float = 4.0 # en el drill, cada uno busca cobertura a esta distancia de su lugar
 const DRILL_CALM_SUPP: float = 25.0 # retoma la marcha con la supresión media por debajo de esto...
 const DRILL_CALM_SECONDS: float = 5.0 # ... durante este tiempo
+const RELOCATE_SCORE: float = 2.5 # puntaje base de reubicarse (más la fracción al descubierto)
+const RELOCATE_FIRED_SECONDS: float = 5.0 # solo si le tiraron hace menos que esto
+const RELOCATE_EXPOSED: float = 0.5 # fracción de soldados al descubierto desde la que se reubica
+const RELOCATE_RADIUS: int = 5 # celdas (20 m) para buscar una posición mejor
+const RELOCATE_W_DEFILADE: float = 3.0 # el terreno la tapa de la amenaza
+const RELOCATE_W_COVER: float = 2.0 # cobertura de la celda (bosque, muro, pozo)
+const RELOCATE_W_MICRO: float = 1.0 # hay microcobertura cerca
+const RELOCATE_MIN_GAIN: float = 1.0 # la nueva celda tiene que ser al menos esto mejor que la actual
+const AMBUSH_SCORE: float = 2.0
+const AMBUSH_FIRE_M: float = 100.0 # en emboscada retiene el fuego hasta que el enemigo esté a esto
+const AMBUSH_WATCH_M: float = 300.0 # contactos a menos de esto la ponen en emboscada
+const AMBUSH_QUIET_SECONDS: float = 30.0 # solo si no tiró ni le tiraron en este tiempo
+const BREAK_SCORE: float = 4.0 # romper el contacto
+const BREAK_MEN: int = 4 # con estos hombres o menos (o la moral baja) rompe el contacto
+const BREAK_MORALE: float = 40.0
+const BREAK_HALTED_SECONDS: float = 20.0 # o si lleva esto frenada por la supresión
+const BREAK_CALM_SECONDS: float = 10.0 # ya replegada, sin fuego este tiempo, deja de romper el contacto
 
 # --- Conocimiento de cada escuadra y radio ---
 const CONTACT_OWN_M: float = 150.0 # lo que la escuadra ve a menos de esto lo sabe en el acto y exacto
