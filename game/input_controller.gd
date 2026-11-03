@@ -155,6 +155,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_V:
 		_order_overwatch_at(get_viewport().get_mouse_position())
 		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_I:
+		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty() and world.buildings != null:
+			pending_mode = "breach"
+		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_M:
 		_mission_at(get_viewport().get_mouse_position(), key.shift_pressed)
 		return
@@ -277,6 +281,12 @@ func _right_pressed(screen: Vector2, direct: bool, append: bool) -> void:
 		var p: Platoon = selected_platoon()
 		if p != null:
 			world.order_platoon_bound(p.id, world.height_field.world_to_cell(hit as Vector3))
+		return
+	if pending_mode == "breach":
+		pending_mode = ""
+		var at: Vector2 = Vector2((hit as Vector3).x, (hit as Vector3).z)
+		for id: int in selected_ids:
+			world.order_breach(id, at)
 		return
 	if pending_mode == "assault":
 		pending_mode = ""

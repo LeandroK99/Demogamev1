@@ -197,6 +197,86 @@ func _setup_pueblo(sim_seed: int) -> void:
 			inf.prepare_house(self, u, Vector2(objective_cell().x, height_field.size - 1) * Config.CELL_SIZE)
 
 
+## Abrir un boquete (fase 65) en la pared más cercana a at_m. Un tanque lo abre de un cañonazo
+## desde donde está (con línea de visión a la pared); una escuadra va hasta la pared y pone una
+## carga. Solo en PLAN.
+func order_breach(unit_id: int, at_m: Vector2) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if not _can_order(u) or buildings == null:
+		return false
+	var c: Vector2i = buildings.nearest_wall(at_m)
+	if c.x < 0:
+		return false
+	var face: Vector2 = buildings.outside_of(c, 0.6)
+	if u.is_infantry():
+		if u.breach_charges <= 0:
+			return false
+		var stand: Vector2 = buildings.outside_of(c, 1.5)
+		if not order_move(unit_id, _nearest_walkable(Vector2i((stand / Config.CELL_SIZE).round()), Unit.Kind.INFANTRY)):
+			return false
+		u.breach_m = MicroCover.center_m(c)
+		u.breach_time = 0.0
+		return true # va como MOVE; al llegar pone la carga
+	else:
+		if face.distance_to(u.pos_m()) > Config.BREACH_TANK_RANGE_M:
+			return false
+		_new_intent(u)
+		u.path.clear()
+		u.waypoints.clear()
+		u.moving = false
+		_face(u, face / Config.CELL_SIZE)
+	u.order = Unit.Order.BREACH
+	u.breach_m = MicroCover.center_m(c)
+	u.breach_time = 0.0
+	return true
+
+
+## Boquetes pendientes: el tanque tira cuando está listo y ve la pared; la escuadra, al llegar,
+## pone la carga y a los BREACH_CHARGE_SECONDS vuela la pared (y lo que haya detrás).
+func _update_breaches() -> void:
+	if buildings == null:
+		return
+	for u: Unit in units:
+		if not u.alive or u.breach_m.x < 0.0:
+			continue
+		if u.order != Unit.Order.BREACH and u.order != Unit.Order.NONE and u.order != Unit.Order.MOVE:
+			_finish_breach(u) # le dieron otra orden
+			continue
+		var c: Vector2i = MicroCover.cell_of(u.breach_m)
+		if buildings.type_at(c) != BuildingMap.Type.WALL and buildings.type_at(c) != BuildingMap.Type.WINDOW:
+			_finish_breach(u)
+			continue
+		var face: Vector2 = buildings.outside_of(c, 0.6)
+		if u.is_infantry():
+			if u.moving or not u.path.is_empty() or u.pos_m().distance_to(face) > Config.BREACH_REACH_M + Config.CELL_SIZE:
+				continue
+			u.breach_time += Config.TICK
+			if u.breach_time >= Config.BREACH_CHARGE_SECONDS:
+				u.breach_charges -= 1
+				_blow(u, c)
+		elif u.reload_left <= 0.0 and analysis.los_m(u.pos_m(), Config.EYE_H, face, 1.0):
+			u.reload_left = weapon_reload(Unit.Weapon.CANNON)
+			u.last_fire_tick = total_ticks
+			shot_events.append({"shooter": u.id, "target": -1, "hit": true, "aspect": Aspect.FRONT, "weapon": Unit.Weapon.AT,
+				"from_m": u.pos_m(), "from_h": Config.EYE_H, "to_m": face, "to_h": 1.2})
+			_blow(u, c)
+
+
+func _blow(u: Unit, c: Vector2i) -> void:
+	buildings.breach(c)
+	inf.explode(self, MicroCover.center_m(c), u, u.pos_m()) # lo que haya detrás de la pared lo siente
+	radio(u, "¡boquete abierto!")
+	invalidate_exposure()
+	_finish_breach(u)
+
+
+func _finish_breach(u: Unit) -> void:
+	u.breach_m = Vector2(-1.0, -1.0)
+	u.breach_time = 0.0
+	if u.order == Unit.Order.BREACH:
+		u.order = Unit.Order.NONE
+
+
 ## ¿El escenario tiene un objetivo a ocupar (la cresta, la plaza)?
 func has_objective() -> bool:
 	return scenario == Scenario.LOMA or scenario == Scenario.PUEBLO
@@ -1257,6 +1337,7 @@ func step() -> void:
 	inf.update_formations(self)
 	inf.update_digging(self)
 	inf.update_surrender(self)
+	_update_breaches()
 	_tick_smoke()
 	tick_in_turn += 1
 	total_ticks += 1

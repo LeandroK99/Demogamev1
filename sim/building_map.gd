@@ -12,6 +12,7 @@ var size: int = 0 # micro-celdas por lado
 var types: PackedByteArray = PackedByteArray()
 var houses: Array[Rect2i] = [] # en micro-celdas, con las paredes de afuera incluidas
 var _rects_m: Array[Rect2] = [] # las mismas, en metros
+var version: int = 0 # sube con cada cambio (la vista se rehace)
 var _astar: AStarGrid2D = null # se arma al primer pedido de ruta (y se rehace si cambia algo)
 
 
@@ -288,6 +289,66 @@ func cut_loophole(i: int, threat: Vector2) -> Vector2:
 	var inward: Vector2 = (center - out)
 	inward = Vector2(signf(inward.x), 0.0) if (best.x == r.position.x or best.x == r.end.x - 1) else Vector2(0.0, signf(inward.y))
 	return out + inward * (Config.ROOM_DEEP_M + 0.5)
+
+
+## Micro-celda de pared exterior (o ventana) más cercana a p, hasta BREACH_FIND_M; (-1, -1) si no hay.
+func nearest_wall(p: Vector2) -> Vector2i:
+	var c: Vector2i = MicroCover.cell_of(p)
+	var r: int = ceili(Config.BREACH_FIND_M)
+	var best: Vector2i = Vector2i(-1, -1)
+	var best_d: float = INF
+	for dy: int in range(-r, r + 1):
+		for dx: int in range(-r, r + 1):
+			var q: Vector2i = c + Vector2i(dx, dy)
+			var t: int = type_at(q)
+			if (t == Type.WALL or t == Type.WINDOW) and _outer(q):
+				var d: float = MicroCover.center_m(q).distance_to(p)
+				if d < best_d:
+					best = q
+					best_d = d
+	return best
+
+
+## ¿La micro-celda está en el borde de una casa (pared de afuera)?
+func _outer(c: Vector2i) -> bool:
+	for r: Rect2i in houses:
+		if r.has_point(c) and (c.x == r.position.x or c.y == r.position.y or c.x == r.end.x - 1 or c.y == r.end.y - 1):
+			return true
+	return false
+
+
+## Abre un boquete de BREACH_WIDTH en la pared de c (a lo largo de la pared, no en las esquinas).
+func breach(c: Vector2i) -> void:
+	var along: Vector2i = Vector2i(1, 0)
+	for r: Rect2i in houses:
+		if r.has_point(c) and (c.x == r.position.x or c.x == r.end.x - 1):
+			along = Vector2i(0, 1)
+	var cells: Array[Vector2i] = [c]
+	for k: int in range(1, Config.BREACH_WIDTH):
+		var q: Vector2i = c + along * (k if k % 2 == 1 else -k)
+		if type_at(q) == Type.WALL or type_at(q) == Type.WINDOW:
+			cells.append(q)
+	for q: Vector2i in cells:
+		set_type(q, Type.BREACH)
+	version += 1
+
+
+## Punto (metros) del lado de afuera de la micro-celda de pared c, a d metros.
+func outside_of(c: Vector2i, d: float) -> Vector2:
+	var p: Vector2 = MicroCover.center_m(c)
+	for i: int in houses.size():
+		if houses[i].has_point(c):
+			var out: Vector2 = Vector2.ZERO
+			if c.x == houses[i].position.x:
+				out = Vector2(-1, 0)
+			elif c.x == houses[i].end.x - 1:
+				out = Vector2(1, 0)
+			elif c.y == houses[i].position.y:
+				out = Vector2(0, -1)
+			else:
+				out = Vector2(0, 1)
+			return p + out * d
+	return p
 
 
 ## Punto caminable más cercano a p (hasta 3 m); p si ya lo es.

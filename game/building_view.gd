@@ -14,43 +14,26 @@ var _rig: CameraRTS
 var _roofs: Array[MeshInstance3D] = []
 var _walls: MeshInstance3D
 var _roofs_on: bool = true
+var _version: int = -1
+var _wall_mat: StandardMaterial3D = StandardMaterial3D.new()
 
 
 func setup(bm: BuildingMap, hf: HeightField, rig: CameraRTS) -> void:
 	_bm = bm
 	_hf = hf
 	_rig = rig
-	var wall_mat: StandardMaterial3D = StandardMaterial3D.new()
+	var wall_mat: StandardMaterial3D = _wall_mat
 	wall_mat.albedo_color = Color(0.6, 0.55, 0.47)
 	var floor_mat: StandardMaterial3D = StandardMaterial3D.new()
 	floor_mat.albedo_color = Color(0.45, 0.33, 0.22)
 	var roof_mat: StandardMaterial3D = StandardMaterial3D.new()
 	roof_mat.albedo_color = Color(0.55, 0.22, 0.16)
-	var st: SurfaceTool = SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_build_walls()
 	var fl: SurfaceTool = SurfaceTool.new()
 	fl.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var m: float = MicroCover.MICRO_M
 	for r: Rect2i in bm.houses:
 		var ground: float = _ground(MicroCover.center_m(r.position + r.size / 2))
-		for y: int in range(r.position.y, r.end.y):
-			for x: int in range(r.position.x, r.end.x):
-				var c: Vector2i = Vector2i(x, y)
-				var p: Vector2 = MicroCover.center_m(c)
-				match bm.type_at(c):
-					BuildingMap.Type.WALL:
-						_box(st, p, ground, 0.0, Config.BUILDING_H, m)
-					BuildingMap.Type.WINDOW:
-						_box(st, p, ground, 0.0, Config.WINDOW_SILL_H, m)
-						_box(st, p, ground, Config.WINDOW_TOP_H, Config.BUILDING_H, m)
-					BuildingMap.Type.DOOR:
-						_box(st, p, ground, Config.DOOR_H, Config.BUILDING_H, m)
-					BuildingMap.Type.LOOPHOLE:
-						_box(st, p, ground, 0.0, Config.LOOPHOLE_LOW_H, m)
-						_box(st, p, ground, Config.LOOPHOLE_TOP_H, Config.BUILDING_H, m)
-					BuildingMap.Type.BREACH:
-						_box(st, p, ground, 0.0, Config.BREACH_RUBBLE_H, m)
-						_box(st, p, ground, Config.DOOR_H, Config.BUILDING_H, m)
 		# Piso y techo de la casa entera
 		var a: Vector2 = MicroCover.center_m(r.position) - Vector2.ONE * m * 0.5
 		var size: Vector2 = Vector2(r.size) * m
@@ -63,10 +46,6 @@ func setup(bm: BuildingMap, hf: HeightField, rig: CameraRTS) -> void:
 		roof.mesh = rs.commit()
 		add_child(roof)
 		_roofs.append(roof)
-	st.set_material(wall_mat)
-	_walls = MeshInstance3D.new()
-	_walls.mesh = st.commit()
-	add_child(_walls)
 	# Calles y plaza: franjas de tierra apisonada apenas sobre el terreno plano del pueblo
 	var cm: Vector2 = Vector2(TownGenerator.center_cell(hf)) * Config.CELL_SIZE
 	var reach: float = float(Config.TOWN_RADIUS_CELLS) * Config.CELL_SIZE
@@ -90,6 +69,40 @@ func setup(bm: BuildingMap, hf: HeightField, rig: CameraRTS) -> void:
 	add_child(floors)
 
 
+## Paredes (se rehacen cuando se abre un boquete).
+func _build_walls() -> void:
+	_version = _bm.version
+	if _walls != null:
+		_walls.queue_free()
+	var st: SurfaceTool = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var m: float = MicroCover.MICRO_M
+	for r: Rect2i in _bm.houses:
+		var ground: float = _ground(MicroCover.center_m(r.position + r.size / 2))
+		for y: int in range(r.position.y, r.end.y):
+			for x: int in range(r.position.x, r.end.x):
+				var c: Vector2i = Vector2i(x, y)
+				var p: Vector2 = MicroCover.center_m(c)
+				match _bm.type_at(c):
+					BuildingMap.Type.WALL:
+						_box(st, p, ground, 0.0, Config.BUILDING_H, m)
+					BuildingMap.Type.WINDOW:
+						_box(st, p, ground, 0.0, Config.WINDOW_SILL_H, m)
+						_box(st, p, ground, Config.WINDOW_TOP_H, Config.BUILDING_H, m)
+					BuildingMap.Type.DOOR:
+						_box(st, p, ground, Config.DOOR_H, Config.BUILDING_H, m)
+					BuildingMap.Type.LOOPHOLE:
+						_box(st, p, ground, 0.0, Config.LOOPHOLE_LOW_H, m)
+						_box(st, p, ground, Config.LOOPHOLE_TOP_H, Config.BUILDING_H, m)
+					BuildingMap.Type.BREACH:
+						_box(st, p, ground, 0.0, Config.BREACH_RUBBLE_H, m)
+						_box(st, p, ground, Config.DOOR_H, Config.BUILDING_H, m)
+	st.set_material(_wall_mat)
+	_walls = MeshInstance3D.new()
+	_walls.mesh = st.commit()
+	add_child(_walls)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	var key: InputEventKey = event as InputEventKey
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_O:
@@ -97,6 +110,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(_delta: float) -> void:
+	if _bm.version != _version:
+		_build_walls()
 	var show: bool = _roofs_on and (_rig == null or _rig.zoom >= ROOF_HIDE_ZOOM)
 	for r: MeshInstance3D in _roofs:
 		r.visible = show

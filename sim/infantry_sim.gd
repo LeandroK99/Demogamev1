@@ -20,7 +20,9 @@ func lagging(u: Unit) -> bool:
 		if not s.is_ok() or s.suppression >= Config.PINNED or s.hold_pos or s.unreachable:
 			continue
 		var goal: Vector2 = s.slot_goal if s.has_slot_goal else u.slot_pos_m(s.index)
-		if s.pos.distance_to(goal) > Config.SOLDIER_LAG_M:
+		# El equipo A que se va quedando atrás por la vigilancia no frena a la escuadra
+		var tol: float = Config.SOLDIER_LAG_M + (u.trail_m if s.team == 0 else 0.0)
+		if s.pos.distance_to(goal) > tol:
 			return true
 	return false
 
@@ -405,12 +407,17 @@ static func _blocks_eye(w: SimWorld, p: Vector2, eye_h: float, threat: Vector2) 
 	return protecting_obstacle(w, p, eye_h, threat) != MicroCover.Type.NONE
 
 
+## Casa en la que p está adentro (-1 afuera, también pegado a la pared por fuera).
+static func _house_in(bm: BuildingMap, p: Vector2) -> int:
+	return bm.house_at_m(p) if bm != null and bm.inside_m(p) else -1
+
+
 ## Elige el punto de cobertura de un soldado alrededor de su lugar en la formación.
 ## taken: puntos ya elegidos por la escuadra (se respeta SOLDIER_COVER_SPACING).
 func choose_cover(w: SimWorld, u: Unit, s: Soldier, threat: Vector2, taken: Array[Vector2]) -> void:
 	var center: Vector2 = u.slot_pos_m(s.index)
 	var bm: BuildingMap = w.buildings
-	var home: int = bm.house_at_m(u.pos_m()) if bm != null else -1
+	var home: int = _house_in(bm, u.pos_m())
 	if s.post_pos.x >= 0.0 and s.post_pos.distance_to(center) <= Config.SOLDIER_COVER_SEARCH_M * 2.0:
 		# Puesto fijo (la ametralladora en su aspillera)
 		s.has_cover = true
@@ -446,7 +453,7 @@ func choose_cover(w: SimWorld, u: Unit, s: Soldier, threat: Vector2, taken: Arra
 				continue
 			if s.avoid_pos.x >= 0.0 and p.distance_to(s.avoid_pos) < Config.MG_DISPLACE_MIN_M:
 				continue # ahí ya la ubicaron
-			if bm != null and (not bm.walkable_m(p) or bm.house_at_m(p) != home):
+			if bm != null and (not bm.walkable_m(p) or _house_in(bm, p) != home):
 				continue # en una pared, o en otra casa (o afuera, si la escuadra está adentro)
 			var ev: Dictionary = evaluate_spot(w, p, threat)
 			var base: float = (Config.SOLDIER_COVER_W_PROTECT if ev["protected"] else 0.0) \
@@ -1032,8 +1039,10 @@ func update_formations(w: SimWorld) -> void:
 			continue
 		if u.mind != null:
 			choose_technique(u)
-		if u.moving and (u.mind == null or u.mind.is_following()):
+		if u.moving and (u.mind == null or u.mind.is_following() or u.mind.option == SquadMind.Option.BOUND):
 			adapt_formation(w, u) # una maniobra propia (reubicarse, flanquear) no se reacomoda en el camino
+		elif not u.moving and u.formation == Unit.Formation.WEDGE and w.facade_at(u.cell()) <= Config.FORM_URBAN_FACADE:
+			_urban_halt(w, u)
 
 
 ## Técnica de movimiento según qué tan probable es el contacto: por saltos si la cabeza eligió saltar,
@@ -1057,14 +1066,18 @@ static func choose_technique(u: Unit) -> void:
 ## Si el jugador eligió fila o línea, solo se abre o se cierra.
 func adapt_formation(w: SimWorld, u: Unit) -> void:
 	var c: Vector2i = u.cell()
-	var closed: bool = (w.cover != null and w.cover.type_at(c) == CoverMap.Type.FOREST) or w.height_field.slope_at(c) > Config.FORM_ROUGH_SLOPE or _forest_near(w, c)
+	# Entre casas: fila cerrada pegada a las paredes (una cuña abierta no entra en la calle)
+	var urban: bool = w.facade_at(c) <= Config.FORM_URBAN_FACADE
+	var closed: bool = urban or (w.cover != null and w.cover.type_at(c) == CoverMap.Type.FOREST) or w.height_field.slope_at(c) > Config.FORM_ROUGH_SLOPE or _forest_near(w, c)
 	u.spread = move_toward(u.spread, 1.0 if closed else Config.FORM_SPREAD_OPEN, Config.FORM_SPREAD_STEP)
 	if u.formation != Unit.Formation.WEDGE:
 		u.shape = u.formation
 		return
 	var shape: int = Unit.Formation.WEDGE
 	var side: float = _contact_side(u)
-	if u.order == Unit.Order.ASSAULT and not u.path.is_empty() and u.pos.distance_to(Vector2(u.path.back())) * Config.CELL_SIZE <= Config.FORM_LINE_ASSAULT_M:
+	if urban and u.order != Unit.Order.ASSAULT:
+		shape = Unit.Formation.FILE
+	elif u.order == Unit.Order.ASSAULT and not u.path.is_empty() and u.pos.distance_to(Vector2(u.path.back())) * Config.CELL_SIZE <= Config.FORM_LINE_ASSAULT_M:
 		shape = Unit.Formation.LINE
 	elif side != 0.0:
 		shape = Unit.Formation.ECHELON
@@ -1072,6 +1085,24 @@ func adapt_formation(w: SimWorld, u: Unit) -> void:
 	if shape != u.shape:
 		u.shape = shape
 		reroll_jitter(w, u)
+
+
+## Detenida entre casas: los soldados se ponen a lo largo de la pared más cercana (en línea si la
+## escuadra mira a la pared, en fila si va paralela), no cruzados en la calle.
+func _urban_halt(w: SimWorld, u: Unit) -> void:
+	var c: Vector2i = w.buildings.nearest_wall(u.pos_m())
+	if c.x < 0:
+		return
+	var to: Vector2 = MicroCover.center_m(c) - u.pos_m()
+	var shape: int = Unit.Formation.FILE
+	if to.length() > 0.5 and absf(u.heading.dot(to.normalized())) > 0.7:
+		shape = Unit.Formation.LINE
+	u.spread = 1.0
+	if shape != u.shape:
+		u.shape = shape
+		reroll_jitter(w, u)
+		for s: Soldier in u.soldiers:
+			s.has_cover = false # buscan lugar de nuevo, ahora a lo largo de la pared
 
 
 static func _forest_near(w: SimWorld, c: Vector2i) -> bool:
@@ -1457,7 +1488,8 @@ func _fire_at_tank(w: SimWorld, u: Unit, s: Soldier, tank: Unit) -> void:
 	var f_hull: float = 1.0 if w.analysis.los_m(s.pos, eye, tank.pos_m(), tank.profile_h()) else w.hulldown_hit_factor
 	var aspect: int = SimWorld.aspect_of(tank, s.pos / Config.CELL_SIZE)
 	var f_armor: float = SimWorld.aspect_factor(aspect) if w.armor_enabled else 1.0
-	var p: float = minf(Config.AT_P_HIT * f_dist * w.move_fire_factor(u, s.moving) * f_hull * f_armor * SimWorld._weak_factor(u), w.p_hit_max)
+	var p: float = minf(Config.AT_P_HIT * f_dist * w.move_fire_factor(u, s.moving) * f_hull * f_armor * SimWorld._weak_factor(u)
+		* tank_escort_factor(w, tank), w.p_hit_max)
 	u.at_charges -= 1
 	u.reload2_left = Config.AT_RELOAD
 	s.reload_left = Config.AT_RELOAD
@@ -1472,6 +1504,18 @@ func _fire_at_tank(w: SimWorld, u: Unit, s: Soldier, tank: Unit) -> void:
 	w._suppress(tank, Unit.Weapon.AT, hit)
 	w.shot_events.append({"shooter": u.id, "target": tank.id, "hit": hit, "aspect": aspect, "weapon": Unit.Weapon.AT,
 		"from_m": s.pos, "from_h": eye, "to_m": tank.pos_m(), "to_h": tank.center_h()})
+
+
+## Tanque con infantería (fase 65): con una escuadra propia a TANK_ESCORT_M que le cuida las
+## esquinas, el antitanque le pega menos; solo y pegado a las casas, más.
+static func tank_escort_factor(w: SimWorld, tank: Unit) -> float:
+	for e: Unit in w.units:
+		if e.alive and e.side == tank.side and e.is_infantry() and not e.broken \
+				and e.pos_m().distance_to(tank.pos_m()) <= Config.TANK_ESCORT_M:
+			return Config.TANK_ESCORT_AT_FACTOR
+	if w.buildings != null and w.facade_at(tank.cell()) * Config.CELL_SIZE <= Config.TANK_ALONE_TOWN_M:
+		return Config.TANK_ALONE_AT_FACTOR
+	return 1.0
 
 
 ## --- Supresión ---

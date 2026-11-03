@@ -521,6 +521,7 @@ const TOWN_RED_TANK_BACK: int = 22 # celdas detrás de la plaza donde espera el 
 
 # --- Calles (fase 62) ---
 const FACADE_MAX: int = 5 # celdas: hasta acá se mide la distancia a la casa más cercana (dentro de esto, lejos de una fachada cuesta)
+const FORM_URBAN_FACADE: int = 3 # a esta distancia (celdas) de una casa, la escuadra va en fila cerrada
 const FACADE_HOUSE_COST: float = 4.0 # costo extra de la ruta de infantería por adentro de una casa (se rodea salvo que no haya otra)
 const FACADE_OPEN_COST: float = 2.0 # ... por el medio de la calle (a 2 o 3 celdas de una fachada)
 const STREET_SMOKE_WAIT_SECONDS: float = 3.0 # tira humo y espera a que tape antes de cruzar
@@ -534,11 +535,23 @@ const LOOPHOLE_LOW_H: float = 0.2 # la aspillera: un agujero en la pared de esta
 const LOOPHOLE_TOP_H: float = 0.7 # ... a esta
 
 # --- Esquinas (fase 64) ---
-const CORNER_LOOK_CELLS: int = 5 # mira hasta esto adelante en la ruta si hay una esquina ciega
-const CORNER_TRIGGER_M: float = 14.0 # a esto de la esquina se para a cortar la torta
+const CORNER_LOOK_CELLS: int = 8 # mira hasta esto adelante en la ruta si hay una esquina ciega
+const CORNER_TRIGGER_M: float = 20.0 # a esto de la esquina se para a cortar la torta
 const CORNER_R_M: float = 3.0 # radio del arco alrededor de la esquina
 const CORNER_STEPS: int = 6 # pasos del arco
 const CORNER_STEP_SECONDS: float = 0.8 # cada cuánto se corre un paso
 const CORNER_SCORE: float = 2.6
 const CORNER_TURN_DEG: float = 40.0 # la ruta dobla al menos esto...
 const CORNER_NEAR_M: float = 10.0 # ... a menos de esto de la esquina de una casa
+
+# --- Boquetes y tanque con infantería (fase 65) ---
+const BREACH_FIND_M: float = 3.0 # busca la pared a abrir hasta esto del punto marcado
+const BREACH_WIDTH: int = 2 # micro-celdas de ancho del boquete
+const BREACH_CHARGES: int = 1 # cargas de demolición por escuadra
+const BREACH_CHARGE_SECONDS: float = 8.0 # poner la carga, pegado a la pared
+const BREACH_REACH_M: float = 3.0 # la escuadra llegó a la pared
+const BREACH_TANK_RANGE_M: float = 300.0 # el tanque abre boquetes hasta esta distancia
+const TANK_ESCORT_M: float = 30.0 # infantería propia a esto del tanque: le cuida las esquinas...
+const TANK_ESCORT_AT_FACTOR: float = 0.5 # ... y el antitanque le pega menos
+const TANK_ALONE_TOWN_M: float = 15.0 # un tanque sin escolta a esto de una casa...
+const TANK_ALONE_AT_FACTOR: float = 1.5 # ... recibe tiros de antitanque más certeros (de cerca, de costado)

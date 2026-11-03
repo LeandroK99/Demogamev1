@@ -363,6 +363,7 @@ func _street_go(w: SimWorld, u: Unit) -> void:
 	m.data["phase"] = "go"
 	m.hold = false
 	m.rushing = true
+	u.shape = Unit.Formation.LINE # todos juntos, de frente a la calle (en fila quedarían expuestos de a uno)
 	for s: Soldier in u.soldiers:
 		s.hold_pos = false
 		s.rush_until = 0
@@ -454,6 +455,10 @@ static func blind_corner(w: SimWorld, u: Unit) -> Dictionary:
 		if din.length() < 0.5 or dout.length() < 0.5 or rad_to_deg(absf(din.angle_to(dout))) < Config.CORNER_TURN_DEG:
 			continue
 		var cur_m: Vector2 = cur * Config.CELL_SIZE
+		# Cuenta el que va más adelante (en saltos o en fila, la punta va bastante delante del ancla)
+		for so: Soldier in u.soldiers:
+			if so.is_ok() and so.pos.distance_to(cur_m) < from.distance_to(cur_m):
+				from = so.pos
 		if cur_m.distance_to(from) > Config.CORNER_TRIGGER_M:
 			return {}
 		# La esquina de casa más cercana a la vuelta
