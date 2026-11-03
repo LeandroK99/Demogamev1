@@ -102,6 +102,21 @@ static func formation_offset(i: int, f: int) -> Vector2:
 	return Vector2(float(j if i % 2 == 1 else -j) * s, float(j) * s)
 
 
+## Pone a cada soldado en su lugar de la formación (al mover la escuadra a mano).
+func snap_soldiers() -> void:
+	for s: Soldier in soldiers:
+		if s.is_ok():
+			s.pos = slot_pos_m(s.index)
+			s.has_cover = false
+
+
+## Postura de todos los soldados en condiciones (escenarios y tests; la simulación la recalcula).
+func set_posture(p: int) -> void:
+	for s: Soldier in soldiers:
+		if s.is_ok():
+			s.posture = p
+
+
 ## Deja n soldados en condiciones (los demás, muertos). Para escenarios y tests.
 func set_men(n: int) -> void:
 	for s: Soldier in soldiers:

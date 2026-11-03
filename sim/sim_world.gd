@@ -233,35 +233,53 @@ func begin_execute() -> void:
 				u.overwatch_ready = true
 
 
-## Quién ve a quién: un enemigo es visible para un bando si alguna unidad viva
-## de ese bando lo detecta (ver _can_spot).
+## Quién ve a quién: un enemigo es visible para un bando si alguna unidad viva de ese bando
+## lo detecta. Tanque contra tanque, ver _can_spot. Si hay soldados de por medio, la detección es
+## por soldado (ver InfantrySim.spot_squad y soldiers_spot_tank); una escuadra es visible si se ve
+## a alguno de sus soldados.
 func update_detection() -> void:
+	inf.begin_detection(self)
 	for side: int in 2:
 		var vis: Dictionary = {}
+		var vis_s: Dictionary = {}
 		for enemy: Unit in units:
 			if enemy.side == side or not enemy.alive:
 				continue
-			for own: Unit in units:
-				if own.side == side and own.alive and _can_spot(own, enemy):
-					vis[enemy.id] = true
-					known_enemies[side][enemy.id] = {"cell": enemy.cell(), "last_seen_turn": turn}
-					break
+			var seen: bool = false
+			if enemy.is_infantry():
+				seen = inf.spot_squad(self, side, enemy, vis_s)
+			else:
+				for own: Unit in units:
+					if own.side != side or not own.alive:
+						continue
+					if inf.soldiers_spot_tank(self, own, enemy) if own.is_infantry() else _can_spot(own, enemy):
+						seen = true
+						break
+			if seen:
+				vis[enemy.id] = true
+				known_enemies[side][enemy.id] = {"cell": enemy.cell(), "last_seen_turn": turn}
 		visible_enemies[side] = vis
+		inf.visible_soldiers[side] = vis_s
 
 
-## Detección: LOS al centro del blanco y distancia dentro del alcance de detección, que depende
-## de lo que hace el blanco: en movimiento o recién disparado, MAX_RANGE; quieto,
-## SPOT_RANGE_STATIONARY; quieto y con el casco oculto para el observador, SPOT_RANGE_HULLDOWN.
+## Detección de un tanque por otro: LOS al centro del blanco y distancia dentro del alcance de
+## detección, que depende de lo que hace el blanco: en movimiento o recién disparado, MAX_RANGE;
+## quieto, SPOT_RANGE_STATIONARY; quieto y con el casco oculto para el observador, SPOT_RANGE_HULLDOWN.
 func _can_spot(observer: Unit, target: Unit) -> bool:
 	var d: float = TerrainAnalysis.dist_m(observer.cell(), target.cell())
-	if not observer.is_infantry() and is_suppressed(observer):
+	if is_suppressed(observer):
 		d /= Config.TANK_BUTTONED_SPOT_FACTOR # abotonado: ve a menos distancia
 	if d > Config.MAX_RANGE:
 		return false
 	if not analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.center_h()):
 		return false
-	if target.is_infantry():
-		return d <= infantry_spot_range(target)
+	return tank_spot_rule(target, d, func() -> bool:
+		return analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.profile_h()))
+
+
+## Regla de alcance para detectar un tanque a d metros (con LOS a su centro ya comprobada).
+## hull_visible: se llama solo si hace falta saber si se le ve el casco.
+func tank_spot_rule(target: Unit, d: float, hull_visible: Callable) -> bool:
 	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
 		return true
 	if d <= Config.SPOT_RANGE_HULLDOWN:
@@ -269,17 +287,7 @@ func _can_spot(observer: Unit, target: Unit) -> bool:
 	if d > Config.SPOT_RANGE_STATIONARY:
 		return false
 	# Quieto entre los dos alcances: solo si se le ve el casco
-	return analysis.los(observer.cell(), observer.eye_h(), target.cell(), target.profile_h())
-
-
-## Alcance de detección de una escuadra según lo que hace.
-func infantry_spot_range(target: Unit) -> float:
-	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
-		return Config.INF_SPOT_MOVING
-	var f_cover: float = 1.0 - cover_at(target.cell()) * Config.COVER_SPOT_FACTOR
-	if target.prone:
-		return Config.INF_SPOT_PRONE * f_cover
-	return Config.INF_SPOT_STILL * f_cover
+	return bool(hull_visible.call())
 
 
 func recently_fired(u: Unit) -> bool:

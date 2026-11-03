@@ -33,11 +33,10 @@ func _run(world: SimWorld, ticks: int) -> void:
 
 func test_tank_uses_coax_on_infantry() -> void:
 	var world: SimWorld = _world()
-	var sq: Unit = world.add_unit(1, Vector2(48, 40), Unit.Kind.INFANTRY) # 80 m, de pie
+	var sq: Unit = world.add_unit(1, Vector2(48, 50), Unit.Kind.INFANTRY) # 40 m: se la ve aun cuerpo a tierra
 	sq.reload_left = 1000.0
 	sq.reload2_left = 1000.0
-	sq.moving = true
-	_run(world, 200)
+	_run(world, 300)
 	assert_eq(_shots(world, 0, Unit.Weapon.CANNON), 0, "no gasta el cañón en infantería")
 	assert_true(_shots(world, 0, Unit.Weapon.COAX) > 1, "tira con la coaxial")
 	assert_lt(sq.hp, Config.INF_MEN, "bajas")

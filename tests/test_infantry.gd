@@ -71,9 +71,10 @@ func test_infantry_detection_ranges() -> void:
 	world.update_detection()
 	assert_true(not world.visible_enemies[1].has(sq.id), "quieta: no detectada a 200 m")
 	sq.pos = Vector2(48, 2 + 25) # 100 m
+	sq.snap_soldiers()
 	world.update_detection()
 	assert_true(world.visible_enemies[1].has(sq.id), "quieta de pie: detectada a 100 m")
-	sq.prone = true
+	sq.set_posture(Soldier.Posture.PRONE)
 	world.update_detection()
 	assert_true(not world.visible_enemies[1].has(sq.id), "cuerpo a tierra: no detectada a 100 m")
 	assert_true(red.alive, "el rojo sigue")

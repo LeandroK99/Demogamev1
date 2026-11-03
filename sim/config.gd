@@ -165,6 +165,12 @@ const SOLDIER_COVER_LOS_CHECKS: int = 6 # líneas de visión largas por soldado 
 const SOLDIER_COVER_REEVAL_DEG: float = 30.0 # si la amenaza se corre más que esto, se vuelve a buscar
 const SOLDIER_NO_THREAT_M: float = 200.0 # sin amenazas conocidas, cubre hacia adelante a esta distancia
 
+# --- Visión de cada soldado ---
+const SOLDIER_OBSERVERS: int = 3 # soldados por escuadra que miran en cada detección (el jefe y dos que rotan)
+const SOLDIER_HEAD_M: float = 0.1 # se lo detecta si se le ve hasta esto por debajo de la cabeza
+const SOLDIER_PROTECTED_SPOT_FACTOR: float = 0.6 # quieto detrás de algo que lo protege, se lo detecta más cerca
+const SOLDIER_PAIR_MARGIN_M: float = 30.0 # escuadras más lejos que el alcance más esto ni se miran
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3

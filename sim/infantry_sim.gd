@@ -4,6 +4,15 @@ extends RefCounted
 ## visión, fuego y supresión por soldado). Es de SimWorld y recibe el mundo en cada llamada
 ## (no guarda una referencia, para no hacer un ciclo).
 
+## Soldados enemigos que ve cada bando (índice = side): clave soldier_key -> true.
+var visible_soldiers: Array[Dictionary] = [{}, {}]
+var _observers: Dictionary = {} # unit id -> Array[Soldier]: los que miran en esta detección
+var _round: int = 0 # turno de los observadores que rotan
+
+
+static func soldier_key(unit_id: int, index: int) -> int:
+	return unit_id * 64 + index
+
 
 ## ¿Algún soldado de la escuadra quedó lejos de su lugar? Entonces el ancla lo espera.
 func lagging(u: Unit) -> bool:
@@ -279,3 +288,112 @@ func update_postures(w: SimWorld) -> void:
 				s.posture = s.cover_posture
 			else:
 				s.posture = Soldier.Posture.PRONE if u.prone else Soldier.Posture.CROUCH
+
+
+## --- Visión ---
+
+## Antes de cada detección: elige los observadores de cada escuadra (el jefe y los que rotan).
+func begin_detection(w: SimWorld) -> void:
+	_round += 1
+	_observers.clear()
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		var ok: Array[Soldier] = []
+		var leader: Soldier = null
+		for s: Soldier in u.soldiers:
+			if s.is_ok():
+				if s.role == Soldier.Role.LEADER:
+					leader = s
+				else:
+					ok.append(s)
+		var obs: Array[Soldier] = []
+		if leader != null:
+			obs.append(leader)
+		var want: int = mini(ok.size(), Config.SOLDIER_OBSERVERS - obs.size())
+		for k: int in want:
+			obs.append(ok[(_round * want + k) % ok.size()])
+		_observers[u.id] = obs
+
+
+## Altura del ojo de un soldado sobre el terreno (con el desnivel del cráter).
+static func eye_of(w: SimWorld, s: Soldier) -> float:
+	return s.eye_h() + ground_offset(w, s.pos)
+
+
+## Altura que hay que ver de un soldado para detectarlo (la cabeza).
+static func head_of(w: SimWorld, s: Soldier) -> float:
+	return s.top_h() - Config.SOLDIER_HEAD_M + ground_offset(w, s.pos)
+
+
+## Alcance para detectar a un soldado según lo que hace: en marcha o recién disparado (él o su
+## escuadra), INF_SPOT_MOVING; quieto, según la postura, achicado por el bosque y si está protegido.
+static func soldier_spot_range(w: SimWorld, u: Unit, s: Soldier) -> float:
+	var fired: bool = float(w.total_ticks - s.last_fire_tick) * Config.TICK < Config.FIRE_REVEAL_SECONDS
+	if fired or w.recently_fired(u):
+		return Config.INF_SPOT_MOVING
+	if (s.moving or u.moving) and SimWorld.effective_pace(u) != Unit.Pace.CAUTIOUS and s.posture != Soldier.Posture.PRONE:
+		return Config.INF_SPOT_MOVING
+	var f: float = 1.0 - w.cover_at(Vector2i((s.pos / Config.CELL_SIZE).round())) * Config.COVER_SPOT_FACTOR
+	if s.protected and not s.moving:
+		f *= Config.SOLDIER_PROTECTED_SPOT_FACTOR
+	var base: float = Config.INF_SPOT_PRONE if s.posture == Soldier.Posture.PRONE else Config.INF_SPOT_STILL
+	return base * f
+
+
+## ¿El bando side ve a algún soldado de la escuadra enemiga? Anota en vis_s a los que ve.
+## Cada soldado se mira desde los observadores de cada escuadra propia y desde cada tanque,
+## hasta que uno lo vea.
+func spot_squad(w: SimWorld, side: int, enemy: Unit, vis_s: Dictionary) -> bool:
+	var seen_any: bool = false
+	var anchor: Vector2 = enemy.pos_m()
+	var viewers: Array[Unit] = []
+	for own: Unit in w.units:
+		if own.side == side and own.alive \
+				and own.pos_m().distance_to(anchor) <= Config.INF_SPOT_MOVING + Config.SOLDIER_PAIR_MARGIN_M:
+			viewers.append(own)
+	if viewers.is_empty():
+		return false
+	for t: Soldier in enemy.soldiers:
+		if not t.is_ok():
+			continue
+		var reach: float = soldier_spot_range(w, enemy, t)
+		var head: float = head_of(w, t)
+		var seen: bool = false
+		for own: Unit in viewers:
+			if own.is_infantry():
+				for o: Soldier in _observers.get(own.id, []):
+					if o.pos.distance_to(t.pos) <= reach and w.analysis.los_m(o.pos, eye_of(w, o), t.pos, head):
+						seen = true
+						break
+			else:
+				var d: float = own.pos_m().distance_to(t.pos)
+				if w.is_suppressed(own):
+					d /= Config.TANK_BUTTONED_SPOT_FACTOR
+				seen = d <= reach and w.analysis.los_m(own.pos_m(), Config.EYE_H, t.pos, head)
+			if seen:
+				break
+		if seen:
+			vis_s[soldier_key(enemy.id, t.index)] = true
+			seen_any = true
+	return seen_any
+
+
+## ¿Algún observador de la escuadra ve al tanque? (mismas reglas de alcance que entre tanques)
+func soldiers_spot_tank(w: SimWorld, own: Unit, target: Unit) -> bool:
+	var tpos: Vector2 = target.pos_m()
+	if own.pos_m().distance_to(tpos) > Config.MAX_RANGE + Config.SOLDIER_PAIR_MARGIN_M:
+		return false
+	for o: Soldier in _observers.get(own.id, []):
+		var d: float = o.pos.distance_to(tpos)
+		var eye: float = eye_of(w, o)
+		if d > Config.MAX_RANGE or not w.analysis.los_m(o.pos, eye, tpos, target.center_h()):
+			continue
+		if w.tank_spot_rule(target, d, func() -> bool: return w.analysis.los_m(o.pos, eye, tpos, target.profile_h())):
+			return true
+	return false
+
+
+## ¿El bando ve a ese soldado?
+func is_soldier_visible(side: int, unit_id: int, index: int) -> bool:
+	return visible_soldiers[side].has(soldier_key(unit_id, index))
