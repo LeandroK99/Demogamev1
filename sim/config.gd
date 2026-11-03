@@ -518,3 +518,10 @@ const TOWN_BACK_DOOR_P: float = 0.5
 const TOWN_SPLIT_M: int = 9 # una casa así de ancha (o de honda) tiene una pared interior
 const TOWN_OBJECTIVE_RADIUS: float = 5.0 # celdas: la plaza que hay que ocupar
 const TOWN_RED_TANK_BACK: int = 22 # celdas detrás de la plaza donde espera el tanque rojo
+
+# --- Calles (fase 62) ---
+const FACADE_MAX: int = 3 # celdas: hasta acá se mide la distancia a la casa más cercana
+const FACADE_HOUSE_COST: float = 0.5 # costo extra de la ruta de infantería por adentro de una casa
+const FACADE_OPEN_COST: float = 2.0 # ... por el medio de la calle (a 2 o 3 celdas de una fachada)
+const STREET_SMOKE_WAIT_SECONDS: float = 3.0 # tira humo y espera a que tape antes de cruzar
+const STREET_WAIT_MAX_SECONDS: float = 30.0 # calle batida y sin humo: espera esto y después cruza igual

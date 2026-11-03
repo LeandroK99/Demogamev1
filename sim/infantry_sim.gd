@@ -17,8 +17,10 @@ static func soldier_key(unit_id: int, index: int) -> int:
 ## ¿Algún soldado de la escuadra quedó lejos de su lugar? Entonces el ancla lo espera.
 func lagging(u: Unit) -> bool:
 	for s: Soldier in u.soldiers:
-		if s.is_ok() and s.suppression < Config.PINNED and not s.hold_pos \
-				and s.pos.distance_to(u.slot_pos_m(s.index)) > Config.SOLDIER_LAG_M:
+		if not s.is_ok() or s.suppression >= Config.PINNED or s.hold_pos or s.unreachable:
+			continue
+		var goal: Vector2 = s.slot_goal if s.has_slot_goal else u.slot_pos_m(s.index)
+		if s.pos.distance_to(goal) > Config.SOLDIER_LAG_M:
 			return true
 	return false
 
@@ -61,6 +63,10 @@ func move_soldiers(w: SimWorld) -> void:
 				target = s.fire_pos if s.peeking else s.cover_pos
 			target = Vector2(clampf(target.x, 0.0, limit), clampf(target.y, 0.0, limit))
 			if w.buildings != null:
+				if s.care_target < 0 and not (s.has_cover and not u.moving):
+					target = w.buildings.pull_out(target, u.pos_m()) # su lugar cae en una casa ajena: afuera
+					s.slot_goal = target
+					s.has_slot_goal = true
 				target = _steer(w.buildings, s, target)
 			var d: Vector2 = target - s.pos
 			var dist: float = d.length()
@@ -90,8 +96,9 @@ static func _steer(bm: BuildingMap, s: Soldier, target: Vector2) -> Vector2:
 		s.route_goal = target
 	while not s.route.is_empty() and s.pos.distance_to(s.route[0]) <= Config.ROUTE_ARRIVE_M:
 		s.route.remove_at(0)
+	s.unreachable = s.route.is_empty() and bm.crosses(s.pos, target)
 	if s.route.is_empty():
-		return target if not bm.crosses(s.pos, target) else s.pos
+		return s.pos if s.unreachable else target
 	return s.route[0]
 
 

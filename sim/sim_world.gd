@@ -67,6 +67,7 @@ var _forcing: bool = false # órdenes que da la propia simulación (una retirada
 var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
 var micro: MicroCover = null # microcobertura a 1 m (piedras, cráteres, pircas); null = sin ella
 var buildings: BuildingMap = null # casas a 1 m (fase 60); null = sin
+var facade: PackedByteArray = PackedByteArray() # por celda: distancia (celdas) a una casa, hasta FACADE_MAX (fase 62); 255 lejos
 var inf: InfantrySim = InfantrySim.new() # los soldados de las escuadras
 var minds: MindSim = MindSim.new() # la autonomía de las escuadras
 ## Radio: lo que las escuadras deciden por su cuenta. {tick, turn, side, unit, text}, el último al final.
@@ -245,7 +246,50 @@ func set_buildings(bm: BuildingMap) -> void:
 		if height_field.in_bounds(c):
 			pf.astar.set_point_solid(c, true)
 			pf.astar_direct.set_point_solid(c, true)
+	_build_facade(bm)
 	invalidate_exposure()
+
+
+## Distancia de cada celda a la casa más cercana (BFS hasta FACADE_MAX) y, con eso, la ruta de
+## infantería: pegada a las fachadas no cuesta nada, por el medio de la calle cuesta FACADE_OPEN_COST
+## y por adentro de las casas FACADE_HOUSE_COST.
+func _build_facade(bm: BuildingMap) -> void:
+	var n: int = height_field.size
+	facade.resize(n * n)
+	facade.fill(255)
+	var frontier: Array[Vector2i] = []
+	for c: Vector2i in bm.footprint_cells():
+		if height_field.in_bounds(c):
+			facade[c.y * n + c.x] = 0
+			frontier.append(c)
+	for d: int in range(1, Config.FACADE_MAX + 1):
+		var next: Array[Vector2i] = []
+		for c: Vector2i in frontier:
+			for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 1), Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1)]:
+				var t: Vector2i = c + o
+				if height_field.in_bounds(t) and facade[t.y * n + t.x] == 255:
+					facade[t.y * n + t.x] = d
+					next.append(t)
+		frontier = next
+	var costs: PackedFloat32Array = PackedFloat32Array()
+	costs.resize(n * n)
+	for i: int in costs.size():
+		var f: int = facade[i]
+		costs[i] = Config.FACADE_HOUSE_COST if f == 0 else (Config.FACADE_OPEN_COST if f >= 2 and f <= Config.FACADE_MAX else 0.0)
+	pathfinders[Unit.Kind.INFANTRY].set_extra_cost(costs)
+
+
+## Distancia (celdas) de c a la casa más cercana; 255 lejos del pueblo o sin casas.
+func facade_at(c: Vector2i) -> int:
+	if facade.is_empty() or not height_field.in_bounds(c):
+		return 255
+	return facade[c.y * height_field.size + c.x]
+
+
+## ¿c es la calle abierta (ni pegada a una fachada ni adentro de una casa)?
+func is_street(c: Vector2i) -> bool:
+	var f: int = facade_at(c)
+	return f >= 2 and f <= Config.FACADE_MAX
 
 
 ## Cobertura de la celda para la infantería (0 sin cobertura).

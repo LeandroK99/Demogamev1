@@ -246,7 +246,8 @@ func score_options(w: SimWorld, u: Unit) -> Dictionary:
 func _score_cross(w: SimWorld, u: Unit, s: Dictionary) -> void:
 	var m: SquadMind = u.mind
 	if m.option == SquadMind.Option.CROSS:
-		if not u.path.is_empty() or str(m.data.get("phase", "B")) == "A":
+		var ph: String = str(m.data.get("phase", "B"))
+		if (not u.path.is_empty() and ph != "done") or ph == "A":
 			s[SquadMind.Option.CROSS] = Config.DANGER_SCORE + 1.0
 		return
 	if m.option != SquadMind.Option.FOLLOW or u.path.is_empty() or u.order not in [Unit.Order.MOVE, Unit.Order.HULLDOWN]:
@@ -265,7 +266,7 @@ static func _cross_key(c: Vector2i) -> int:
 
 
 static func _covered(w: SimWorld, c: Vector2i) -> bool:
-	return w.cover != null and w.cover.type_at(c) != CoverMap.Type.NONE
+	return (w.cover != null and w.cover.type_at(c) != CoverMap.Type.NONE) or w.facade_at(c) <= 1
 
 
 ## Primera celda cubierta del otro lado de un tramo abierto de la ruta que empieza ya delante de la
@@ -274,15 +275,17 @@ static func danger_far_edge(w: SimWorld, u: Unit) -> Vector2i:
 	if not _covered(w, u.cell()):
 		return Vector2i(-1, -1)
 	var open: int = 0
+	var street: bool = true # todo el tramo abierto es calle: cruzarla, aunque sea angosta, es peligroso
 	for k: int in mini(u.path.size(), Config.DANGER_MAX_CELLS + 3):
 		var c: Vector2i = u.path[k]
 		if _covered(w, c):
-			if open >= Config.DANGER_MIN_CELLS:
+			if open >= Config.DANGER_MIN_CELLS or (street and open >= 1):
 				return c
 			if open > 0:
 				return Vector2i(-1, -1) # un claro chico: se cruza sin más
 			continue
 		open += 1
+		street = street and w.is_street(c)
 		if open > Config.DANGER_MAX_CELLS:
 			return Vector2i(-1, -1)
 	return Vector2i(-1, -1)
@@ -291,11 +294,78 @@ static func danger_far_edge(w: SimWorld, u: Unit) -> Vector2i:
 func _start_cross(w: SimWorld, u: Unit) -> void:
 	var m: SquadMind = u.mind
 	m.reacted[_cross_key(m.target_cell)] = true
-	m.data["phase"] = "B"
 	m.data["far"] = m.target_cell
+	if _street_ahead(w, u):
+		_start_street(w, u)
+		return
+	m.data["phase"] = "B"
 	m.hold = false
 	for s: Soldier in u.soldiers:
 		s.hold_pos = s.team == 0 and s.is_ok() # A: seguridad del lado cercano
+
+
+## ¿El tramo abierto que viene es una calle del pueblo?
+static func _street_ahead(w: SimWorld, u: Unit) -> bool:
+	for k: int in mini(u.path.size(), Config.DANGER_MAX_CELLS + 3):
+		if w.is_street(u.path[k]):
+			return true
+		if k > 0 and _covered(w, u.path[k]):
+			break
+	return false
+
+
+## Calle (fase 62): no se cruza de a un equipo sino todos juntos y a la carrera, después de taparla
+## con humo si un enemigo conocido la ve. Sin humo, espera (hasta STREET_WAIT_MAX_SECONDS).
+func _start_street(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	m.data["street"] = true
+	m.hold = true
+	for s: Soldier in u.soldiers:
+		s.hold_pos = s.is_ok() # todos del lado cercano hasta que se cruza
+	var mid: Vector2 = _street_mid(w, u)
+	m.data["mid"] = mid
+	if not _street_watched(w, u, mid):
+		_street_go(w, u)
+		return
+	if throw_smoke_toward(w, u, mid + (w.inf.threat_point(w, u) - mid).normalized() * 4.0):
+		m.data["phase"] = "smoke"
+		w.radio(u, "calle batida: humo y cruzamos todos juntos")
+	else:
+		m.data["phase"] = "wait"
+		w.radio(u, "calle batida y sin humo: esperamos")
+
+
+## Punto medio de la calle a cruzar (metros).
+static func _street_mid(w: SimWorld, u: Unit) -> Vector2:
+	var acc: Vector2 = Vector2.ZERO
+	var n: int = 0
+	for k: int in mini(u.path.size(), Config.DANGER_MAX_CELLS + 3):
+		if w.is_street(u.path[k]):
+			acc += Vector2(u.path[k])
+			n += 1
+		elif n > 0:
+			break
+	return (acc / float(maxi(n, 1))) * Config.CELL_SIZE if n > 0 else u.pos_m()
+
+
+## ¿Algún enemigo conocido ve el medio de la calle?
+static func _street_watched(w: SimWorld, u: Unit, mid: Vector2) -> bool:
+	for id: int in u.mind.contacts:
+		var p: Vector2 = u.mind.contacts[id]["pos"]
+		if w.analysis.los_m(p, Config.SOLDIER_EYE_STAND, mid, Config.SOLDIER_CENTER_STAND):
+			return true
+	return false
+
+
+func _street_go(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	m.data["phase"] = "go"
+	m.hold = false
+	m.rushing = true
+	for s: Soldier in u.soldiers:
+		s.hold_pos = false
+		s.rush_until = 0
+		s.down_until = 0
 
 
 func _act_cross(w: SimWorld, u: Unit) -> void:
@@ -303,6 +373,9 @@ func _act_cross(w: SimWorld, u: Unit) -> void:
 	if not m.data.has("phase"):
 		return
 	var far: Vector2i = m.data["far"]
+	if m.data.has("street"):
+		_act_street(w, u, far)
+		return
 	if str(m.data["phase"]) == "B":
 		if u.cell() == far or not u.path.has(far):
 			m.data["phase"] = "A" # B del otro lado: se cubre y cruza A
@@ -313,6 +386,23 @@ func _act_cross(w: SimWorld, u: Unit) -> void:
 		m.data["phase"] = "done"
 		m.hold = false
 		switch_to(w, u, SquadMind.Option.FOLLOW)
+
+
+func _act_street(w: SimWorld, u: Unit, far: Vector2i) -> void:
+	var m: SquadMind = u.mind
+	var elapsed: float = float(w.total_ticks - m.since_tick) * Config.TICK
+	match str(m.data["phase"]):
+		"smoke":
+			if elapsed >= Config.STREET_SMOKE_WAIT_SECONDS:
+				_street_go(w, u)
+		"wait":
+			if elapsed >= Config.STREET_WAIT_MAX_SECONDS or not _street_watched(w, u, m.data["mid"]):
+				_street_go(w, u)
+		"go":
+			if u.cell() == far or not u.path.has(far):
+				m.data["phase"] = "done"
+				m.rushing = false
+				switch_to(w, u, SquadMind.Option.FOLLOW)
 
 
 ## --- Emboscada cercana (fase 52) ---

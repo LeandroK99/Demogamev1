@@ -205,6 +205,26 @@ func _walk_blocked(p0: Vector2, p1: Vector2) -> bool:
 	return false
 
 
+## Si ir de anchor a p entra en una casa en la que no está anchor (p adentro o del otro lado), el
+## punto justo antes de esa casa (la formación no mete ni pasa soldados por casas que la escuadra
+## no pisa). Si no, p.
+func pull_out(p: Vector2, anchor: Vector2) -> Vector2:
+	var d: Vector2 = p - anchor
+	if d.length() < 0.01:
+		return p
+	var t_min: float = 2.0
+	var home: int = house_at_m(anchor)
+	for i: int in _rects_m.size():
+		if i == home:
+			continue
+		var span: Vector2 = _clip(_rects_m[i], anchor, d)
+		if span.x <= span.y:
+			t_min = minf(t_min, span.x)
+	if t_min > 1.0:
+		return p
+	return anchor + d * t_min - d.normalized() * MicroCover.MICRO_M * 0.7
+
+
 ## Punto caminable más cercano a p (hasta 3 m); p si ya lo es.
 func nearest_walkable_m(p: Vector2) -> Vector2:
 	if walkable_m(p):
