@@ -22,7 +22,8 @@ func _process(_delta: float) -> void:
 			_nodes[id] = _make(cloud)
 		var mi: MeshInstance3D = _nodes[id]
 		var mat: StandardMaterial3D = mi.material_override as StandardMaterial3D
-		mat.albedo_color.a = ALPHA_LAST_TURN if int(cloud["turns_left"]) <= 1 else ALPHA_FULL
+		var fading: bool = int(cloud["ticks_left"]) < 100 if cloud.has("ticks_left") else int(cloud["turns_left"]) <= 1
+		mat.albedo_color.a = ALPHA_LAST_TURN if fading else ALPHA_FULL
 	for id: int in _nodes.keys():
 		if not alive.has(id):
 			(_nodes[id] as Node).queue_free()

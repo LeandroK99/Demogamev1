@@ -25,6 +25,15 @@ var suppression: float = 0.0 # 0..100
 var last_suppressed_tick: int = -1000000
 var reload_left: float = 0.0
 var last_fire_tick: int = -1000000
+## Reflejos (fase 37)
+var incoming_from: Vector2 = Vector2.ZERO # de dónde vino el último tiro que le cayó cerca (metros)
+var incoming_tick: int = -1000000
+var dive_until: int = -1000000 # se tiró al suelo bajo fuego en marcha: quieto hasta este tick
+var has_fire_pos: bool = false # su cobertura no tiene tiro: punto cercano desde el que asoma
+var fire_pos: Vector2 = Vector2.ZERO
+var fire_posture: int = Posture.PRONE
+var peeking: bool = false # está asomado en fire_pos
+var peek_tick: int = 0 # tick en que cambia entre asomarse y volver a cubierto
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:

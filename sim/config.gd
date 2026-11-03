@@ -203,6 +203,21 @@ const MIND_AUTONOMY_BLUE: int = 1 # SquadMind.Autonomy.NORMAL
 const MIND_AUTONOMY_RED: int = 2 # SquadMind.Autonomy.HIGH
 const RADIO_LOG_MAX: int = 40 # mensajes de radio que se guardan
 
+# --- Reflejos del soldado ---
+const REFLEX_DIVE_SUPP: float = 8.0 # un tiro que le suma esto en marcha y al descubierto lo tira al suelo
+const REFLEX_DIVE_SECONDS: float = 2.0 # ... por este tiempo
+const REFLEX_INCOMING_SECONDS: float = 4.0 # un tiro recibido cuenta para revisar la cobertura este tiempo
+const REFLEX_PEEK_RADIUS_M: float = 3.0 # busca desde dónde asomar a esta distancia de su cobertura
+const REFLEX_PEEK_LOS_CHECKS: int = 3 # líneas de visión para encontrar ese punto
+const REFLEX_PEEK_FIRE_SECONDS: float = 5.0 # asomado tirando
+const REFLEX_PEEK_HIDE_SECONDS: float = 6.0 # de vuelta a cubierto
+const INF_SMOKE_CHARGES: int = 2 # granadas de humo de mano por escuadra
+const INF_SMOKE_SUPPRESSED_SECONDS: float = 15.0 # frenada por la supresión este tiempo, tira humo
+const INF_SMOKE_DIST_M: float = 15.0 # metros hacia la amenaza donde cae la granada
+const INF_SMOKE_RADIUS: float = 2.0 # celdas
+const INF_SMOKE_HEIGHT: float = 4.0 # metros sobre el terreno
+const INF_SMOKE_SECONDS: float = 40.0 # lo que dura la nube de mano
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3

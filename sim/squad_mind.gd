@@ -25,6 +25,7 @@ var saved: Dictionary = {}
 var rerouted: bool = false # la opción actual le cambió la ruta (al volver hay que rehacerla)
 var data: Dictionary = {} # estado propio de la opción actual
 var scores: Dictionary = {} # últimos puntajes (para el HUD y los tests)
+var halted_since: int = -1 # tick desde el que la supresión la tiene frenada (-1 = no lo está)
 
 
 func _init(p_autonomy: int = Autonomy.NORMAL) -> void:

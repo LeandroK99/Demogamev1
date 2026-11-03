@@ -32,10 +32,12 @@ func move_soldiers(w: SimWorld) -> void:
 		var speed: float = w.speed_at(u.cell(), Unit.Kind.INFANTRY) * SimWorld.pace_speed_factor(SimWorld.effective_pace(u))
 		var step_m: float = speed * Config.SOLDIER_CATCHUP * Config.TICK
 		for s: Soldier in u.soldiers:
-			if not s.is_ok() or s.suppression >= Config.PINNED:
-				s.moving = false # herido o clavado: se queda donde está
+			if not s.is_ok() or s.suppression >= Config.PINNED or s.dive_until > w.total_ticks:
+				s.moving = false # herido, clavado o recién tirado al suelo: se queda donde está
 				continue
-			var target: Vector2 = s.cover_pos if s.has_cover and not u.moving else u.slot_pos_m(s.index)
+			var target: Vector2 = u.slot_pos_m(s.index)
+			if s.has_cover and not u.moving:
+				target = s.fire_pos if s.peeking else s.cover_pos
 			target = Vector2(clampf(target.x, 0.0, limit), clampf(target.y, 0.0, limit))
 			var d: Vector2 = target - s.pos
 			var dist: float = d.length()
@@ -213,6 +215,56 @@ func choose_cover(w: SimWorld, u: Unit, s: Soldier, threat: Vector2, taken: Arra
 	s.cover_posture = best["posture"]
 	s.cover_threat = threat
 	taken.append(s.cover_pos)
+	_choose_fire_pos(w, s, threat, cands)
+
+
+## Reflejo "asomar y tirar": si desde su cobertura no tiene tiro, busca cerca (a REFLEX_PEEK_RADIUS_M)
+## un punto desde el que sí lo tenga; ahí se asoma por turnos (ver update_peeks).
+func _choose_fire_pos(w: SimWorld, s: Soldier, threat: Vector2, cands: Array[Dictionary]) -> void:
+	s.has_fire_pos = false
+	s.peeking = false
+	if s.can_fire:
+		return
+	var near: Array[Dictionary] = []
+	for ev: Dictionary in cands:
+		var p: Vector2 = ev["pos"]
+		if bool(ev["fire"]) and p.distance_to(s.cover_pos) <= Config.REFLEX_PEEK_RADIUS_M:
+			near.append(ev)
+	near.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return (a["pos"] as Vector2).distance_to(s.cover_pos) < (b["pos"] as Vector2).distance_to(s.cover_pos))
+	for k: int in mini(near.size(), Config.REFLEX_PEEK_LOS_CHECKS):
+		var p: Vector2 = near[k]["pos"]
+		var post: int = near[k]["posture"]
+		var eye: float = Config.SOLDIER_EYE_CROUCH if post == Soldier.Posture.CROUCH else Config.SOLDIER_EYE_PRONE
+		if w.analysis.los_m(p, eye + ground_offset(w, p), threat, 1.0):
+			s.has_fire_pos = true
+			s.fire_pos = p
+			s.fire_posture = post
+			s.peek_tick = w.total_ticks + roundi(Config.REFLEX_PEEK_HIDE_SECONDS / Config.TICK * 0.5) + s.index * 3
+			return
+
+
+## Los que tienen desde dónde asomar se turnan: un rato asomados tirando, otro a cubierto. Si la
+## escuadra no conoce amenazas, o el soldado está suprimido, se queda a cubierto.
+func update_peeks(w: SimWorld) -> void:
+	var now: int = w.total_ticks
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		var threats: bool = not w.threats_for(u.side).is_empty() if not u.moving else false
+		for s: Soldier in u.soldiers:
+			if not s.peeking and not s.has_fire_pos:
+				continue
+			if not s.is_ok() or not s.has_cover or not s.has_fire_pos or u.moving or not threats \
+					or s.suppression >= Config.SUPPRESSED:
+				if s.peeking:
+					s.peeking = false
+					s.peek_tick = now + roundi(Config.REFLEX_PEEK_HIDE_SECONDS / Config.TICK)
+				continue
+			if now >= s.peek_tick:
+				s.peeking = not s.peeking
+				var secs: float = Config.REFLEX_PEEK_FIRE_SECONDS if s.peeking else Config.REFLEX_PEEK_HIDE_SECONDS
+				s.peek_tick = now + roundi(secs / Config.TICK)
 
 
 static func _spaced(p: Vector2, taken: Array[Vector2]) -> bool:
@@ -240,6 +292,8 @@ func update_cover(w: SimWorld) -> void:
 				continue
 			if s.has_cover and _threat_moved(u, s, threat):
 				s.has_cover = false
+			if s.has_cover and _cover_flanked(w, s):
+				s.has_cover = false # cubierta inválida: le tiran desde donde no lo protege
 			if s.has_cover:
 				taken.append(s.cover_pos)
 			else:
@@ -248,7 +302,25 @@ func update_cover(w: SimWorld) -> void:
 			continue
 		pending.sort_custom(func(a: Soldier, b: Soldier) -> bool: return _cover_priority(a) < _cover_priority(b))
 		for s: Soldier in pending:
-			choose_cover(w, u, s, threat, taken)
+			choose_cover(w, u, s, _incoming_threat(w, s, threat), taken)
+
+
+## ¿Le tiraron hace poco desde una dirección muy distinta a la de su cobertura, y ahí no lo protege?
+func _cover_flanked(w: SimWorld, s: Soldier) -> bool:
+	if float(w.total_ticks - s.incoming_tick) * Config.TICK > Config.REFLEX_INCOMING_SECONDS:
+		return false
+	var a: Vector2 = s.cover_threat - s.pos
+	var b: Vector2 = s.incoming_from - s.pos
+	if a.length() < 0.01 or b.length() < 0.01 or absf(a.angle_to(b)) <= deg_to_rad(Config.SOLDIER_COVER_REEVAL_DEG):
+		return false
+	return not is_protected_from(w, s, s.incoming_from)
+
+
+## Contra qué se cubre un soldado: de donde le vienen tirando, si fue hace poco; si no, la amenaza de la escuadra.
+static func _incoming_threat(w: SimWorld, s: Soldier, threat: Vector2) -> Vector2:
+	if float(w.total_ticks - s.incoming_tick) * Config.TICK <= Config.REFLEX_INCOMING_SECONDS:
+		return s.incoming_from
+	return threat
 
 
 static func _cover_priority(s: Soldier) -> int:
@@ -282,8 +354,10 @@ func update_postures(w: SimWorld) -> void:
 				s.posture = Soldier.Posture.PRONE
 			elif s.moving:
 				s.posture = Soldier.Posture.CROUCH if cautious else Soldier.Posture.STAND
+			elif s.dive_until > w.total_ticks:
+				s.posture = Soldier.Posture.PRONE # se tiró al suelo
 			elif s.has_cover:
-				s.posture = s.cover_posture
+				s.posture = s.fire_posture if s.peeking else s.cover_posture
 			else:
 				s.posture = Soldier.Posture.PRONE if u.prone else Soldier.Posture.CROUCH
 
@@ -333,7 +407,7 @@ static func soldier_spot_range(w: SimWorld, u: Unit, s: Soldier) -> float:
 	if (s.moving or u.moving) and SimWorld.effective_pace(u) != Unit.Pace.CAUTIOUS and s.posture != Soldier.Posture.PRONE:
 		return Config.INF_SPOT_MOVING
 	var f: float = 1.0 - w.cover_at(Vector2i((s.pos / Config.CELL_SIZE).round())) * Config.COVER_SPOT_FACTOR
-	if s.protected and not s.moving:
+	if s.protected and not s.moving and not s.peeking:
 		f *= Config.SOLDIER_PROTECTED_SPOT_FACTOR
 	var base: float = Config.INF_SPOT_PRONE if s.posture == Soldier.Posture.PRONE else Config.INF_SPOT_STILL
 	return base * f
@@ -666,9 +740,14 @@ func suppress_at(w: SimWorld, side: int, at: Vector2, from: Vector2, wpn: int, h
 			if d > Config.SOLDIER_SUPP_NEAR_M:
 				continue
 			var a: float = amount if d < 0.5 else amount * 0.5
-			if is_protected_from(w, t, from):
+			var prot: bool = is_protected_from(w, t, from)
+			if prot:
 				a *= Config.SOLDIER_SUPP_COVER_FACTOR
 			add_soldier_suppression(w, t, a)
+			t.incoming_from = from
+			t.incoming_tick = w.total_ticks
+			if tu.moving and not prot and a >= Config.REFLEX_DIVE_SUPP:
+				t.dive_until = w.total_ticks + roundi(Config.REFLEX_DIVE_SECONDS / Config.TICK) # ¡al suelo!
 			touched = true
 		if touched:
 			tu.last_suppressed_tick = w.total_ticks

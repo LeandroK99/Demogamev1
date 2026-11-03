@@ -76,6 +76,7 @@ func _init(p_id: int, p_side: int, p_pos: Vector2, p_kind: int = Kind.TANK) -> v
 			s.heading = heading
 			soldiers.append(s)
 			s.pos = slot_pos_m(i)
+		smoke_charges = Config.INF_SMOKE_CHARGES
 		mind = SquadMind.new(Config.MIND_AUTONOMY_BLUE if side == 0 else Config.MIND_AUTONOMY_RED)
 		mind.next_think_tick = p_id % Config.MIND_THINK_TICKS
 

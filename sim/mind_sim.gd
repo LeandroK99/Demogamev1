@@ -16,10 +16,39 @@ func update(w: SimWorld) -> void:
 			if not m.is_following():
 				switch_to(w, u, SquadMind.Option.FOLLOW) # la retirada por moral manda
 			continue
+		_smoke_reflex(w, u)
 		if w.total_ticks >= m.next_think_tick:
 			m.next_think_tick = w.total_ticks + think_interval(u)
 			think(w, u)
 		act(w, u)
+
+
+## Reflejo de la escuadra: frenada por la supresión más de INF_SMOKE_SUPPRESSED_SECONDS, tira una
+## granada de humo de mano entre ella y la amenaza (si le quedan). Con autonomía normal o alta.
+func _smoke_reflex(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	if not w.inf.halted(u):
+		m.halted_since = -1
+		return
+	if m.halted_since < 0:
+		m.halted_since = w.total_ticks
+		return
+	if m.autonomy < SquadMind.Autonomy.NORMAL or u.smoke_charges <= 0:
+		return
+	if float(w.total_ticks - m.halted_since) * Config.TICK < Config.INF_SMOKE_SUPPRESSED_SECONDS:
+		return
+	if throw_smoke_toward(w, u, w.inf.threat_point(w, u)):
+		w.radio(u, "humo, ¡nos tienen clavados!")
+	m.halted_since = w.total_ticks # la próxima, otros 15 s después
+
+
+## Granada de humo de mano hacia threat (a INF_SMOKE_DIST_M, o a mitad de camino si está más cerca).
+func throw_smoke_toward(w: SimWorld, u: Unit, threat: Vector2) -> bool:
+	var from: Vector2 = u.pos_m()
+	var d: float = from.distance_to(threat)
+	if d < 0.01:
+		return false
+	return w.hand_smoke(u, from + (threat - from) / d * minf(Config.INF_SMOKE_DIST_M, d * 0.5))
 
 
 ## Ticks entre decisiones.

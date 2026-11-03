@@ -826,6 +826,40 @@ func order_smoke(unit_id: int, cell: Vector2i) -> bool:
 	return true
 
 
+## Granada de humo de mano de una escuadra: una nube chica en at_m que dura INF_SMOKE_SECONDS
+## (vale también en la ejecución).
+func hand_smoke(u: Unit, at_m: Vector2) -> bool:
+	if u == null or not u.alive or u.smoke_charges <= 0:
+		return false
+	var limit: float = float(height_field.size - 1)
+	var c: Vector2 = at_m / Config.CELL_SIZE
+	c = Vector2(clampf(c.x, 0.0, limit), clampf(c.y, 0.0, limit))
+	u.smoke_charges -= 1
+	smoke_clouds.append({
+		"id": _next_smoke_id,
+		"center": c,
+		"radius": Config.INF_SMOKE_RADIUS,
+		"top_h": height_field.height_at(c) + Config.INF_SMOKE_HEIGHT,
+		"turns_left": 1000000,
+		"ticks_left": roundi(Config.INF_SMOKE_SECONDS / Config.TICK),
+		"side": u.side,
+	})
+	_next_smoke_id += 1
+	invalidate_exposure()
+	return true
+
+
+## Las nubes de mano se van por tiempo.
+func _tick_smoke() -> void:
+	for i: int in range(smoke_clouds.size() - 1, -1, -1):
+		var cloud: Dictionary = smoke_clouds[i]
+		if cloud.has("ticks_left"):
+			cloud["ticks_left"] = int(cloud["ticks_left"]) - 1
+			if int(cloud["ticks_left"]) <= 0:
+				smoke_clouds.remove_at(i)
+				invalidate_exposure()
+
+
 func can_smoke_at(u: Unit, cell: Vector2i) -> bool:
 	return TerrainAnalysis.dist_m(u.cell(), cell) <= Config.SMOKE_RANGE \
 		and analysis.los(u.cell(), u.eye_h(), cell, 1.0)
@@ -988,6 +1022,8 @@ func step() -> void:
 	_update_suppression()
 	_update_posture()
 	inf.update_postures(self)
+	inf.update_peeks(self)
+	_tick_smoke()
 	tick_in_turn += 1
 	total_ticks += 1
 	if tick_in_turn % Config.DETECTION_INTERVAL_TICKS == 0:
