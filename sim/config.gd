@@ -135,6 +135,23 @@ const MICRO_LOS_STEP: float = 0.5 # metros entre muestras de microcobertura en l
 const MICRO_NEAR_M: float = 15.0 # solo se mira la microcobertura a esta distancia de cada extremo
 const MICRO_SELF_M: float = 0.8 # la micro-celda propia (y la del blanco) no tapa
 
+# --- Soldados ---
+const SOLDIER_EYE_STAND: float = 1.7 # altura del ojo según la postura
+const SOLDIER_EYE_CROUCH: float = 1.1
+const SOLDIER_EYE_PRONE: float = 0.4
+const SOLDIER_CENTER_STAND: float = 1.2 # altura del centro del cuerpo
+const SOLDIER_CENTER_CROUCH: float = 0.8
+const SOLDIER_CENTER_PRONE: float = 0.25
+const SOLDIER_TOP_STAND: float = 1.8 # altura de la cabeza
+const SOLDIER_TOP_CROUCH: float = 1.2
+const SOLDIER_TOP_PRONE: float = 0.45
+const SOLDIER_SPACING: float = 3.0 # metros entre soldados en la formación
+const SOLDIER_CATCHUP: float = 1.3 # el soldado puede ir a esta fracción de la velocidad de la escuadra para alcanzarla
+const SOLDIER_LAG_M: float = 6.0 # si alguno queda más lejos que esto de su lugar, la escuadra lo espera
+const SOLDIER_TELEPORT_M: float = 40.0 # más lejos que esto de su lugar, el soldado se reubica de golpe (escuadra movida a mano)
+const SOLDIER_ARRIVE_M: float = 0.3 # a esta distancia de su lugar ya llegó
+const SOLDIER_WOUND_P: float = 0.5 # un impacto hiere (si no, mata); herido otra vez, muere
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3

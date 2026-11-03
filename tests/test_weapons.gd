@@ -5,8 +5,8 @@ const N: int = 96
 
 
 ## Llano sin IA: solo el tanque azul 0 vivo (en 48, 60) y el rojo 4 vivo pero lejos y sin recarga.
-func _world() -> SimWorld:
-	var world: SimWorld = SimWorld.new(7, HeightField.new(N), false)
+func _world(sim_seed: int = 7) -> SimWorld:
+	var world: SimWorld = SimWorld.new(sim_seed, HeightField.new(N), false)
 	for u: Unit in world.units:
 		u.alive = u.id == 0 or u.id == 4
 	world.units[0].pos = Vector2(48, 60)
@@ -69,8 +69,9 @@ func test_at_in_range_spends_charges() -> void:
 func test_infantry_firefight_and_prone_protects() -> void:
 	var standing: int = 0
 	var prone: int = 0
-	for trial: int in 2:
-		var world: SimWorld = _world()
+	for k: int in 6:
+		var trial: int = k % 2
+		var world: SimWorld = _world(7 + k / 2)
 		world.units[0].alive = false
 		var a: Unit = world.add_unit(0, Vector2(48, 60), Unit.Kind.INFANTRY)
 		var b: Unit = world.add_unit(1, Vector2(48, 50), Unit.Kind.INFANTRY) # 40 m: se la ve aun cuerpo a tierra
@@ -86,9 +87,9 @@ func test_infantry_firefight_and_prone_protects() -> void:
 			b.moving = trial == 0
 			world.step()
 		if trial == 0:
-			standing = Config.INF_MEN - b.hp
+			standing += Config.INF_MEN - b.hp
 		else:
-			prone = Config.INF_MEN - b.hp
+			prone += Config.INF_MEN - b.hp
 		assert_true(_shots(world, a.id, Unit.Weapon.RIFLES) > 5, "la escuadra tira a la escuadra")
 	assert_lt(prone, standing, "cuerpo a tierra recibe menos bajas (%d vs %d)" % [prone, standing])
 
@@ -96,7 +97,7 @@ func test_infantry_firefight_and_prone_protects() -> void:
 func test_squad_dies_at_zero_men() -> void:
 	var world: SimWorld = _world()
 	var sq: Unit = world.add_unit(1, Vector2(48, 56), Unit.Kind.INFANTRY)
-	sq.hp = 1
+	sq.set_men(1)
 	sq.reload_left = 1000.0
 	sq.reload2_left = 1000.0
 	sq.moving = true

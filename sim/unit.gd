@@ -12,6 +12,8 @@ enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITH
 enum Roe { FREE, RETURN_FIRE, HOLD }
 ## Ritmo de marcha: normal, rápido (más veloz, tira peor) o cauto (lento, se detecta como si estuviera quieto).
 enum Pace { NORMAL, FAST, CAUTIOUS }
+## Formación de la escuadra: cuña, fila india o línea.
+enum Formation { WEDGE, FILE, LINE }
 
 var id: int = 0
 var kind: int = Kind.TANK
@@ -53,6 +55,9 @@ var fire_arc_dir: Vector2 = Vector2.ZERO # centro del arco de tiro (cero = sin a
 var max_engage_m: float = Config.MAX_RANGE # distancia máxima de enganche
 var last_fired_upon_tick: int = -1000000 # tick global del último disparo recibido
 var pace: int = Pace.NORMAL # ritmo; dura hasta que se cambie (ASSAULT siempre va rápido)
+## Infantería: los soldados de la escuadra. pos es el ancla de la formación, que sigue la ruta.
+var soldiers: Array[Soldier] = []
+var formation: int = Formation.WEDGE
 
 
 func _init(p_id: int, p_side: int, p_pos: Vector2, p_kind: int = Kind.TANK) -> void:
@@ -62,6 +67,56 @@ func _init(p_id: int, p_side: int, p_pos: Vector2, p_kind: int = Kind.TANK) -> v
 	kind = p_kind
 	hp = max_hp()
 	heading = Vector2(0.0, -1.0) if side == 0 else Vector2(0.0, 1.0)
+	if is_infantry():
+		for i: int in Config.INF_MEN:
+			var s: Soldier = Soldier.new(i, Soldier.role_for(i), Vector2.ZERO)
+			s.heading = heading
+			soldiers.append(s)
+			s.pos = slot_pos_m(i)
+
+
+## Ancla de la formación en metros.
+func pos_m() -> Vector2:
+	return pos * Config.CELL_SIZE
+
+
+## Lugar del soldado i en la formación, en metros (según el ancla y el rumbo).
+func slot_pos_m(i: int) -> Vector2:
+	var off: Vector2 = formation_offset(i, formation)
+	var right: Vector2 = Vector2(-heading.y, heading.x)
+	return pos_m() + right * off.x - heading * off.y
+
+
+## Desplazamiento del lugar i en una formación: x a la derecha, y hacia atrás, en metros.
+static func formation_offset(i: int, f: int) -> Vector2:
+	var s: float = Config.SOLDIER_SPACING
+	match f:
+		Formation.FILE:
+			return Vector2(0.0, float(i) * s)
+		Formation.LINE:
+			# El jefe en el medio, los demás alternando a los costados
+			var k: int = (i + 1) / 2
+			return Vector2(float(k if i % 2 == 1 else -k) * s, 0.0)
+	# Cuña: el jefe adelante, los demás alternando en dos brazos hacia atrás
+	var j: int = (i + 1) / 2
+	return Vector2(float(j if i % 2 == 1 else -j) * s, float(j) * s)
+
+
+## Deja n soldados en condiciones (los demás, muertos). Para escenarios y tests.
+func set_men(n: int) -> void:
+	for s: Soldier in soldiers:
+		if s.index >= n:
+			s.state = Soldier.State.DEAD
+	hp = ok_count()
+
+
+## Soldados en condiciones de combatir.
+func ok_count() -> int:
+	var n: int = 0
+	for s: Soldier in soldiers:
+		if s.is_ok():
+			n += 1
+	return n
 
 
 func cell() -> Vector2i:

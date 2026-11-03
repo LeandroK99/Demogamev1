@@ -57,6 +57,7 @@ var scenario: int = Scenario.TANKS
 var _forcing: bool = false # órdenes que da la propia simulación (una retirada por moral quebrada)
 var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
 var micro: MicroCover = null # microcobertura a 1 m (piedras, cráteres, pircas); null = sin ella
+var inf: InfantrySim = InfantrySim.new() # los soldados de las escuadras
 
 
 ## Si hf es null se genera el terreno procedural con la semilla.
@@ -597,6 +598,15 @@ static func _all_signals_gate(names: Array[String]) -> Dictionary:
 	return {"type": "all_signals", "names": names.duplicate()}
 
 
+## Formación de una escuadra (solo en PLAN). Dura hasta que se cambie.
+func set_formation(unit_id: int, f: int) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or not u.is_infantry() or phase != Phase.PLAN:
+		return false
+	u.formation = f
+	return true
+
+
 ## Ritmo de una unidad (solo en PLAN). Dura hasta que se cambie.
 func set_pace(unit_id: int, pace: int) -> bool:
 	var u: Unit = get_unit(unit_id)
@@ -902,7 +912,11 @@ func step() -> void:
 		if is_suppressed(u) and u.is_infantry():
 			u.moving = false # cuerpo a tierra, no avanza
 			continue
+		if u.is_infantry() and inf.lagging(u):
+			u.moving = true # el ancla espera a los rezagados
+			continue
 		_advance(u, Config.TICK)
+	inf.move_soldiers(self)
 	_update_suppression()
 	_update_posture()
 	tick_in_turn += 1
@@ -1041,7 +1055,10 @@ func _fire_slot(shooter: Unit, slot: int) -> void:
 
 ## Un impacto: un hombre menos (con su golpe a la moral) o un impacto de cañón.
 func _damage(target: Unit) -> void:
-	target.hp -= 1
+	if target.is_infantry():
+		inf.hit_random(self, target)
+	else:
+		target.hp -= 1
 	_lose_morale(target, Config.MORALE_PER_CASUALTY)
 	if target.hp <= 0:
 		target.alive = false
