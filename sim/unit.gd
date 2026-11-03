@@ -2,7 +2,7 @@ class_name Unit
 extends RefCounted
 ## Un tanque de la simulación.
 
-enum Order { NONE, MOVE, HULLDOWN, HOLD }
+enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK }
 
 var id: int = 0
 var side: int = 0 # 0 azul, 1 rojo
@@ -11,6 +11,8 @@ var heading: Vector2 = Vector2(0.0, -1.0) # dirección de marcha en la grilla
 var hp: int = Config.TANK_HP
 var reload_left: float = 0.0
 var path: Array[Vector2i] = []
+var final_heading: Vector2 = Vector2.ZERO # orientación al llegar (cero = la de la marcha)
+var attack_target: int = -1 # id del enemigo a atacar (-1 = ninguno)
 var order: int = Order.NONE
 var moving: bool = false
 var alive: bool = true
