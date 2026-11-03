@@ -59,6 +59,8 @@ var pace: int = Pace.NORMAL # ritmo; dura hasta que se cambie (ASSAULT siempre v
 ## Infantería: los soldados de la escuadra. pos es el ancla de la formación, que sigue la ruta.
 var soldiers: Array[Soldier] = []
 var formation: int = Formation.WEDGE
+## Infantería: la cabeza de la escuadra (autonomía, ver MindSim). null en los tanques.
+var mind: SquadMind = null
 
 
 func _init(p_id: int, p_side: int, p_pos: Vector2, p_kind: int = Kind.TANK) -> void:
@@ -74,6 +76,8 @@ func _init(p_id: int, p_side: int, p_pos: Vector2, p_kind: int = Kind.TANK) -> v
 			s.heading = heading
 			soldiers.append(s)
 			s.pos = slot_pos_m(i)
+		mind = SquadMind.new(Config.MIND_AUTONOMY_BLUE if side == 0 else Config.MIND_AUTONOMY_RED)
+		mind.next_think_tick = p_id % Config.MIND_THINK_TICKS
 
 
 ## Ancla de la formación en metros.

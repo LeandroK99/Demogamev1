@@ -194,6 +194,15 @@ const SOLDIER_SUPP_HALT: float = 0.5 # con más de esta fracción de soldados su
 const MORALE_LEADER_LOSS: float = 10.0 # baja extra de moral si cae el jefe
 const SUPP_MG: float = 25.0 # supresión de una ráfaga de ametralladora
 
+# --- Autonomía de las escuadras ---
+const MIND_THINK_TICKS: int = 10 # ticks entre decisiones de una escuadra (jefe regular)
+const MIND_SWITCH_MARGIN: float = 0.5 # una opción nueva tiene que superar a la actual por esto
+const MIND_MIN_TICKS: int = 100 # una decisión propia dura al menos esto (10 s) salvo que deje de valer
+const MIND_FOLLOW_SCORE: float = 1.0 # puntaje de seguir la orden del jugador
+const MIND_AUTONOMY_BLUE: int = 1 # SquadMind.Autonomy.NORMAL
+const MIND_AUTONOMY_RED: int = 2 # SquadMind.Autonomy.HIGH
+const RADIO_LOG_MAX: int = 40 # mensajes de radio que se guardan
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3

@@ -58,6 +58,10 @@ var _forcing: bool = false # órdenes que da la propia simulación (una retirada
 var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
 var micro: MicroCover = null # microcobertura a 1 m (piedras, cráteres, pircas); null = sin ella
 var inf: InfantrySim = InfantrySim.new() # los soldados de las escuadras
+var minds: MindSim = MindSim.new() # la autonomía de las escuadras
+## Radio: lo que las escuadras deciden por su cuenta. {tick, turn, side, unit, text}, el último al final.
+var radio_log: Array[Dictionary] = []
+var _autonomous: int = 0 # > 0: órdenes que se da la propia escuadra (valen en la ejecución)
 
 
 ## Si hf es null se genera el terreno procedural con la semilla.
@@ -216,9 +220,52 @@ func _rout_broken() -> void:
 			_forcing = false
 
 
-## ¿La unidad acepta órdenes ahora? (viva, en PLAN y sin la moral quebrada)
+## ¿La unidad acepta órdenes ahora? (viva, en PLAN y sin la moral quebrada; las que se da la
+## propia escuadra valen también en la ejecución)
 func _can_order(u: Unit) -> bool:
-	return u != null and u.alive and phase == Phase.PLAN and (not u.broken or _forcing)
+	return u != null and u.alive and (phase == Phase.PLAN or _autonomous > 0) and (not u.broken or _forcing)
+
+
+## Orden nueva del jugador (o del comandante): la escuadra deja lo que hacía por su cuenta.
+func _new_intent(u: Unit) -> void:
+	if _autonomous == 0 and u.mind != null:
+		u.mind.reset(total_ticks)
+
+
+func begin_autonomous() -> void:
+	_autonomous += 1
+
+
+func end_autonomous() -> void:
+	_autonomous -= 1
+
+
+## Mensaje de radio de una escuadra.
+func radio(u: Unit, text: String) -> void:
+	radio_log.append({"tick": total_ticks, "turn": turn, "side": u.side, "unit": u.id, "text": text})
+	if radio_log.size() > Config.RADIO_LOG_MAX:
+		radio_log.pop_front()
+
+
+## Rehace la ruta de u desde donde está pasando por esos tramos (con sus condiciones y señales).
+func reroute_through(u: Unit, wps: Array[Dictionary]) -> bool:
+	var path: Array[Vector2i] = []
+	var kept: Array[Dictionary] = []
+	var from: Vector2i = u.cell()
+	for wp: Dictionary in wps:
+		var to: Vector2i = wp["cell"]
+		if to == from:
+			continue
+		var leg: Array[Vector2i] = _route(u, from, to, not bool(wp.get("direct", false)))
+		if leg.is_empty():
+			continue
+		path.append_array(leg)
+		kept.append(wp)
+		from = to
+	u.path = path
+	u.waypoints = kept
+	u.moving = not path.is_empty()
+	return u.moving
 
 
 ## Espacio: arranca la ejecución del turno.
@@ -342,6 +389,7 @@ func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.Z
 	var u: Unit = get_unit(unit_id)
 	if not _can_order(u):
 		return false
+	_new_intent(u)
 	append = append and not u.path.is_empty()
 	var from: Vector2i = destination(u) if append else u.cell()
 	if from == target_cell and append:
@@ -714,6 +762,7 @@ func order_overwatch(unit_id: int, dir: Vector2) -> bool:
 	var u: Unit = get_unit(unit_id)
 	if not _can_order(u) or dir.length() < 0.001:
 		return false
+	_new_intent(u)
 	u.path.clear()
 	u.waypoints.clear()
 	u.moving = false
@@ -759,7 +808,7 @@ func _start_scoot_return(u: Unit, target: Unit) -> void:
 ## Aparece en el acto (en PLAN) y dura SMOKE_TURNS turnos; la exposición se recalcula.
 func order_smoke(unit_id: int, cell: Vector2i) -> bool:
 	var u: Unit = get_unit(unit_id)
-	if u == null or not u.alive or phase != Phase.PLAN or u.smoke_charges <= 0:
+	if u == null or not u.alive or (phase != Phase.PLAN and _autonomous == 0) or u.smoke_charges <= 0:
 		return false
 	if not height_field.in_bounds(cell) or not can_smoke_at(u, cell):
 		return false
@@ -808,6 +857,7 @@ func order_attack(unit_id: int, enemy_id: int) -> bool:
 	if phase != Phase.PLAN or not known_enemies[u.side].has(enemy_id):
 		return false
 	if _can_see(u, enemy, enemy.center_h()) and visible_enemies[u.side].has(enemy_id):
+		_new_intent(u)
 		u.path.clear()
 		u.moving = false
 		u.final_heading = Vector2.ZERO
@@ -913,6 +963,7 @@ func step() -> void:
 	if game_over:
 		return
 	_update_attackers()
+	minds.update(self)
 	for u: Unit in units:
 		if not u.alive or u.path.is_empty():
 			u.waiting = false
@@ -924,6 +975,9 @@ func step() -> void:
 		u.waiting = false
 		if u.is_infantry() and inf.halted(u):
 			u.moving = false # la mayoría suprimida: cuerpo a tierra, no avanza
+			continue
+		if u.mind != null and u.mind.hold:
+			u.moving = false # la escuadra decidió frenar (ver MindSim)
 			continue
 		if u.is_infantry() and inf.lagging(u):
 			u.moving = true # el ancla espera a los rezagados
@@ -1150,6 +1204,7 @@ func order_suppress(unit_id: int, cell: Vector2i) -> bool:
 	var u: Unit = get_unit(unit_id)
 	if not _can_order(u) or not can_suppress_at(u, cell):
 		return false
+	_new_intent(u)
 	u.path.clear()
 	u.waypoints.clear()
 	u.moving = false
