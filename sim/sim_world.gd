@@ -1,6 +1,11 @@
 class_name SimWorld
 extends RefCounted
 ## Estado completo de la simulación. Avanza en ticks fijos de Config.TICK.
+## Ciclo WeGo: PLAN (se aceptan órdenes) -> EXECUTE (ticks_per_turn ticks) -> PLAN ...
+
+enum Phase { PLAN, EXECUTE }
+const NO_WINNER: int = -1
+const DRAW: int = 2
 
 var height_field: HeightField
 var analysis: TerrainAnalysis
@@ -9,6 +14,22 @@ var units: Array[Unit] = []
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var turn: int = 1
 var tick_in_turn: int = 0
+var phase: int = Phase.PLAN
+var ticks_per_turn: int = roundi(Config.TURN_SECONDS / Config.TICK)
+var winner: int = NO_WINNER # 0 azul, 1 rojo, DRAW empate
+var game_over: bool = false
+
+# Niebla, por bando (índice = side)
+var visible_enemies: Array[Dictionary] = [{}, {}] # id -> true, visibles ahora
+var known_enemies: Array[Dictionary] = [{}, {}] # id -> {cell, last_seen_turn}
+
+# Disparos ocurridos desde la última vez que la vista los leyó: {shooter, target, hit}
+var shot_events: Array[Dictionary] = []
+
+# Factores de combate (se pueden cambiar en tests)
+var p_hit_base: float = Config.P_HIT_BASE
+var hulldown_hit_factor: float = Config.HULLDOWN_HIT_FACTOR
+var moving_shooter_factor: float = Config.MOVING_SHOOTER_FACTOR
 
 # Exposición por bando (índice = side); vacía = sin calcular
 var _exposure: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array()]
@@ -25,6 +46,8 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null) -> void:
 	analysis = TerrainAnalysis.new(hf)
 	pathfinder = Pathfinder.new(hf)
 	_deploy()
+	update_detection()
+	start_plan()
 
 
 ## Azules en el borde sur (y alto), rojos en el norte, separados DEPLOY_SPACING celdas.
@@ -44,14 +67,51 @@ func get_unit(unit_id: int) -> Unit:
 	return units[unit_id]
 
 
-## Amenazas para un bando. Provisorio hasta la fase 4 (niebla):
-## usa la posición real de los enemigos vivos.
+## Amenazas conocidas por un bando: enemigos vivos visibles o vistos
+## en este turno o el anterior, en su última posición conocida.
 func threats_for(side: int) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
-	for u: Unit in units:
-		if u.alive and u.side != side:
-			out.append(u.cell())
+	var known: Dictionary = known_enemies[side]
+	for id: int in known:
+		var info: Dictionary = known[id]
+		if units[id].alive and int(info["last_seen_turn"]) >= turn - 1:
+			out.append(info["cell"])
 	return out
+
+
+## Al entrar en PLAN: se descarta la exposición vieja (se recalcula al pedirla).
+## La IA roja dará sus órdenes acá (fase 5).
+func start_plan() -> void:
+	phase = Phase.PLAN
+	invalidate_exposure()
+
+
+## Espacio: arranca la ejecución del turno.
+func begin_execute() -> void:
+	if phase == Phase.PLAN and not game_over:
+		phase = Phase.EXECUTE
+		tick_in_turn = 0
+
+
+## Quién ve a quién: un enemigo es visible para un bando si alguna unidad viva
+## de ese bando ve su centro a <= MAX_RANGE.
+func update_detection() -> void:
+	for side: int in 2:
+		var vis: Dictionary = {}
+		for enemy: Unit in units:
+			if enemy.side == side or not enemy.alive:
+				continue
+			for own: Unit in units:
+				if own.side == side and own.alive and _can_see(own, enemy, Config.CENTER_H):
+					vis[enemy.id] = true
+					known_enemies[side][enemy.id] = {"cell": enemy.cell(), "last_seen_turn": turn}
+					break
+		visible_enemies[side] = vis
+
+
+func _can_see(observer: Unit, target: Unit, target_h: float) -> bool:
+	return TerrainAnalysis.dist_m(observer.cell(), target.cell()) <= Config.MAX_RANGE \
+		and analysis.los(observer.cell(), Config.EYE_H, target.cell(), target_h)
 
 
 ## Exposición del bando (se calcula la primera vez que se pide).
@@ -70,7 +130,7 @@ func invalidate_exposure() -> void:
 ## Calcula la ruta más cubierta para el bando de la unidad. Devuelve false si no hay ruta.
 func order_move(unit_id: int, target_cell: Vector2i) -> bool:
 	var u: Unit = get_unit(unit_id)
-	if u == null or not u.alive:
+	if u == null or not u.alive or phase != Phase.PLAN:
 		return false
 	if _pathfinder_side != u.side:
 		pathfinder.set_exposure(exposure_for(u.side))
@@ -85,12 +145,100 @@ func order_move(unit_id: int, target_cell: Vector2i) -> bool:
 	return true
 
 
-## Avanza un tick.
+## Avanza un tick: movimiento, detección (cada DETECTION_INTERVAL_TICKS), combate, fin de turno.
 func step() -> void:
+	if game_over:
+		return
 	for u: Unit in units:
 		if u.alive and not u.path.is_empty():
 			_advance(u, Config.TICK)
 	tick_in_turn += 1
+	if tick_in_turn % Config.DETECTION_INTERVAL_TICKS == 0:
+		update_detection()
+	_combat()
+	_check_victory()
+	if not game_over and tick_in_turn >= ticks_per_turn:
+		_end_turn()
+
+
+func _combat() -> void:
+	for shooter: Unit in units:
+		if not shooter.alive:
+			continue
+		shooter.reload_left = maxf(0.0, shooter.reload_left - Config.TICK)
+		if shooter.reload_left > 0.0:
+			continue
+		var target: Unit = _pick_target(shooter)
+		if target == null:
+			continue
+		shooter.reload_left = Config.RELOAD_SECONDS
+		target.shots_received += 1
+		var hit: bool = rng.randf() < hit_probability(shooter, target)
+		if hit:
+			target.hp -= 1
+			if target.hp <= 0:
+				target.alive = false
+				target.moving = false
+				target.path.clear()
+		shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit})
+
+
+## Enemigo visible para el bando del tirador, más cercano, al que el tirador ve.
+func _pick_target(shooter: Unit) -> Unit:
+	var best: Unit = null
+	var best_d: float = INF
+	var vis: Dictionary = visible_enemies[shooter.side]
+	for id: int in vis:
+		var enemy: Unit = units[id]
+		if not enemy.alive:
+			continue
+		var d: float = TerrainAnalysis.dist_m(shooter.cell(), enemy.cell())
+		if d < best_d and _can_see(shooter, enemy, Config.CENTER_H):
+			best = enemy
+			best_d = d
+	return best
+
+
+## p = P_HIT_BASE x distancia x casco x movimiento.
+func hit_probability(shooter: Unit, target: Unit) -> float:
+	var d: float = TerrainAnalysis.dist_m(shooter.cell(), target.cell())
+	var f_dist: float = clampf(1.0 - d / Config.MAX_RANGE, 0.2, 1.0)
+	var f_hull: float = 1.0
+	if not analysis.los(shooter.cell(), Config.EYE_H, target.cell(), Config.HULL_H):
+		f_hull = hulldown_hit_factor
+	var f_move: float = moving_shooter_factor if shooter.moving else 1.0
+	return p_hit_base * f_dist * f_hull * f_move
+
+
+func alive_count(side: int) -> int:
+	var n: int = 0
+	for u: Unit in units:
+		if u.side == side and u.alive:
+			n += 1
+	return n
+
+
+func _check_victory() -> void:
+	var blue: int = alive_count(0)
+	var red: int = alive_count(1)
+	if blue > 0 and red > 0:
+		return
+	game_over = true
+	winner = DRAW if blue == red else (0 if blue > 0 else 1)
+
+
+func _end_turn() -> void:
+	update_detection()
+	if turn >= Config.MAX_TURNS:
+		var blue: int = alive_count(0)
+		var red: int = alive_count(1)
+		game_over = true
+		winner = DRAW if blue == red else (0 if blue > red else 1)
+		phase = Phase.PLAN
+		return
+	turn += 1
+	tick_in_turn = 0
+	start_plan()
 
 
 func speed_at(c: Vector2i) -> float:

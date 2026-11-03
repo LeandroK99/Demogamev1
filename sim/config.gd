@@ -51,3 +51,6 @@ const DEPLOY_SPACING: int = 8 # celdas entre tanques al desplegar
 const DEPLOY_EDGE_MARGIN: int = 6 # celdas desde el borde del mapa
 const PATH_MAX_SLOPE: float = 4.0 # metros; celdas más empinadas son intransitables
 const PATH_SLOPE_COST: float = 1.0 # costo extra en el A* a pendiente máxima
+
+# --- Detección ---
+const DETECTION_INTERVAL_TICKS: int = 5 # cada cuántos ticks se recalcula quién ve a quién

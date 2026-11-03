@@ -1,6 +1,9 @@
 class_name UnitView
 extends Node3D
 ## Vista de un tanque: caja de casco + torreta, y anillo de selección.
+## Modos de niebla: normal, fantasma (última posición conocida), oculto, restos.
+
+enum Display { NORMAL, GHOST, HIDDEN, WRECK }
 
 const COLOR_BLUE: Color = Color(0.2, 0.4, 1.0)
 const COLOR_RED: Color = Color(1.0, 0.2, 0.15)
@@ -13,30 +16,42 @@ var selected: bool = false:
 		if _ring != null:
 			_ring.visible = value
 
+var prev_pos: Vector2 = Vector2.ZERO # posición en el tick anterior (para interpolar)
 var _ring: MeshInstance3D
+var _hull: MeshInstance3D
+var _turret: MeshInstance3D
+var _mat_normal: StandardMaterial3D = StandardMaterial3D.new()
+var _mat_ghost: StandardMaterial3D = StandardMaterial3D.new()
+var _mat_wreck: StandardMaterial3D = StandardMaterial3D.new()
 
 
 func setup(p_unit: Unit, hf: HeightField) -> void:
 	unit = p_unit
 	height_field = hf
-	var mat: StandardMaterial3D = StandardMaterial3D.new()
-	mat.albedo_color = COLOR_BLUE if unit.side == 0 else COLOR_RED
+	prev_pos = unit.pos
+	var color: Color = COLOR_BLUE if unit.side == 0 else COLOR_RED
+	_mat_normal.albedo_color = color
+	_mat_ghost.albedo_color = Color(color, 0.3)
+	_mat_ghost.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_mat_ghost.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_mat_wreck.albedo_color = Color(0.12, 0.11, 0.1)
+	var mat: StandardMaterial3D = _mat_normal
 
 	var hull_mesh: BoxMesh = BoxMesh.new()
 	hull_mesh.size = Vector3(3.5, 2.2, 7.0)
 	hull_mesh.material = mat
-	var hull: MeshInstance3D = MeshInstance3D.new()
-	hull.mesh = hull_mesh
-	hull.position.y = 1.1
-	add_child(hull)
+	_hull = MeshInstance3D.new()
+	_hull.mesh = hull_mesh
+	_hull.position.y = 1.1
+	add_child(_hull)
 
 	var turret_mesh: BoxMesh = BoxMesh.new()
 	turret_mesh.size = Vector3(2.2, 0.9, 3.0)
 	turret_mesh.material = mat
-	var turret: MeshInstance3D = MeshInstance3D.new()
-	turret.mesh = turret_mesh
-	turret.position = Vector3(0.0, 2.65, -0.4)
-	add_child(turret)
+	_turret = MeshInstance3D.new()
+	_turret.mesh = turret_mesh
+	_turret.position = Vector3(0.0, 2.65, -0.4)
+	add_child(_turret)
 
 	var ring_mesh: TorusMesh = TorusMesh.new()
 	ring_mesh.inner_radius = 5.0
@@ -53,8 +68,30 @@ func setup(p_unit: Unit, hf: HeightField) -> void:
 	sync_from_sim()
 
 
-## Copia posición y orientación desde la simulación.
-func sync_from_sim() -> void:
-	var p: Vector2 = unit.pos
-	position = Vector3(p.x * Config.CELL_SIZE, height_field.height_at(p), p.y * Config.CELL_SIZE)
+## Copia posición y orientación desde la simulación (alpha: 0..1 entre el tick anterior y el actual).
+func sync_from_sim(alpha: float = 1.0) -> void:
+	_place(prev_pos.lerp(unit.pos, alpha))
 	rotation.y = atan2(-unit.heading.x, -unit.heading.y)
+
+
+func _place(p: Vector2) -> void:
+	position = Vector3(p.x * Config.CELL_SIZE, height_field.height_at(p), p.y * Config.CELL_SIZE)
+
+
+## Fantasma: se dibuja en la última celda conocida.
+func show_ghost_at(c: Vector2i) -> void:
+	_place(Vector2(c))
+	set_display(Display.GHOST)
+
+
+func set_display(mode: int) -> void:
+	visible = mode != Display.HIDDEN
+	var mat: StandardMaterial3D = _mat_normal
+	if mode == Display.GHOST:
+		mat = _mat_ghost
+	elif mode == Display.WRECK:
+		mat = _mat_wreck
+	_hull.material_override = mat
+	_turret.material_override = mat
+	if mode == Display.WRECK:
+		_ring.visible = false

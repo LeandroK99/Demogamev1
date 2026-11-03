@@ -77,6 +77,16 @@ func _screen_pos(view: UnitView) -> Variant:
 	return camera.unproject_position(p)
 
 
+## Quita de la selección las unidades muertas.
+func prune_dead() -> void:
+	var ids: Array[int] = []
+	for id: int in selected_ids:
+		if world.get_unit(id).alive:
+			ids.append(id)
+	if ids.size() != selected_ids.size():
+		_set_selection(ids)
+
+
 func _own_views() -> Array[UnitView]:
 	var out: Array[UnitView] = []
 	for v: UnitView in unit_views:
@@ -121,7 +131,8 @@ func primary_unit() -> Unit:
 
 
 func _order_move(screen: Vector2) -> void:
-	if selected_ids.is_empty():
+	# Órdenes solo en la fase PLAN
+	if selected_ids.is_empty() or world.phase != SimWorld.Phase.PLAN:
 		return
 	var hit: Variant = terrain_view.raycast(camera.project_ray_origin(screen), camera.project_ray_normal(screen))
 	if hit == null:
