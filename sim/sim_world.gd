@@ -199,6 +199,10 @@ func _setup_pueblo(sim_seed: int) -> void:
 			u.pos = Vector2(ai.anchors[id])
 			u.snap_soldiers()
 			inf.prepare_house(self, u, Vector2(objective_cell().x, height_field.size - 1) * Config.CELL_SIZE)
+			cqb.defend_house(self, u)
+			for s: Soldier in u.soldiers:
+				if s.task_pos.x >= 0.0:
+					s.pos = s.task_pos # arrancan en sus puestos
 
 
 ## Abrir un boquete (fase 65) en la pared más cercana a at_m. Un tanque lo abre de un cañonazo

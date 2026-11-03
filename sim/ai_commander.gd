@@ -170,6 +170,9 @@ func _infantry_orders(world: SimWorld, u: Unit, threats: Array[Vector2i], reserv
 	if u.hp <= Config.INF_WEAK_MEN and not threats.is_empty():
 		if world.order_withdraw(u.id):
 			return
+	if u.defend_house >= 0 and world.buildings != null and world.buildings.house_at_m(u.pos_m()) == u.defend_house:
+		u.order = Unit.Order.HOLD # defiende la casa cuarto por cuarto (CqbSim): no sale a buscar otra posición
+		return
 	var target: Vector2i = _hidden_infantry_target(world, u)
 	if target.x >= 0 and u.suppression < Config.AI_INF_SUPPRESS_MAX and world.order_suppress(u.id, target):
 		return
