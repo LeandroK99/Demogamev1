@@ -10,6 +10,7 @@ var overlay: Overlay
 var input_controller: InputController
 var turn_controller: TurnController
 var combat_fx: CombatFx
+var smoke_view: SmokeView
 var hud: Hud
 var unit_views: Array[UnitView] = []
 
@@ -69,6 +70,11 @@ func _start_game(p_seed: int) -> void:
 	_game_root.add_child(input_controller)
 	input_controller.setup(world, camera_rig.camera, terrain_view, unit_views)
 	input_controller.selection_changed.connect(_update_overlay_selection)
+	input_controller.smoke_placed.connect(_on_plan_started)
+
+	smoke_view = SmokeView.new()
+	_game_root.add_child(smoke_view)
+	smoke_view.setup(world)
 
 	combat_fx = CombatFx.new()
 	_game_root.add_child(combat_fx)

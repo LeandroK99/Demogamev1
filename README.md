@@ -23,6 +23,7 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | H | Hull-down: cada tanque seleccionado busca una posición con el casco cubierto |
 | V | Vigilancia: el tanque se queda quieto mirando hacia el cursor y solo dispara dentro de un sector de ±35°. Arranca cada turno con la recarga lista y su primer disparo contra un blanco en movimiento tiene ×1,5 |
 | F y clic derecho | Disparar y replegarse: va a esa posición, hace un disparo y vuelve en reversa a donde estaba, mirando al blanco. Esc cancela |
+| G y clic izquierdo | Humo: una nube de 12 m de radio que corta la línea de visión durante 2 turnos. 2 cargas por tanque, hasta 150 m y con línea de visión al punto. Aparece en el acto, así que tirala antes de planear la ruta. Esc cancela |
 | Espacio | Ejecutar el turno |
 | 1 | Overlay de exposición azul (verde = cubierto, rojo = visto por todos los enemigos conocidos) |
 | 2 | Mejores posiciones hull-down de la unidad seleccionada |

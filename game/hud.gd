@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
+	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -98,6 +98,9 @@ func _unit_text() -> String:
 	if input_controller.pending_mode == "scoot":
 		lines.append("Clic derecho: posición de tiro (Esc cancela)")
 		lines.append("")
+	elif input_controller.pending_mode == "smoke":
+		lines.append("Clic izquierdo: dónde tirar el humo (Esc cancela)")
+		lines.append("")
 	if sel != null:
 		lines.append("Tanque %d" % (sel.id + 1))
 		lines.append("Vida: %d / %d" % [sel.hp, Config.TANK_HP])
@@ -107,6 +110,7 @@ func _unit_text() -> String:
 			order_text += " (rojo %d)" % (sel.attack_target - Config.UNITS_PER_SIDE + 1)
 		lines.append("Orden: %s" % order_text)
 		lines.append("Mira al %s" % compass(sel.heading))
+		lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
 		lines.append("")
 	lines.append("Disparos recibidos")
 	for u: Unit in world.units:

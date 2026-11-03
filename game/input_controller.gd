@@ -5,7 +5,8 @@ extends Node
 ## Con Ctrl, la ruta es directa (la más corta) en vez de la más cubierta.
 ## Con Shift, la orden agrega un tramo (waypoint) al final de la ruta actual.
 ## V: vigilancia con el sector apuntando al cursor.
-## F y después clic derecho: disparar y replegarse desde esa posición. Esc cancela.
+## F y después clic derecho: disparar y replegarse desde esa posición.
+## G y después clic izquierdo: humo en ese punto. Esc cancela F o G.
 
 const CLICK_PICK_PX: float = 30.0 # radio en píxeles para seleccionar con un clic
 const DRAG_MIN_PX: float = 8.0 # menos que esto es un clic, no un recuadro
@@ -22,6 +23,7 @@ const COLOR_ATTACK: Color = Color(1.0, 0.25, 0.2)
 const FACING_ARROW_CELLS: float = 4.0 # largo de la flecha de orientación
 
 signal selection_changed
+signal smoke_placed # la exposición cambió: refrescar overlays
 
 ## Orden pendiente de un clic (la tecla ya se apretó): "" = ninguna.
 var pending_mode: String = ""
@@ -68,7 +70,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	var mb: InputEventMouseButton = event as InputEventMouseButton
 	if mb != null:
 		if mb.button_index == MOUSE_BUTTON_LEFT:
-			if mb.pressed:
+			if mb.pressed and pending_mode == "smoke":
+				pending_mode = ""
+				_smoke_at(mb.position)
+			elif mb.pressed:
 				_dragging = true
 				_drag_start = mb.position
 			elif _dragging:
@@ -93,6 +98,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_F:
 		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty():
 			pending_mode = "scoot"
+		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_G:
+		if world.phase == SimWorld.Phase.PLAN and not selected_ids.is_empty():
+			pending_mode = "smoke"
 		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_ESCAPE:
 		pending_mode = ""
@@ -232,6 +241,27 @@ func _order_overwatch_at(screen: Vector2) -> void:
 	for id: int in selected_ids:
 		var u: Unit = world.get_unit(id)
 		world.order_overwatch(id, at - u.pos)
+
+
+## Humo en el punto bajo el cursor: lo tira la seleccionada más cercana que tenga
+## cargas, alcance y línea de visión (una sola granada por orden).
+func _smoke_at(screen: Vector2) -> void:
+	if world.phase != SimWorld.Phase.PLAN:
+		return
+	var hit: Variant = terrain_view.raycast(camera.project_ray_origin(screen), camera.project_ray_normal(screen))
+	if hit == null:
+		return
+	var cell: Vector2i = world.height_field.world_to_cell(hit as Vector3)
+	var best: int = -1
+	var best_d: float = INF
+	for id: int in selected_ids:
+		var u: Unit = world.get_unit(id)
+		var d: float = Vector2(u.cell()).distance_to(Vector2(cell))
+		if u.smoke_charges > 0 and d < best_d and world.can_smoke_at(u, cell):
+			best = id
+			best_d = d
+	if best >= 0 and world.order_smoke(best, cell):
+		smoke_placed.emit()
 
 
 ## Rojo visible o fantasma bajo el cursor (o null).

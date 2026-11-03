@@ -25,6 +25,11 @@ var game_over: bool = false
 var visible_enemies: Array[Dictionary] = [{}, {}] # id -> true, visibles ahora
 var known_enemies: Array[Dictionary] = [{}, {}] # id -> {cell, last_seen_turn}
 
+# Nubes de humo activas: {id, center: Vector2, radius, top_h, turns_left, side}.
+# Es el mismo array que analysis.smoke (la LOS las usa directamente).
+var smoke_clouds: Array[Dictionary] = []
+var _next_smoke_id: int = 0
+
 # Disparos ocurridos desde la última vez que la vista los leyó: {shooter, target, hit, aspect}
 var shot_events: Array[Dictionary] = []
 
@@ -52,6 +57,7 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 		hf.generate(sim_seed)
 	height_field = hf
 	analysis = TerrainAnalysis.new(hf)
+	analysis.smoke = smoke_clouds
 	pathfinder = Pathfinder.new(hf)
 	_deploy()
 	update_detection()
@@ -259,6 +265,41 @@ func _start_scoot_return(u: Unit, target: Unit) -> void:
 	u.direct_route = false
 	u.moving = not u.path.is_empty()
 	u.reversing = u.moving
+
+
+## Humo: una nube en cell, a <= SMOKE_RANGE y con LOS desde la unidad, si le quedan cargas.
+## Aparece en el acto (en PLAN) y dura SMOKE_TURNS turnos; la exposición se recalcula.
+func order_smoke(unit_id: int, cell: Vector2i) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN or u.smoke_charges <= 0:
+		return false
+	if not height_field.in_bounds(cell) or not can_smoke_at(u, cell):
+		return false
+	u.smoke_charges -= 1
+	smoke_clouds.append({
+		"id": _next_smoke_id,
+		"center": Vector2(cell),
+		"radius": Config.SMOKE_RADIUS,
+		"top_h": height_field.height_at_cell(cell) + Config.SMOKE_HEIGHT,
+		"turns_left": Config.SMOKE_TURNS,
+		"side": u.side,
+	})
+	_next_smoke_id += 1
+	invalidate_exposure()
+	return true
+
+
+func can_smoke_at(u: Unit, cell: Vector2i) -> bool:
+	return TerrainAnalysis.dist_m(u.cell(), cell) <= Config.SMOKE_RANGE \
+		and analysis.los(u.cell(), Config.EYE_H, cell, 1.0)
+
+
+## Fin de turno: cada nube pierde un turno y se van las que llegaron a cero.
+func _age_smoke() -> void:
+	for i: int in range(smoke_clouds.size() - 1, -1, -1):
+		smoke_clouds[i]["turns_left"] = int(smoke_clouds[i]["turns_left"]) - 1
+		if int(smoke_clouds[i]["turns_left"]) <= 0:
+			smoke_clouds.remove_at(i)
 
 
 ## ¿Está el punto at (en celdas) dentro del sector de vigilancia de u?
@@ -502,6 +543,7 @@ func _check_victory() -> void:
 
 
 func _end_turn() -> void:
+	_age_smoke()
 	update_detection()
 	if turn >= Config.MAX_TURNS:
 		var blue: int = alive_count(0)

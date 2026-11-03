@@ -161,3 +161,27 @@ func test_hulldown_faces_threat() -> void:
 	world.invalidate_exposure()
 	world.order_hulldown([0])
 	assert_true(blue.final_heading.dot(Vector2(0.0, -1.0)) > 0.9, "va a mirar al norte, hacia la amenaza (%s)" % blue.final_heading)
+
+
+func test_smoke_order_and_duration() -> void:
+	var world: SimWorld = _duel_world()
+	world.p_hit_base = 0.0
+	var blue: Unit = world.units[0]
+	var red: Unit = world.units[4]
+	red.moving = true
+	world.update_detection()
+	assert_true(world.visible_enemies[0].has(4), "antes del humo se ven")
+	assert_true(not world.order_smoke(0, Vector2i(48, 10)), "fuera de alcance: rechazada")
+	assert_true(world.order_smoke(0, Vector2i(48, 50)), "humo en el medio")
+	assert_eq(blue.smoke_charges, Config.SMOKE_CHARGES - 1, "gastó una carga")
+	world.update_detection()
+	assert_true(not world.visible_enemies[0].has(4), "el humo corta la detección")
+	world.begin_execute()
+	for i: int in world.ticks_per_turn:
+		world.step()
+		red.moving = true
+	assert_eq(world.smoke_clouds.size(), 1, "sigue después del primer turno")
+	world.begin_execute()
+	for i: int in world.ticks_per_turn:
+		world.step()
+	assert_eq(world.smoke_clouds.size(), 0, "se disipó después de SMOKE_TURNS turnos")

@@ -73,6 +73,15 @@ const OVERWATCH_FIRST_SHOT_FACTOR: float = 1.5 # primer disparo del turno contra
 const REVERSE_SPEED_FACTOR: float = 0.6 # velocidad en reversa (volviendo a cubierto mirando al enemigo)
 const AI_SCOOT_RADIUS: int = 6 # celdas para buscar una posición de tiro desde la que asomar
 
+# --- Humo ---
+const SMOKE_CHARGES: int = 2 # granadas de humo por tanque
+const SMOKE_RADIUS: float = 3.0 # celdas
+const SMOKE_HEIGHT: float = 8.0 # metros sobre el terreno en el centro de la nube
+const SMOKE_RANGE: float = 150.0 # metros: alcance del lanzador
+const SMOKE_TURNS: int = 2 # turnos de ejecución que dura la nube
+const AI_SMOKE_EXPOSURE: float = 0.5 # la IA tira humo al retroceder si su celda está más expuesta que esto
+const AI_SMOKE_DIST: float = 5.0 # celdas hacia la amenaza donde la IA pone la nube
+
 # --- Orden hull-down e IA ---
 const HULLDOWN_MIN_SEPARATION: float = 3.0 # celdas mínimas entre destinos de una misma orden
 const NO_THREAT_ADVANCE: int = 20 # celdas hacia el centro si no hay amenazas conocidas

@@ -24,6 +24,7 @@ var order: int = Order.NONE
 var moving: bool = false
 var alive: bool = true
 var last_fire_tick: int = -1000000 # tick global del último disparo
+var smoke_charges: int = Config.SMOKE_CHARGES
 var shots_received: int = 0 # disparos recibidos (impacten o no)
 
 

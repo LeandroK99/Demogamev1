@@ -59,3 +59,24 @@ func test_exposure_flat_in_range() -> void:
 			if TerrainAnalysis.dist_m(threat, c) < Config.MAX_RANGE and exp_map[y * hf.size + x] != 1.0:
 				bad += 1
 	assert_eq(bad, 0, "celdas en rango con exposición distinta de 1")
+
+
+func test_smoke_blocks_los() -> void:
+	var ta: TerrainAnalysis = TerrainAnalysis.new(HeightField.new(64))
+	var a: Vector2i = Vector2i(5, 30)
+	var b: Vector2i = Vector2i(55, 30)
+	assert_true(ta.los(a, Config.EYE_H, b, Config.CENTER_H), "sin humo se ve")
+	ta.smoke = [{"center": Vector2(30, 30), "radius": 3.0, "top_h": 8.0}]
+	assert_true(not ta.los(a, Config.EYE_H, b, Config.CENTER_H), "la nube en el medio tapa")
+
+
+func test_smoke_to_the_side_does_not_block() -> void:
+	var ta: TerrainAnalysis = TerrainAnalysis.new(HeightField.new(64))
+	ta.smoke = [{"center": Vector2(30, 40), "radius": 3.0, "top_h": 8.0}]
+	assert_true(ta.los(Vector2i(5, 30), Config.EYE_H, Vector2i(55, 30), Config.CENTER_H), "la nube a un costado no tapa")
+
+
+func test_high_observer_sees_over_smoke() -> void:
+	var ta: TerrainAnalysis = TerrainAnalysis.new(HeightField.new(64))
+	ta.smoke = [{"center": Vector2(30, 30), "radius": 3.0, "top_h": 8.0}]
+	assert_true(ta.los(Vector2i(5, 30), 20.0, Vector2i(55, 30), 20.0), "por encima del tope se ve")

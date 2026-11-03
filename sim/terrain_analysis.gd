@@ -3,6 +3,9 @@ extends RefCounted
 ## Línea de visión, mapas de exposición y búsqueda de posiciones hull-down.
 
 var height_field: HeightField
+## Nubes de humo activas: {center: Vector2 (celdas), radius: float (celdas), top_h: float (m, absoluto)}.
+## Las mantiene SimWorld; acá solo se usan para cortar la línea de visión.
+var smoke: Array[Dictionary] = []
 
 
 func _init(hf: HeightField) -> void:
@@ -10,7 +13,8 @@ func _init(hf: HeightField) -> void:
 
 
 ## ¿Hay línea de visión entre un punto a from_h metros sobre from_cell
-## y otro a to_h metros sobre to_cell? Muestrea la recta cada LOS_STEP celdas.
+## y otro a to_h metros sobre to_cell? Muestrea la recta cada LOS_STEP celdas
+## contra el terreno y después la corta con las nubes de humo.
 func los(from_cell: Vector2i, from_h: float, to_cell: Vector2i, to_h: float) -> bool:
 	var hf: HeightField = height_field
 	var size: int = hf.size
@@ -39,7 +43,38 @@ func los(from_cell: Vector2i, from_h: float, to_cell: Vector2i, to_h: float) -> 
 		if ground > ha + dh * t - Config.LOS_EPSILON:
 			return false
 		t += t_step
-	return true
+	if smoke.is_empty():
+		return true
+	return not _smoke_blocks(Vector2(ax, ay), Vector2(dx, dy), ha, dh)
+
+
+## ¿La recta A + t·D (t en 0..1, altura ha + dh·t) atraviesa alguna nube por debajo de su tope?
+## Intersección analítica con cada círculo: no agrega muestras al bucle del terreno.
+func _smoke_blocks(a: Vector2, d: Vector2, ha: float, dh: float) -> bool:
+	var dd: float = d.dot(d)
+	for cloud: Dictionary in smoke:
+		var c: Vector2 = cloud["center"]
+		var r: float = cloud["radius"]
+		var f: Vector2 = a - c
+		var t0: float = 0.0
+		var t1: float = 1.0
+		if dd < 0.000001:
+			if f.length_squared() > r * r:
+				continue
+		else:
+			var b: float = f.dot(d)
+			var disc: float = b * b - dd * (f.dot(f) - r * r)
+			if disc < 0.0:
+				continue
+			var sq: float = sqrt(disc)
+			t0 = maxf(0.0, (-b - sq) / dd)
+			t1 = minf(1.0, (-b + sq) / dd)
+			if t0 > t1:
+				continue
+		# La altura de la recta es lineal: su mínimo en el tramo está en un extremo
+		if minf(ha + dh * t0, ha + dh * t1) < float(cloud["top_h"]):
+			return true
+	return false
 
 
 ## Distancia en metros entre dos celdas.

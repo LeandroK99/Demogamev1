@@ -79,6 +79,27 @@ func _scoot(world: SimWorld, u: Unit, threats: Array[Vector2i], reserved: Array[
 	return best != u.cell() and world.order_scoot(u.id, best)
 
 
+## Al retroceder expuesto: humo entre la unidad y la amenaza más cercana.
+func _smoke_cover(world: SimWorld, u: Unit) -> void:
+	if u.smoke_charges <= 0:
+		return
+	var origin: Vector2i = u.cell()
+	if world.exposure_for(side)[origin.y * world.height_field.size + origin.x] <= Config.AI_SMOKE_EXPOSURE:
+		return
+	var nearest: Vector2i = origin
+	var best_d: float = INF
+	for th: Vector2i in world.threats_for(side):
+		var d: float = Vector2(th).distance_to(Vector2(origin))
+		if d < best_d:
+			best_d = d
+			nearest = th
+	if nearest == origin:
+		return
+	var dir: Vector2 = (Vector2(nearest) - Vector2(origin)).normalized()
+	var at: Vector2i = Vector2i((Vector2(origin) + dir * minf(Config.AI_SMOKE_DIST, best_d * 0.5)).round())
+	world.order_smoke(u.id, at)
+
+
 ## Retroceder: la celda transitable de menor exposición (desempate: la más cercana).
 func _retreat(world: SimWorld, u: Unit) -> void:
 	var exposure: PackedFloat32Array = world.exposure_for(side)
@@ -101,6 +122,8 @@ func _retreat(world: SimWorld, u: Unit) -> void:
 				best_d = d
 	# Llega mirando a la amenaza: el frente blindado hacia el enemigo
 	world.order_move(u.id, best, SimWorld.facing_to_threats(best, world.threats_for(side)))
+	# Después de elegir la ruta con la exposición sin humo: la nube tapa la retirada
+	_smoke_cover(world, u)
 
 
 ## Sin amenazas: la cresta más alta en la columna de la unidad hacia adelante y,
