@@ -989,6 +989,8 @@ func _add_suppression(u: Unit, amount: float) -> void:
 
 static func weapon_suppression(w: int) -> float:
 	match w:
+		Unit.Weapon.MG:
+			return Config.SUPP_MG
 		Unit.Weapon.COAX:
 			return Config.SUPP_COAX
 		Unit.Weapon.RIFLES:
@@ -1015,6 +1017,9 @@ func _update_posture() -> void:
 
 func _combat() -> void:
 	for shooter: Unit in units:
+		if shooter.alive and shooter.is_infantry():
+			inf.fire_squad(self, shooter) # cada soldado con su arma
+			continue
 		for slot: int in 2:
 			if shooter.alive:
 				_fire_slot(shooter, slot)
@@ -1037,6 +1042,9 @@ func _fire_slot(shooter: Unit, slot: int) -> void:
 	if anti_inf and shooter.order == Unit.Order.SUPPRESS:
 		if roe_allows_fire(shooter):
 			_area_fire(shooter, slot, w)
+		return
+	if w == Unit.Weapon.COAX:
+		inf.tank_coax(self, shooter) # ráfaga a un soldado visible
 		return
 	var target: Unit = _pick_target(shooter, w)
 	if target == null:
@@ -1067,13 +1075,27 @@ func _fire_slot(shooter: Unit, slot: int) -> void:
 func _damage(target: Unit) -> void:
 	if target.is_infantry():
 		inf.hit_random(self, target)
+		_lose_morale(target, Config.MORALE_PER_CASUALTY)
 	else:
 		target.hp -= 1
-	_lose_morale(target, Config.MORALE_PER_CASUALTY)
-	if target.hp <= 0:
-		target.alive = false
-		target.moving = false
-		target.path.clear()
+	_check_dead(target)
+
+
+## Un impacto en un soldado (herido o muerto, ver InfantrySim.hit_soldier); si estaba en
+## condiciones, la escuadra pierde moral.
+func damage_soldier(u: Unit, s: Soldier) -> void:
+	var was_ok: bool = s.is_ok()
+	inf.hit_soldier(self, u, s)
+	if was_ok:
+		_lose_morale(u, Config.MORALE_PER_CASUALTY)
+	_check_dead(u)
+
+
+func _check_dead(u: Unit) -> void:
+	if u.hp <= 0 and u.alive:
+		u.alive = false
+		u.moving = false
+		u.path.clear()
 
 
 ## Fuego de área de la orden SUPPRESS: bate la zona aunque no haya blanco visible.
@@ -1125,11 +1147,13 @@ func order_suppress(unit_id: int, cell: Vector2i) -> bool:
 
 ## ¿Contra qué tipo de unidad sirve el arma?
 static func weapon_target_kind(w: int) -> int:
-	return Unit.Kind.INFANTRY if w == Unit.Weapon.COAX or w == Unit.Weapon.RIFLES else Unit.Kind.TANK
+	return Unit.Kind.INFANTRY if w == Unit.Weapon.COAX or w == Unit.Weapon.RIFLES or w == Unit.Weapon.MG else Unit.Kind.TANK
 
 
 static func weapon_range(w: int) -> float:
 	match w:
+		Unit.Weapon.MG:
+			return Config.SOLDIER_MG_RANGE
 		Unit.Weapon.COAX:
 			return Config.COAX_RANGE
 		Unit.Weapon.RIFLES:
@@ -1141,6 +1165,8 @@ static func weapon_range(w: int) -> float:
 
 static func weapon_reload(w: int) -> float:
 	match w:
+		Unit.Weapon.MG:
+			return Config.SOLDIER_MG_RELOAD
 		Unit.Weapon.COAX:
 			return Config.COAX_RELOAD
 		Unit.Weapon.RIFLES:
@@ -1287,6 +1313,18 @@ func hit_probability(shooter: Unit, target: Unit, weapon: int = Unit.Weapon.CANN
 	if shooter.order == Unit.Order.OVERWATCH and shooter.overwatch_ready and target.moving:
 		f_move *= Config.OVERWATCH_FIRST_SHOT_FACTOR # emboscada
 	return minf(p_hit_base * f_dist * f_hull * f_move * f_armor, p_hit_max)
+
+
+## Tirador en movimiento: factor de impacto según el ritmo (1 si está quieto).
+func move_fire_factor(u: Unit, moving: bool) -> float:
+	if not moving:
+		return 1.0
+	match effective_pace(u):
+		Unit.Pace.FAST:
+			return moving_shooter_factor * Config.PACE_FAST_FIRE_FACTOR
+		Unit.Pace.CAUTIOUS:
+			return Config.PACE_CAUTIOUS_FIRE_FACTOR
+	return moving_shooter_factor
 
 
 ## Escuadra diezmada o suprimida: tira peor.

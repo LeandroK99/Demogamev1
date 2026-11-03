@@ -171,6 +171,20 @@ const SOLDIER_HEAD_M: float = 0.1 # se lo detecta si se le ve hasta esto por deb
 const SOLDIER_PROTECTED_SPOT_FACTOR: float = 0.6 # quieto detrás de algo que lo protege, se lo detecta más cerca
 const SOLDIER_PAIR_MARGIN_M: float = 30.0 # escuadras más lejos que el alcance más esto ni se miran
 
+# --- Fuego de cada soldado ---
+const SOLDIER_RIFLE_P_HIT: float = 0.05 # por tiro de fusil a un soldado de pie, quieto y al descubierto, a quemarropa
+const SOLDIER_RIFLE_RELOAD: float = 2.5 # segundos entre tiros (con un azar de ±25 %)
+const SOLDIER_MG_RANGE: float = 350.0
+const SOLDIER_MG_RELOAD: float = 1.5 # entre ráfagas
+const SOLDIER_MG_P_HIT: float = 0.10 # por soldado dentro de la ráfaga
+const SOLDIER_COAX_P_HIT: float = 0.12 # ráfaga de la coaxial, por soldado dentro
+const SOLDIER_BURST_M: float = 3.0 # radio de una ráfaga alrededor del punto apuntado
+const SOLDIER_CROUCH_HIT_FACTOR: float = 0.75 # contra un soldado agachado (cuerpo a tierra: INF_PRONE_HIT_FACTOR)
+const SOLDIER_COVER_HIT_FACTOR: float = 0.2 # contra uno protegido por un obstáculo o el terreno
+const SOLDIER_TARGET_CHECKS: int = 3 # líneas de visión por soldado al elegir blanco (los más cercanos)
+const SOLDIER_SHOT_SUPP_SCALE: float = 0.12 # supresión de un tiro de un soldado, en fracción de la del arma
+const SUPP_MG: float = 25.0 # supresión de una ráfaga de ametralladora
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3

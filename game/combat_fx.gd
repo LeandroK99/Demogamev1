@@ -38,26 +38,54 @@ func add_shot(shooter: Unit, target: Unit, hit: bool, aspect: int = SimWorld.Asp
 		to += Vector3(randf_range(-4.0, 4.0), randf_range(0.5, 3.0), randf_range(-4.0, 4.0))
 	_tracers.append({"from": _point(shooter, shooter.eye_h()), "to": to, "left": TRACER_SECONDS})
 	if hit:
-		var mesh: SphereMesh = SphereMesh.new()
-		var r: float = 2.0
-		var color: Color = Color(1.0, 0.6, 0.1)
-		if aspect == SimWorld.Aspect.FLANK:
-			r = 2.6
-			color = Color(1.0, 0.4, 0.1)
-		elif aspect == SimWorld.Aspect.REAR:
-			r = 3.2
-			color = Color(1.0, 0.15, 0.1)
-		mesh.radius = r
-		mesh.height = r * 2.0
-		var mat: StandardMaterial3D = StandardMaterial3D.new()
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.albedo_color = color
-		mesh.material = mat
-		var flash: MeshInstance3D = MeshInstance3D.new()
-		flash.mesh = mesh
-		flash.position = to
-		add_child(flash)
-		_flashes.append({"node": flash, "left": FLASH_SECONDS})
+		_flash(to, aspect)
+
+
+## Destello de impacto (más grande y rojo si entró por flanco o atrás).
+func _flash(to: Vector3, aspect: int) -> void:
+	var mesh: SphereMesh = SphereMesh.new()
+	var r: float = 2.0
+	var color: Color = Color(1.0, 0.6, 0.1)
+	if aspect == SimWorld.Aspect.FLANK:
+		r = 2.6
+		color = Color(1.0, 0.4, 0.1)
+	elif aspect == SimWorld.Aspect.REAR:
+		r = 3.2
+		color = Color(1.0, 0.15, 0.1)
+	mesh.radius = r
+	mesh.height = r * 2.0
+	var mat: StandardMaterial3D = StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = color
+	mesh.material = mat
+	var flash: MeshInstance3D = MeshInstance3D.new()
+	flash.mesh = mesh
+	flash.position = to
+	add_child(flash)
+	_flashes.append({"node": flash, "left": FLASH_SECONDS})
+
+
+## Tiro de un soldado (o de la coaxial a un soldado), en metros del mundo: el fusil, una trazadora;
+## las ráfagas, tres; el antitanque, trazadora y destello si pega.
+func add_shot_m(from_m: Vector2, from_h: float, to_m: Vector2, to_h: float, weapon: int, hit: bool, aspect: int = SimWorld.Aspect.FRONT) -> void:
+	var from: Vector3 = _point_m(from_m, from_h)
+	var to: Vector3 = _point_m(to_m, to_h)
+	match weapon:
+		Unit.Weapon.AT:
+			_tracers.append({"from": from, "to": to, "left": TRACER_SECONDS})
+			if hit:
+				_flash(to, aspect)
+		Unit.Weapon.MG, Unit.Weapon.COAX:
+			for i: int in 3:
+				var spread: Vector3 = Vector3(randf_range(-1.5, 1.5), randf_range(0.0, 0.8), randf_range(-1.5, 1.5))
+				_tracers.append({"from": from, "to": to + spread, "left": TRACER_SECONDS * 0.5})
+		_:
+			var miss: Vector3 = Vector3.ZERO if hit else Vector3(randf_range(-1.0, 1.0), randf_range(0.0, 0.6), randf_range(-1.0, 1.0))
+			_tracers.append({"from": from, "to": to + miss, "left": TRACER_SECONDS * 0.4})
+
+
+func _point_m(m: Vector2, h: float) -> Vector3:
+	return Vector3(m.x, height_field.height_at(m / Config.CELL_SIZE) + h, m.y)
 
 
 ## Fuego de área (suprimir): trazadoras repartidas sobre la zona.

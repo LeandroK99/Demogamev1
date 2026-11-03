@@ -326,11 +326,11 @@ static func head_of(w: SimWorld, s: Soldier) -> float:
 	return s.top_h() - Config.SOLDIER_HEAD_M + ground_offset(w, s.pos)
 
 
-## Alcance para detectar a un soldado según lo que hace: en marcha o recién disparado (él o su
-## escuadra), INF_SPOT_MOVING; quieto, según la postura, achicado por el bosque y si está protegido.
+## Alcance para detectar a un soldado según lo que hace: en marcha o recién disparado,
+## INF_SPOT_MOVING; quieto, según la postura, achicado por el bosque y si está protegido.
 static func soldier_spot_range(w: SimWorld, u: Unit, s: Soldier) -> float:
 	var fired: bool = float(w.total_ticks - s.last_fire_tick) * Config.TICK < Config.FIRE_REVEAL_SECONDS
-	if fired or w.recently_fired(u):
+	if fired:
 		return Config.INF_SPOT_MOVING
 	if (s.moving or u.moving) and SimWorld.effective_pace(u) != Unit.Pace.CAUTIOUS and s.posture != Soldier.Posture.PRONE:
 		return Config.INF_SPOT_MOVING
@@ -397,3 +397,223 @@ func soldiers_spot_tank(w: SimWorld, own: Unit, target: Unit) -> bool:
 ## ¿El bando ve a ese soldado?
 func is_soldier_visible(side: int, unit_id: int, index: int) -> bool:
 	return visible_soldiers[side].has(soldier_key(unit_id, index))
+
+
+## --- Fuego ---
+
+## Los soldados de la escuadra tiran, cada uno con su arma, a soldados enemigos visibles para el
+## bando a los que ellos mismos ven; el antitanque, a tanques. La escuadra clavada no tira, y su ROE,
+## arco, distancia máxima, sector de vigilancia y blanco de ATTACK valen para todos.
+## u.reload_left > 0 traba los fusiles y la ametralladora de toda la escuadra; u.reload2_left, el antitanque.
+func fire_squad(w: SimWorld, u: Unit) -> void:
+	u.reload_left = maxf(0.0, u.reload_left - Config.TICK)
+	u.reload2_left = maxf(0.0, u.reload2_left - Config.TICK)
+	for s: Soldier in u.soldiers:
+		s.reload_left = maxf(0.0, s.reload_left - Config.TICK)
+	if w.is_pinned(u) or not w.roe_allows_fire(u):
+		return
+	var area: bool = u.order == Unit.Order.SUPPRESS
+	for s: Soldier in u.soldiers:
+		if not s.is_ok() or s.reload_left > 0.0:
+			continue
+		if s.role == Soldier.Role.AT and not area and u.at_charges > 0 and u.reload2_left <= 0.0:
+			var tank: Unit = _pick_tank(w, u, s)
+			if tank != null:
+				_fire_at_tank(w, u, s, tank)
+				continue
+		if u.reload_left > 0.0:
+			continue
+		var wpn: int = Unit.Weapon.MG if s.role == Soldier.Role.MG else Unit.Weapon.RIFLES
+		if area:
+			_area_shot(w, u, s, wpn)
+			continue
+		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), SimWorld.weapon_range(wpn))
+		if not t.is_empty():
+			_shoot(w, u, s.pos, eye_of(w, s), s, t["unit"], t["soldier"], wpn)
+
+
+## Coaxial de un tanque: ráfaga al soldado enemigo visible más cercano que ve desde su óptica.
+func tank_coax(w: SimWorld, tank: Unit) -> void:
+	if not w.roe_allows_fire(tank):
+		return
+	var t: Dictionary = pick_soldier(w, tank, tank.pos_m(), Config.EYE_H, Config.COAX_RANGE)
+	if not t.is_empty():
+		_shoot(w, tank, tank.pos_m(), Config.EYE_H, null, t["unit"], t["soldier"], Unit.Weapon.COAX)
+
+
+## Blanco para un tirador en from (ojo a eye sobre el terreno): {unit, soldier} del soldado enemigo
+## visible para el bando más cercano (los del blanco de ATTACK cuentan como más cerca) dentro del
+## alcance, el arco y el sector, al que el tirador ve la cabeza. Vacío si no hay.
+func pick_soldier(w: SimWorld, u: Unit, from: Vector2, eye: float, reach: float) -> Dictionary:
+	var max_d: float = minf(reach, u.max_engage_m)
+	var cands: Array[Dictionary] = []
+	for key: int in visible_soldiers[u.side]:
+		var tu: Unit = w.get_unit(key / 64)
+		if tu == null or not tu.alive:
+			continue
+		var ts: Soldier = tu.soldiers[key % 64]
+		if not ts.is_ok():
+			continue
+		var d: float = from.distance_to(ts.pos)
+		var at: Vector2 = ts.pos / Config.CELL_SIZE
+		if d > max_d or not SimWorld.in_fire_arc(u, at):
+			continue
+		if u.order == Unit.Order.OVERWATCH and not SimWorld.in_overwatch_sector(u, at):
+			continue
+		var rank: float = d * (0.5 if tu.id == u.attack_target else 1.0)
+		cands.append({"unit": tu, "soldier": ts, "rank": rank})
+	if cands.is_empty():
+		return {}
+	cands.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["rank"]) < float(b["rank"]))
+	for i: int in mini(cands.size(), Config.SOLDIER_TARGET_CHECKS):
+		var ts: Soldier = cands[i]["soldier"]
+		if w.analysis.los_m(from, eye, ts.pos, head_of(w, ts)):
+			return cands[i]
+	return {}
+
+
+## Probabilidad de que un tiro desde from (ojo a eye) con el arma wpn le pegue al soldado t.
+## Arma (fusil o ráfaga) x distancia x tirador en marcha x postura x protección (obstáculo o terreno)
+## x bosque x escuadra diezmada o suprimida. aimed: el tiro apuntado mira además si el terreno
+## le tapa el cuerpo (una ráfaga no).
+func soldier_hit_p(w: SimWorld, shooter: Unit, shooter_moving: bool, from: Vector2, eye: float,
+		tu: Unit, t: Soldier, wpn: int, aimed: bool = true) -> float:
+	var p: float = Config.SOLDIER_RIFLE_P_HIT
+	if wpn == Unit.Weapon.MG:
+		p = Config.SOLDIER_MG_P_HIT
+	elif wpn == Unit.Weapon.COAX:
+		p = Config.SOLDIER_COAX_P_HIT
+	var d: float = from.distance_to(t.pos)
+	var f_dist: float = clampf(1.0 - d / SimWorld.weapon_range(wpn), 0.2, 1.0)
+	var f_post: float = 1.0
+	if t.posture == Soldier.Posture.PRONE:
+		f_post = Config.INF_PRONE_HIT_FACTOR
+	elif t.posture == Soldier.Posture.CROUCH:
+		f_post = Config.SOLDIER_CROUCH_HIT_FACTOR
+	var f_cover: float = 1.0
+	if is_protected_from(w, t, from) or (aimed and not w.analysis.los_m(from, eye, t.pos, t.center_h() + ground_offset(w, t.pos))):
+		f_cover = Config.SOLDIER_COVER_HIT_FACTOR
+	var f_forest: float = 1.0 - w.cover_at(Vector2i((t.pos / Config.CELL_SIZE).round()))
+	var f_weak: float = SimWorld._weak_factor(shooter) if shooter.is_infantry() else 1.0
+	return minf(p * f_dist * w.move_fire_factor(shooter, shooter_moving) * f_post * f_cover * f_forest * f_weak, w.p_hit_max)
+
+
+## ¿Un obstáculo (o el cráter en que está, si no está de pie) protege al soldado del fuego que viene de from?
+static func is_protected_from(w: SimWorld, t: Soldier, from: Vector2) -> bool:
+	if w.micro == null:
+		return false
+	if t.posture != Soldier.Posture.STAND and w.micro.type_at_m(t.pos) == MicroCover.Type.CRATER:
+		return true
+	return protecting_obstacle(w, t.pos, t.center_h(), from) != MicroCover.Type.NONE
+
+
+## Un tiro (o una ráfaga) desde from contra el soldado t de la escuadra tu. s: el soldado que tira
+## (null si es la coaxial de un tanque).
+func _shoot(w: SimWorld, su: Unit, from: Vector2, eye: float, s: Soldier, tu: Unit, t: Soldier, wpn: int) -> void:
+	var moving: bool = s.moving if s != null else su.moving
+	var reload: float = SimWorld.weapon_reload(wpn)
+	if s != null:
+		reload = (Config.SOLDIER_RIFLE_RELOAD if wpn == Unit.Weapon.RIFLES else reload) * w.rng.randf_range(0.75, 1.25)
+		s.reload_left = reload
+		s.last_fire_tick = w.total_ticks
+		s.heading = (t.pos - s.pos).normalized()
+	else:
+		su.reload2_left = reload
+	su.last_fire_tick = w.total_ticks
+	su.overwatch_ready = false
+	# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
+	w.known_enemies[tu.side][su.id] = {"cell": su.cell(), "last_seen_turn": w.turn}
+	tu.shots_received += 1
+	tu.last_fired_upon_tick = w.total_ticks
+	var hit: bool = false
+	if wpn == Unit.Weapon.RIFLES:
+		hit = w.rng.randf() < soldier_hit_p(w, su, moving, from, eye, tu, t, wpn)
+		if hit:
+			w.damage_soldier(tu, t)
+	else:
+		hit = _burst(w, su, moving, from, eye, tu.side, t.pos, wpn, 1.0) > 0
+	w._suppress(tu, wpn, hit, Config.SOLDIER_SHOT_SUPP_SCALE)
+	w.shot_events.append({"shooter": su.id, "target": tu.id, "hit": hit, "aspect": SimWorld.Aspect.FRONT,
+		"weapon": wpn, "from_m": from, "from_h": eye, "to_m": t.pos, "to_h": t.center_h(), "soldier": t.index})
+
+
+## Ráfaga sobre at: cada soldado del bando side a <= SOLDIER_BURST_M tira su dado (heridos incluidos).
+## Devuelve cuántos impactos hubo.
+func _burst(w: SimWorld, su: Unit, moving: bool, from: Vector2, eye: float, side: int, at: Vector2,
+		wpn: int, factor: float) -> int:
+	var hits: int = 0
+	for tu: Unit in w.units:
+		if not tu.alive or tu.side != side or not tu.is_infantry() or tu.pos_m().distance_to(at) > Config.SOLDIER_LAG_M * 4.0:
+			continue
+		for t: Soldier in tu.soldiers:
+			if t.state == Soldier.State.DEAD or t.pos.distance_to(at) > Config.SOLDIER_BURST_M:
+				continue
+			if w.rng.randf() < soldier_hit_p(w, su, moving, from, eye, tu, t, wpn, false) * factor:
+				w.damage_soldier(tu, t)
+				hits += 1
+	return hits
+
+
+## Orden SUPPRESS: cada tiro (o ráfaga) cae en un punto al azar de la zona; suprime a las escuadras
+## enemigas de la zona y casi no mata.
+func _area_shot(w: SimWorld, u: Unit, s: Soldier, wpn: int) -> void:
+	if not w.can_suppress_at(u, u.suppress_cell):
+		return
+	s.reload_left = (Config.SOLDIER_RIFLE_RELOAD if wpn == Unit.Weapon.RIFLES else SimWorld.weapon_reload(wpn)) * w.rng.randf_range(0.75, 1.25)
+	s.last_fire_tick = w.total_ticks
+	u.last_fire_tick = w.total_ticks
+	var r: float = Config.SUPPRESS_AREA_RADIUS * Config.CELL_SIZE
+	var center: Vector2 = Vector2(u.suppress_cell) * Config.CELL_SIZE
+	var at: Vector2 = center + Vector2(w.rng.randf_range(-r, r), w.rng.randf_range(-r, r))
+	var eye: float = eye_of(w, s)
+	for tu: Unit in w.units:
+		if not tu.alive or tu.side == u.side or tu.pos_m().distance_to(center) > r + Config.SOLDIER_LAG_M:
+			continue
+		w.known_enemies[tu.side][u.id] = {"cell": u.cell(), "last_seen_turn": w.turn}
+		w._add_suppression(tu, SimWorld.weapon_suppression(wpn) * Config.SUPPRESS_AREA_SUPP * Config.SOLDIER_SHOT_SUPP_SCALE)
+	_burst(w, u, s.moving, s.pos, eye, 1 - u.side, at, wpn, Config.SUPPRESS_AREA_HIT_FACTOR)
+	w.shot_events.append({"shooter": u.id, "target": -1, "cell": u.suppress_cell, "hit": false,
+		"aspect": SimWorld.Aspect.FRONT, "weapon": wpn, "from_m": s.pos, "from_h": eye, "to_m": at, "to_h": 0.5})
+
+
+## Tanque enemigo visible para el bando, el más cercano al alcance del antitanque al que el tirador ve.
+func _pick_tank(w: SimWorld, u: Unit, s: Soldier) -> Unit:
+	var best: Unit = null
+	var best_d: float = INF
+	var eye: float = eye_of(w, s)
+	for id: int in w.visible_enemies[u.side]:
+		var tank: Unit = w.units[id]
+		if not tank.alive or tank.is_infantry():
+			continue
+		var d: float = s.pos.distance_to(tank.pos_m())
+		if d > minf(Config.AT_RANGE, u.max_engage_m) or d >= best_d or not SimWorld.in_fire_arc(u, tank.pos):
+			continue
+		if w.analysis.los_m(s.pos, eye, tank.pos_m(), tank.center_h()):
+			best = tank
+			best_d = d
+	return best
+
+
+## Disparo del antitanque: AT_P_HIT x distancia x en marcha x casco x blindaje x escuadra diezmada.
+func _fire_at_tank(w: SimWorld, u: Unit, s: Soldier, tank: Unit) -> void:
+	var eye: float = eye_of(w, s)
+	var d: float = s.pos.distance_to(tank.pos_m())
+	var f_dist: float = clampf(1.0 - d / Config.AT_RANGE, 0.2, 1.0)
+	var f_hull: float = 1.0 if w.analysis.los_m(s.pos, eye, tank.pos_m(), tank.profile_h()) else w.hulldown_hit_factor
+	var aspect: int = SimWorld.aspect_of(tank, s.pos / Config.CELL_SIZE)
+	var f_armor: float = SimWorld.aspect_factor(aspect) if w.armor_enabled else 1.0
+	var p: float = minf(Config.AT_P_HIT * f_dist * w.move_fire_factor(u, s.moving) * f_hull * f_armor * SimWorld._weak_factor(u), w.p_hit_max)
+	u.at_charges -= 1
+	u.reload2_left = Config.AT_RELOAD
+	s.reload_left = Config.AT_RELOAD
+	s.last_fire_tick = w.total_ticks
+	u.last_fire_tick = w.total_ticks
+	w.known_enemies[tank.side][u.id] = {"cell": u.cell(), "last_seen_turn": w.turn}
+	tank.shots_received += 1
+	tank.last_fired_upon_tick = w.total_ticks
+	var hit: bool = w.rng.randf() < p
+	if hit:
+		w._damage(tank)
+	w._suppress(tank, Unit.Weapon.AT, hit)
+	w.shot_events.append({"shooter": u.id, "target": tank.id, "hit": hit, "aspect": aspect, "weapon": Unit.Weapon.AT,
+		"from_m": s.pos, "from_h": eye, "to_m": tank.pos_m(), "to_h": tank.center_h()})

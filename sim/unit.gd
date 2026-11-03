@@ -4,8 +4,9 @@ extends RefCounted
 
 enum Kind { TANK, INFANTRY }
 ## Armas: el tanque lleva cañón (contra tanques) y coaxial (contra infantería); la escuadra,
-## fusiles y ametralladora (contra infantería) y un antitanque con pocas cargas.
-enum Weapon { CANNON, COAX, RIFLES, AT }
+## fusiles y ametralladora (contra infantería) y un antitanque con pocas cargas. Cada soldado
+## tira con la suya: fusil, ametralladora (MG, en ráfagas) o antitanque.
+enum Weapon { CANNON, COAX, RIFLES, AT, MG }
 
 enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW, SUPPRESS }
 ## Reglas de fuego: libre, solo si te dispararon hace poco, o retener.

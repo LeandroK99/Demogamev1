@@ -19,8 +19,14 @@ var _game_root: Node3D
 
 
 func _ready() -> void:
+	# Argumentos después de "--": --loma arranca en la loma; --autoplay ejecuta los turnos solo (smoke test)
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	if args.has("--loma"):
+		scenario = SimWorld.Scenario.LOMA
 	_build_environment()
 	_start_game(map_seed)
+	if args.has("--autoplay"):
+		turn_controller.autoplay = true
 	print("Hull-Down OK")
 
 

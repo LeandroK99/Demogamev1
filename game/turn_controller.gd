@@ -13,6 +13,7 @@ var unit_views: Array[UnitView] = []
 var fx: CombatFx
 var _speed_index: int = 0
 var _accum: float = 0.0
+var autoplay: bool = false # ejecuta cada turno apenas entra en PLAN, a velocidad máxima (smoke test)
 
 
 func setup(p_world: SimWorld, views: Array[UnitView], p_fx: CombatFx) -> void:
@@ -42,6 +43,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if autoplay and world.phase == SimWorld.Phase.PLAN and not world.game_over:
+		_speed_index = SPEEDS.size() - 1
+		world.begin_execute()
 	if world.phase == SimWorld.Phase.EXECUTE and not world.game_over:
 		_accum += delta * speed()
 		while _accum >= Config.TICK:
@@ -57,6 +61,12 @@ func _process(delta: float) -> void:
 				break
 	for e: Dictionary in world.shot_events:
 		var shooter: Unit = world.units[int(e["shooter"])]
+		var seen: bool = shooter.side == PLAYER_SIDE or world.visible_enemies[PLAYER_SIDE].has(shooter.id)
+		if e.has("from_m"):
+			if seen:
+				fx.add_shot_m(e["from_m"], float(e["from_h"]), e["to_m"], float(e["to_h"]), int(e["weapon"]),
+					bool(e["hit"]), int(e.get("aspect", SimWorld.Aspect.FRONT)))
+			continue
 		if int(e["target"]) < 0:
 			if shooter.side == PLAYER_SIDE or world.visible_enemies[PLAYER_SIDE].has(shooter.id):
 				fx.add_area_shot(shooter, e["cell"])

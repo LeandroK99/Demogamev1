@@ -65,32 +65,49 @@ func test_at_in_range_spends_charges() -> void:
 	assert_eq(sq.at_charges, 0, "sin cargas")
 
 
-func test_infantry_firefight_and_prone_protects() -> void:
-	var standing: int = 0
-	var prone: int = 0
-	for k: int in 6:
-		var trial: int = k % 2
-		var world: SimWorld = _world(7 + k / 2)
-		world.units[0].alive = false
-		var a: Unit = world.add_unit(0, Vector2(48, 60), Unit.Kind.INFANTRY)
-		var b: Unit = world.add_unit(1, Vector2(48, 50), Unit.Kind.INFANTRY) # 40 m: se la ve aun cuerpo a tierra
-		b.reload_left = 1000.0
-		b.reload2_left = 1000.0
-		b.moving = true # que la vean
-		if trial == 1:
-			b.prone = true
-			b.still_time = 1000.0
-		world.update_detection()
-		world.begin_execute()
-		for i: int in 300:
-			b.moving = trial == 0
-			world.step()
-		if trial == 0:
-			standing += Config.INF_MEN - b.hp
-		else:
-			prone += Config.INF_MEN - b.hp
-		assert_true(_shots(world, a.id, Unit.Weapon.RIFLES) > 5, "la escuadra tira a la escuadra")
-	assert_lt(prone, standing, "cuerpo a tierra recibe menos bajas (%d vs %d)" % [prone, standing])
+func test_infantry_firefight_both_sides_bleed() -> void:
+	var world: SimWorld = _world()
+	world.units[0].alive = false
+	var a: Unit = world.add_unit(0, Vector2(48, 60), Unit.Kind.INFANTRY)
+	var b: Unit = world.add_unit(1, Vector2(48, 50), Unit.Kind.INFANTRY) # 40 m
+	_run(world, 300)
+	assert_true(_shots(world, a.id, Unit.Weapon.RIFLES) > 10, "los fusileros tiran")
+	assert_true(_shots(world, a.id, Unit.Weapon.MG) > 3, "la ametralladora tira ráfagas")
+	assert_lt(a.hp + b.hp, 2 * Config.INF_MEN, "hay bajas")
+
+
+func test_posture_and_cover_cut_hit_chance() -> void:
+	var world: SimWorld = _world()
+	world.set_micro(MicroCover.new(N))
+	var a: Unit = world.add_unit(0, Vector2(48, 60), Unit.Kind.INFANTRY)
+	var b: Unit = world.add_unit(1, Vector2(48, 50), Unit.Kind.INFANTRY)
+	var shooter: Soldier = a.soldiers[0]
+	var t: Soldier = b.soldiers[0]
+	var eye: float = InfantrySim.eye_of(world, shooter)
+	var p: Array[float] = []
+	for posture: int in [Soldier.Posture.STAND, Soldier.Posture.CROUCH, Soldier.Posture.PRONE]:
+		t.posture = posture
+		p.append(world.inf.soldier_hit_p(world, a, false, shooter.pos, eye, b, t, Unit.Weapon.RIFLES))
+	assert_lt(p[1], p[0], "agachado, menos que de pie")
+	assert_lt(p[2], p[1], "cuerpo a tierra, menos que agachado")
+	t.posture = Soldier.Posture.CROUCH
+	world.micro.set_type(MicroCover.cell_of(t.pos + (shooter.pos - t.pos).normalized() * 1.0), MicroCover.Type.WALL)
+	var behind: float = world.inf.soldier_hit_p(world, a, false, shooter.pos, eye, b, t, Unit.Weapon.RIFLES)
+	assert_lt(behind, p[1] * 0.5, "detrás del muro, mucho menos")
+	shooter.moving = true
+	assert_lt(world.inf.soldier_hit_p(world, a, true, shooter.pos, eye, b, t, Unit.Weapon.RIFLES), behind, "tirando en marcha, peor")
+
+
+func test_mg_burst_hits_several_in_area() -> void:
+	var world: SimWorld = _world()
+	var a: Unit = world.add_unit(0, Vector2(48, 60), Unit.Kind.INFANTRY)
+	var b: Unit = world.add_unit(1, Vector2(48, 56), Unit.Kind.INFANTRY) # 16 m
+	for s: Soldier in b.soldiers:
+		s.pos = b.pos_m() + Vector2(float(s.index % 3) - 1.0, float(s.index / 3) - 1.0) # amontonados
+	var hits: int = 0
+	for i: int in 20:
+		hits += world.inf._burst(world, a, false, a.soldiers[1].pos, 1.7, 1, b.pos_m(), Unit.Weapon.MG, 1.0)
+	assert_true(hits >= 5, "las ráfagas pegan a varios amontonados (%d)" % hits)
 
 
 func test_squad_dies_at_zero_men() -> void:
