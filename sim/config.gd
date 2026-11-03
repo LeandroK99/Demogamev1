@@ -91,13 +91,25 @@ const PINNED: float = 85.0 # desde acá no tira
 const SUPPRESSED_FIRE_FACTOR: float = 0.5
 const TANK_BUTTONED_SPOT_FACTOR: float = 0.5 # tanque con supresión alta (abotonado): ve a esta fracción
 const MORALE_PER_CASUALTY: float = 8.0
-const MORALE_SUPP_DRAIN: float = 1.0 # por segundo mientras está suprimida
-const MORALE_RECOVER_PER_TURN: float = 10.0 # al terminar el turno sin estar suprimida
+const MORALE_SUPP_DRAIN: float = 0.3 # por segundo mientras está suprimida
+const MORALE_RECOVER_PER_TURN: float = 15.0 # al terminar el turno sin estar suprimida
 const MORALE_BREAK: float = 25.0 # por debajo, se quiebra
 const MORALE_RALLY: float = 40.0 # quebrada, se recupera al llegar a esto
 const SUPPRESS_AREA_RADIUS: float = 3.0 # celdas: zona que bate la orden suprimir
 const SUPPRESS_AREA_SUPP: float = 0.7 # fracción de la supresión del arma que recibe cada unidad en la zona
 const SUPPRESS_AREA_HIT_FACTOR: float = 0.2 # el fuego de área casi no mata
+
+# --- Escenario "La loma" (infantería + tanque contra infantería + tanque) ---
+const LOMA_SQUADS: int = 3 # escuadras por bando
+const LOMA_TANKS: int = 1 # tanques por bando
+const LOMA_TURN_SECONDS: float = 45.0
+const LOMA_SQUAD_SPACING: int = 7 # celdas entre unidades al desplegar
+const LOMA_RED_BEHIND_CREST: int = 4 # celdas detrás del eje de la cresta donde despliega el rojo
+const LOMA_FOREST_FROM: int = 3 # bosque de la contrapendiente: de esta distancia detrás del eje...
+const LOMA_FOREST_TO: int = 8 # ... hasta esta
+const LOMA_FOREST_X_STEP: int = 18 # celdas entre manchas de bosque a lo largo de la cresta
+const LOMA_FOREST_HALF_W: int = 6 # medio ancho (en x) de cada mancha
+const TANK_SUPPORT_BACK: float = 12.0 # celdas: el tanque de un pelotón mixto se queda esto detrás de la infantería
 
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex

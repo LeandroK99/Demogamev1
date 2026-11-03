@@ -79,3 +79,12 @@ func generate(map_seed: int) -> void:
 		var c: Vector2i = Vector2i(rng.randi_range(2, size - 3), rng.randi_range(lo, hi))
 		if type_at(c) == Type.NONE:
 			set_type(c, Type.PIT)
+
+
+## Bosques en la contrapendiente norte de la cresta central (escenario "La loma").
+func add_ridge_forest(hf: HeightField) -> void:
+	for x0: int in range(Config.LOMA_FOREST_X_STEP / 2, size, Config.LOMA_FOREST_X_STEP):
+		for x: int in range(x0 - Config.LOMA_FOREST_HALF_W, x0 + Config.LOMA_FOREST_HALF_W + 1):
+			var ry: int = roundi(hf.ridge_center_y(float(x)))
+			for back: int in range(Config.LOMA_FOREST_FROM, Config.LOMA_FOREST_TO + 1):
+				set_type(Vector2i(x, ry - back), Type.FOREST)

@@ -2,6 +2,7 @@ extends Node3D
 ## Punto de entrada: construye todo por código. R reinicia con la misma semilla; Shift+R con una nueva.
 
 var map_seed: int = Config.SEED
+var scenario: int = SimWorld.Scenario.TANKS
 var world: SimWorld
 var height_field: HeightField
 var terrain_view: TerrainView
@@ -25,6 +26,11 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	var key: InputEventKey = event as InputEventKey
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_L:
+		# L: alterna entre la demo de tanques y la loma (reinicia la partida)
+		scenario = SimWorld.Scenario.LOMA if scenario == SimWorld.Scenario.TANKS else SimWorld.Scenario.TANKS
+		_start_game(map_seed)
+		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_R:
 		if key.shift_pressed:
 			map_seed = randi() % 100000
@@ -40,7 +46,7 @@ func _start_game(p_seed: int) -> void:
 	add_child(_game_root)
 	unit_views = []
 
-	world = SimWorld.new(p_seed)
+	world = SimWorld.new(p_seed, null, true, scenario)
 	height_field = world.height_field
 
 	terrain_view = TerrainView.new()

@@ -4,6 +4,9 @@ extends RefCounted
 ## Ciclo WeGo: PLAN (se aceptan órdenes) -> EXECUTE (ticks_per_turn ticks) -> PLAN ...
 
 enum Phase { PLAN, EXECUTE }
+## TANKS: la demo original (4 tanques por bando, sin cobertura). LOMA: infantería y un tanque
+## por bando, con cobertura; el rojo defiende la cresta central.
+enum Scenario { TANKS, LOMA }
 enum Aspect { FRONT, FLANK, REAR }
 const NO_WINNER: int = -1
 const DRAW: int = 2
@@ -50,13 +53,15 @@ var p_hit_max: float = Config.P_HIT_MAX
 var _exposure: Array[PackedFloat32Array] = []
 var _pathfinder_side: Array[int] = [-1, -1] # por tipo: bando cuya exposición está cargada en su pathfinder
 var ai: AICommander = null # IA del bando rojo (null = sin IA)
+var scenario: int = Scenario.TANKS
 var _forcing: bool = false # órdenes que da la propia simulación (una retirada por moral quebrada)
 var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
 
 
 ## Si hf es null se genera el terreno procedural con la semilla.
 ## with_ai: si el bando rojo lo maneja AICommander (los tests pueden apagarlo).
-func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = true) -> void:
+func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = true, p_scenario: int = Scenario.TANKS) -> void:
+	scenario = p_scenario
 	if with_ai:
 		ai = AICommander.new(1)
 	rng.seed = sim_seed
@@ -69,7 +74,15 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 	pathfinders = [Pathfinder.new(hf), Pathfinder.new(hf, Config.INF_MAX_SLOPE)]
 	pathfinder = pathfinders[Unit.Kind.TANK]
 	invalidate_exposure()
-	_deploy()
+	if scenario == Scenario.LOMA:
+		ticks_per_turn = roundi(Config.LOMA_TURN_SECONDS / Config.TICK)
+		var cm: CoverMap = CoverMap.new(hf.size)
+		cm.generate(sim_seed)
+		cm.add_ridge_forest(hf)
+		set_cover(cm)
+		_deploy_loma()
+	else:
+		_deploy()
 	update_detection()
 	start_plan()
 
@@ -92,6 +105,43 @@ func _deploy() -> void:
 				secs.append(PackedInt32Array())
 			secs[secs.size() - 1].append(side * Config.UNITS_PER_SIDE + i)
 		platoons.append(Platoon.new(side, side, secs))
+
+
+## La loma: por bando, LOMA_SQUADS escuadras y LOMA_TANKS tanques. El azul al sur;
+## el rojo detrás de la cresta central. Pelotón con dos secciones: infantería y tanques.
+func _deploy_loma() -> void:
+	var n: int = height_field.size
+	var count: int = Config.LOMA_SQUADS + Config.LOMA_TANKS
+	var first_x: int = n / 2 - (count - 1) * Config.LOMA_SQUAD_SPACING / 2
+	for side: int in 2:
+		var inf_ids: PackedInt32Array = PackedInt32Array()
+		var tank_ids: PackedInt32Array = PackedInt32Array()
+		for i: int in count:
+			var kind: int = Unit.Kind.INFANTRY if i < Config.LOMA_SQUADS else Unit.Kind.TANK
+			var x: int = first_x + i * Config.LOMA_SQUAD_SPACING
+			var y: int = n - 1 - Config.DEPLOY_EDGE_MARGIN
+			if side == 1:
+				y = roundi(height_field.ridge_center_y(float(x))) - Config.LOMA_RED_BEHIND_CREST
+			var c: Vector2i = _nearest_walkable(Vector2i(x, y), kind)
+			var u: Unit = add_unit(side, Vector2(c), kind)
+			if kind == Unit.Kind.INFANTRY:
+				inf_ids.append(u.id)
+			else:
+				tank_ids.append(u.id)
+		var secs: Array[PackedInt32Array] = [inf_ids, tank_ids]
+		platoons.append(Platoon.new(side, side, secs))
+
+
+## Celda transitable para el tipo más cercana a c (c si ya lo es).
+func _nearest_walkable(c: Vector2i, kind: int) -> Vector2i:
+	var pf: Pathfinder = pathfinders[kind]
+	for r: int in 12:
+		for dy: int in range(-r, r + 1):
+			for dx: int in range(-r, r + 1):
+				var t: Vector2i = c + Vector2i(dx, dy)
+				if maxi(absi(dx), absi(dy)) == r and pf.is_walkable(t):
+					return t
+	return c
 
 
 ## Activa la cobertura fina: la línea de visión, los pathfinders y la exposición la usan.
@@ -443,11 +493,28 @@ func platoon_cells(p: Platoon, target: Vector2i, facing: Vector2) -> Dictionary:
 	secs.sort_custom(func(a: Array, b: Array) -> bool:
 		return _centroid(a).dot(perp) < _centroid(b).dot(perp))
 	var out: Dictionary = {}
-	for i: int in secs.size():
-		var center: Vector2 = Vector2(target) + perp * (float(i) - float(secs.size() - 1) * 0.5) * Config.SECTION_GAP
+	# Pelotón mixto: la infantería va al objetivo y los tanques se quedan atrás, cubriéndola
+	var foot: Array[Array] = []
+	var support: Array[int] = []
+	for sec: Array in secs:
+		if units[int(sec[0])].is_infantry():
+			foot.append(sec)
+		else:
+			for uid: int in sec:
+				support.append(uid)
+	if foot.is_empty() or support.is_empty():
+		foot = secs
+		support.clear()
+	for i: int in foot.size():
+		var center: Vector2 = Vector2(target) + perp * (float(i) - float(foot.size() - 1) * 0.5) * Config.SECTION_GAP
 		var ids: Array[int] = []
-		ids.assign(secs[i])
+		ids.assign(foot[i])
 		out.merge(formation_cells(ids, _clamp_cell(Vector2i(center.round())), facing))
+	if not support.is_empty():
+		var back: Vector2 = _centroid(support) - Vector2(target)
+		var dist: float = minf(Config.TANK_SUPPORT_BACK, back.length())
+		var at: Vector2 = Vector2(target) + (back.normalized() if back.length() > 0.001 else Vector2(0.0, 1.0)) * dist
+		out.merge(formation_cells(support, _nearest_walkable(_clamp_cell(Vector2i(at.round())), Unit.Kind.TANK), facing))
 	return out
 
 

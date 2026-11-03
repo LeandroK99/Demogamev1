@@ -41,6 +41,8 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | Rueda | Zoom |
 | Q / E o botón medio | Rotar la cámara |
 | R / Shift+R | Reiniciar con la misma semilla / con un mapa nuevo |
+| L | Cambiar de escenario: tanques (la demo original) o la loma (infantería y un tanque por bando) |
+| U y clic derecho | Suprimir: la unidad se queda quieta batiendo esa zona con fusiles o coaxial, aunque no vea a nadie. Casi no mata, pero suprime a todo lo que haya ahí. Esc cancela |
 
 ### Reglas de combate
 
@@ -50,6 +52,16 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 - **Reglas de fuego:** con *fuego libre* el tanque tira solo a lo que ve. Con *solo si le disparan* espera a recibir un disparo y queda liberado 15 s. Con *retener fuego* no tira nunca, y como no dispara tampoco se delata. Las ROE y el área de enganche duran hasta que las cambies. La IA en vigilancia espera a que te acerques a 250 m, salvo que ya la hayas atacado.
 
 - **Vista previa de riesgo:** con un tanque seleccionado, los tramos de su ruta que quedan a la vista de un enemigo conocido se pintan en rojo, y el panel muestra cuánto dura la ruta, cuántos segundos está expuesto, los impactos esperados (contra los enemigos conocidos, quietos y con la recarga lista), qué cara del blindaje muestra y un riesgo bajo, medio o alto. No cuenta las esperas de las condiciones.
+
+### La loma
+
+Con **L** cambiás al escenario de infantería. Cada bando tiene 3 escuadras de infantería y 1 tanque, los turnos duran 45 s y el mapa tiene bosques, muros y pozos. El rojo defiende detrás de la cresta central, con bosque en la contrapendiente.
+
+- **Escuadras:** 9 hombres, a pie a 1,5 m/s, suben pendientes que el tanque no. Quietas 3 s se tiran cuerpo a tierra. Se las detecta a 250 m en movimiento, a 120 m quietas y a 60 m cuerpo a tierra (menos en cobertura). H es *tomar posición*: busca cobertura con tiro.
+- **Armas:** el tanque usa el cañón contra tanques y la coaxial contra infantería. La escuadra usa fusiles contra infantería y un antitanque de 150 m con 2 cargas contra tanques (mejor por el flanco o la cola). Con 3 hombres o menos tira a la mitad.
+- **Cobertura:** el bosque corta la línea de visión después de 2 celdas y frena al tanque a la mitad. Bosque, muro y pozo reducen los impactos y la detección contra la infantería.
+- **Supresión y moral:** cada disparo recibido suprime aunque no impacte. Suprimida (desde 50), la escuadra no avanza y tira peor; desde 85 no tira. Un tanque suprimido se abotona y ve a la mitad de distancia. Las bajas y la supresión bajan la moral; con menos de 25 la escuadra se quiebra, se retira sola e ignora órdenes hasta recuperarse.
+- **Pelotón mixto:** con el pelotón seleccionado (doble clic), la infantería va al objetivo y el tanque se queda 48 m detrás, cubriéndola.
 
 Ganás si destruís a los 4 rojos. Si se llega al turno 12, gana el bando con más tanques vivos.
 

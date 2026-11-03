@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
+	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma)"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -86,9 +86,10 @@ func _style(label: Label, size: int) -> void:
 func _process(_delta: float) -> void:
 	var phase_text: String = "PLANIFICAR (Espacio: ejecutar)"
 	if world.phase == SimWorld.Phase.EXECUTE:
-		phase_text = "EJECUTANDO %d / %d s" % [world.tick_in_turn / 10, roundi(Config.TURN_SECONDS)]
-	_status.text = "Turno %d / %d · %s · ×%d\nAzules vivos: %d · Rojos vivos: %d · Semilla %d" % [
-		world.turn, Config.MAX_TURNS, phase_text, roundi(turn_controller.speed()),
+		phase_text = "EJECUTANDO %d / %d s" % [world.tick_in_turn / 10, roundi(world.ticks_per_turn * Config.TICK)]
+	var scen: String = "La loma" if world.scenario == SimWorld.Scenario.LOMA else "Tanques"
+	_status.text = "%s · Turno %d / %d · %s · ×%d\nAzules vivos: %d · Rojos vivos: %d · Semilla %d" % [
+		scen, world.turn, Config.MAX_TURNS, phase_text, roundi(turn_controller.speed()),
 		world.alive_count(0), world.alive_count(1), map_seed]
 	_unit_info.text = _unit_text()
 	if world.game_over:
@@ -99,6 +100,10 @@ func _process(_delta: float) -> void:
 		elif world.winner != SimWorld.DRAW:
 			result = "DERROTA"
 		_banner.text = "%s\nR: jugar de nuevo · Shift+R: mapa nuevo" % result
+
+
+static func unit_name(u: Unit) -> String:
+	return "Escuadra" if u.is_infantry() else "Tanque"
 
 
 static func gate_text(gate: Dictionary) -> String:
@@ -145,7 +150,7 @@ func _unit_text() -> String:
 		var plt: Platoon = world.platoon_of(sel.id)
 		if input_controller.selected_platoon() != null:
 			lines.append("Pelotón completo (%d tanques)" % input_controller.selected_ids.size())
-		lines.append("Tanque %d · sección %s" % [sel.id + 1, Platoon.section_letter(plt.section_of(sel.id) if plt != null else -1)])
+		lines.append("%s %d · sección %s" % [unit_name(sel), sel.id + 1, Platoon.section_letter(plt.section_of(sel.id) if plt != null else -1)])
 		lines.append("%s: %d / %d" % ["Hombres" if sel.is_infantry() else "Vida", sel.hp, sel.max_hp()])
 		lines.append("Recarga: %s" % ("lista" if sel.reload_left <= 0.0 else "%.1f s" % sel.reload_left))
 		var order_text: String = ORDER_NAMES.get(sel.order, "?")
@@ -203,5 +208,5 @@ func _unit_text() -> String:
 	lines.append("Disparos recibidos")
 	for u: Unit in world.units:
 		if u.side == PLAYER_SIDE:
-			lines.append("Tanque %d: %d%s" % [u.id + 1, u.shots_received, "" if u.alive else " (destruido)"])
+			lines.append("%s %d: %d%s" % [unit_name(u), u.id + 1, u.shots_received, "" if u.alive else " (destruido)"])
 	return "\n".join(lines)
