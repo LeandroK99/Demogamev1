@@ -432,3 +432,10 @@ const FORM_SPREAD_STEP: float = 0.1 # cuánto se abre o se cierra por revisión 
 const OVERWATCH_CONTACT_M: float = 600.0 # con un contacto conocido a esta distancia, desplazamiento con vigilancia
 const OVERWATCH_TRAIL_M: float = 20.0 # el equipo A (con la ametralladora) va esto más atrás
 const OVERWATCH_TRAIL_STEP: float = 2.0 # metros por revisión (de a poco)
+
+# --- Emboscada cercana y lejana (fase 52) ---
+const NEAR_AMBUSH_M: float = 35.0 # le tiran desde más cerca que esto (a distancia de granada): asalta
+const NEAR_AMBUSH_FIRED_SECONDS: float = 2.0 # ... si le tiraron hace menos que esto
+const NEAR_AMBUSH_SCORE: float = 4.0 # le gana a todo: en la zona de muerte no se piensa
+const NEAR_AMBUSH_MAX_SECONDS: float = 25.0 # el asalto dura a lo sumo esto
+const NEAR_AMBUSH_DONE_M: float = 6.0 # llegó a la posición del emboscador

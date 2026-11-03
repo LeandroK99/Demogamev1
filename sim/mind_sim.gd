@@ -203,7 +203,59 @@ func score_options(w: SimWorld, u: Unit) -> Dictionary:
 	_score_bound(w, u, s)
 	_score_flank(w, u, s)
 	_score_rescue(w, u, s)
+	_score_near_ambush(w, u, s)
 	return s
+
+
+## --- Emboscada cercana (fase 52) ---
+## Le tiran desde menos de NEAR_AMBUSH_M: en la zona de muerte no se busca cubierta, se asalta al
+## emboscador ya, a la carrera (y con granadas, que a esa distancia salen solas). Más lejos es una
+## emboscada lejana: el drill de contacto (fuego desde cubierto) y después fuego y movimiento.
+
+func _score_near_ambush(w: SimWorld, u: Unit, s: Dictionary) -> void:
+	var m: SquadMind = u.mind
+	if m.option == SquadMind.Option.NEAR_AMBUSH:
+		var id: int = int(m.data.get("enemy", -1))
+		var e: Unit = w.get_unit(id)
+		var elapsed: float = float(w.total_ticks - m.since_tick) * Config.TICK
+		if e != null and e.alive and m.contacts.has(id) and elapsed < Config.NEAR_AMBUSH_MAX_SECONDS \
+				and Vector2(m.contacts[id]["pos"]).distance_to(u.pos_m()) > Config.NEAR_AMBUSH_DONE_M and not u.path.is_empty():
+			s[SquadMind.Option.NEAR_AMBUSH] = Config.NEAR_AMBUSH_SCORE
+		return
+	if not w.fired_upon_within(u, Config.NEAR_AMBUSH_FIRED_SECONDS) or u.order == Unit.Order.WITHDRAW or u.path.is_empty():
+		return # solo la que va en marcha cae en una emboscada; la que defiende se queda en su puesto
+	if m.option in [SquadMind.Option.BREAK_CONTACT, SquadMind.Option.RESCUE]:
+		return
+	var id: int = _nearest_contact_id(u)
+	if id >= 0 and Vector2(m.contacts[id]["pos"]).distance_to(u.pos_m()) <= Config.NEAR_AMBUSH_M:
+		m.data["near_enemy"] = id
+		s[SquadMind.Option.NEAR_AMBUSH] = Config.NEAR_AMBUSH_SCORE
+
+
+func _nearest_contact_id(u: Unit) -> int:
+	var best: int = -1
+	var best_d: float = INF
+	for id: int in u.mind.contacts:
+		var d: float = Vector2(u.mind.contacts[id]["pos"]).distance_to(u.pos_m())
+		if d < best_d:
+			best = id
+			best_d = d
+	return best
+
+
+func _start_near_ambush(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	var id: int = _nearest_contact_id(u)
+	m.data["enemy"] = id
+	m.hold = false
+	_release_teams(u)
+	for s: Soldier in u.soldiers:
+		s.dive_until = 0 # nadie se queda tirado en la zona de muerte
+	if id < 0:
+		return
+	var target: Vector2i = Vector2i((Vector2(m.contacts[id]["pos"]) / Config.CELL_SIZE).round())
+	if autonomous_move(w, u, target, Vector2.ZERO, false):
+		u.order = Unit.Order.ASSAULT # a la carrera y tirando
 
 
 ## --- Rescate ---
@@ -646,6 +698,8 @@ func _enter(w: SimWorld, u: Unit, opt: int) -> void:
 				m.hold = true
 		SquadMind.Option.RESCUE:
 			_start_rescue(w, u)
+		SquadMind.Option.NEAR_AMBUSH:
+			_start_near_ambush(w, u)
 		SquadMind.Option.BREAK_CONTACT:
 			throw_smoke_toward(w, u, w.inf.threat_point(w, u))
 			w.begin_autonomous()
@@ -659,8 +713,8 @@ func _exit(w: SimWorld, u: Unit, opt: int) -> void:
 	var m: SquadMind = u.mind
 	m.hold = false
 	m.cover_m = Config.SOLDIER_COVER_SEARCH_M
-	if opt == SquadMind.Option.CONTACT_DRILL:
-		m.drill_end_tick = w.total_ticks
+	if opt == SquadMind.Option.CONTACT_DRILL or opt == SquadMind.Option.NEAR_AMBUSH:
+		m.drill_end_tick = w.total_ticks # tras reaccionar al contacto, un rato sin otro drill
 	match opt:
 		SquadMind.Option.AMBUSH:
 			u.roe = int(m.data.get("roe", Unit.Roe.FREE))
@@ -700,6 +754,8 @@ func _announce(opt: int) -> String:
 			return "los fijan ustedes, nosotros flanqueamos"
 		SquadMind.Option.RESCUE:
 			return "¡herido al descubierto! humo, cobertura y lo sacamos"
+		SquadMind.Option.NEAR_AMBUSH:
+			return "¡emboscada! ¡al asalto!"
 	return SquadMind.OPTION_NAMES[opt]
 
 

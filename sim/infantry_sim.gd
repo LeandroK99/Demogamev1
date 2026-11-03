@@ -1208,7 +1208,7 @@ func suppress_at(w: SimWorld, side: int, at: Vector2, from: Vector2, wpn: int, h
 			add_soldier_suppression(w, t, a)
 			t.incoming_from = from
 			t.incoming_tick = w.total_ticks
-			if tu.moving and not prot and a >= Config.REFLEX_DIVE_SUPP:
+			if tu.moving and not prot and a >= Config.REFLEX_DIVE_SUPP and (tu.mind == null or tu.mind.option != SquadMind.Option.NEAR_AMBUSH):
 				t.dive_until = w.total_ticks + roundi(Config.REFLEX_DIVE_SECONDS / Config.TICK) # ¡al suelo!
 			touched = true
 		if touched:
