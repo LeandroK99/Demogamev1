@@ -10,7 +10,6 @@ extends Node
 
 const CLICK_PICK_PX: float = 30.0 # radio en píxeles para seleccionar con un clic
 const DRAG_MIN_PX: float = 8.0 # menos que esto es un clic, no un recuadro
-const FORMATION_GAP: int = 3 # celdas entre tanques que reciben la misma orden
 const PLAYER_SIDE: int = 0
 const COLOR_PATH: Color = Color(1.0, 0.9, 0.2)
 const COLOR_PATH_DIRECT: Color = Color(1.0, 0.5, 0.1)
@@ -75,6 +74,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if mb.pressed and pending_mode == "smoke":
 				pending_mode = ""
 				_smoke_at(mb.position)
+			elif mb.pressed and mb.double_click:
+				_dragging = false
+				_select_platoon_at(mb.position)
 			elif mb.pressed:
 				_dragging = true
 				_drag_start = mb.position
@@ -107,6 +109,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_ESCAPE:
 		pending_mode = ""
+		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_J:
+		if world.phase == SimWorld.Phase.PLAN and selected_platoon() != null:
+			pending_mode = "bound"
 		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_K:
 		_cycle_gate()
@@ -185,6 +191,21 @@ func _select_click(screen: Vector2) -> void:
 	_set_selection(ids)
 
 
+## Doble clic sobre un tanque: todo su pelotón.
+func _select_platoon_at(screen: Vector2) -> void:
+	_select_click(screen)
+	if selected_ids.is_empty():
+		return
+	var p: Platoon = world.platoon_of(selected_ids[0])
+	if p == null:
+		return
+	var ids: Array[int] = []
+	for uid: int in p.unit_ids():
+		if world.get_unit(uid).alive:
+			ids.append(uid)
+	_set_selection(ids)
+
+
 func _select_box(rect: Rect2) -> void:
 	var ids: Array[int] = []
 	for v: UnitView in _own_views():
@@ -224,6 +245,12 @@ func _right_pressed(screen: Vector2, direct: bool, append: bool) -> void:
 		var cells: Dictionary = _formation_cells(world.height_field.world_to_cell(hit as Vector3), Vector2.ZERO)
 		for id: int in cells:
 			world.order_scoot(id, cells[id])
+		return
+	if pending_mode == "bound":
+		pending_mode = ""
+		var p: Platoon = selected_platoon()
+		if p != null:
+			world.order_platoon_bound(p.id, world.height_field.world_to_cell(hit as Vector3))
 		return
 	if pending_mode == "assault":
 		pending_mode = ""
@@ -363,9 +390,13 @@ func _enemy_at(screen: Vector2) -> UnitView:
 	return best
 
 
-## Mover en línea: los tanques se reparten perpendiculares a la orientación
-## (o a lo ancho si no hay orientación), ordenados por su posición actual.
+## Mover: si la selección es el pelotón entero, la orden se reparte entre sus secciones;
+## si no, los tanques se reparten en línea perpendicular a la orientación.
 func _issue_move(target: Vector2i, facing: Vector2, covered: bool, append: bool) -> void:
+	var p: Platoon = selected_platoon()
+	if p != null:
+		world.order_platoon_move(p.id, target, facing, covered, append)
+		return
 	var cells: Dictionary = _formation_cells(target, facing)
 	for id: int in cells:
 		if not world.order_move(id, cells[id], facing, covered, append):
@@ -374,18 +405,26 @@ func _issue_move(target: Vector2i, facing: Vector2, covered: bool, append: bool)
 
 ## Celda de cada seleccionada (id -> Vector2i) para una orden en línea alrededor de target.
 func _formation_cells(target: Vector2i, facing: Vector2) -> Dictionary:
-	var perp: Vector2 = Vector2(-facing.y, facing.x) if facing != Vector2.ZERO else Vector2(1.0, 0.0)
-	var ids: Array[int] = selected_ids.duplicate()
-	ids.sort_custom(func(a: int, b: int) -> bool:
-		return world.get_unit(a).pos.dot(perp) < world.get_unit(b).pos.dot(perp))
-	var n: int = ids.size()
-	var limit: int = world.height_field.size - 1
-	var out: Dictionary = {}
-	for i: int in n:
-		var off: Vector2 = perp * (float(i) - float(n - 1) * 0.5) * FORMATION_GAP
-		var c: Vector2i = Vector2i((Vector2(target) + off).round())
-		out[ids[i]] = Vector2i(clampi(c.x, 0, limit), clampi(c.y, 0, limit))
-	return out
+	return world.formation_cells(selected_ids, target, facing)
+
+
+## El pelotón si la selección son exactamente sus tanques vivos (o null).
+func selected_platoon() -> Platoon:
+	if selected_ids.is_empty():
+		return null
+	var p: Platoon = world.platoon_of(selected_ids[0])
+	if p == null:
+		return null
+	var alive: Array[int] = []
+	for uid: int in p.unit_ids():
+		if world.get_unit(uid).alive:
+			alive.append(uid)
+	if alive.size() != selected_ids.size():
+		return null
+	for uid: int in alive:
+		if not selected_ids.has(uid):
+			return null
+	return p
 
 
 ## Rutas planificadas (amarillo cubierta, naranja directa), orientación final (celeste) y blanco de ataque (rojo).

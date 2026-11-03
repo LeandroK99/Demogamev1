@@ -12,6 +12,8 @@ var height_field: HeightField
 var analysis: TerrainAnalysis
 var pathfinder: Pathfinder
 var units: Array[Unit] = []
+var platoons: Array[Platoon] = [] # uno por bando (índice = side)
+var _bound_count: int = 0 # para nombrar las señales de los avances por saltos
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var turn: int = 1
 var tick_in_turn: int = 0
@@ -76,6 +78,15 @@ func _deploy() -> void:
 		for i: int in Config.UNITS_PER_SIDE:
 			var x: int = first_x + i * Config.DEPLOY_SPACING
 			units.append(Unit.new(units.size(), side, Vector2(x, y)))
+	# Un pelotón por bando, con los tanques repartidos en secciones consecutivas
+	var per_section: int = maxi(1, ceili(float(Config.UNITS_PER_SIDE) / Config.SECTIONS_PER_PLATOON))
+	for side: int in 2:
+		var secs: Array[PackedInt32Array] = []
+		for i: int in Config.UNITS_PER_SIDE:
+			if i % per_section == 0:
+				secs.append(PackedInt32Array())
+			secs[secs.size() - 1].append(side * Config.UNITS_PER_SIDE + i)
+		platoons.append(Platoon.new(side, side, secs))
 
 
 func get_unit(unit_id: int) -> Unit:
@@ -301,10 +312,143 @@ func gate_met(u: Unit, gate: Dictionary) -> bool:
 			return not visible_enemies[u.side].is_empty()
 		"signal":
 			return signals[u.side].has(gate["name"])
+		"all_signals":
+			for n: String in gate["names"]:
+				if not signals[u.side].has(n):
+					return false
+			return true
 		"unit":
 			var other: Unit = get_unit(int(gate["unit"]))
 			return other == null or not other.alive or (other.path.is_empty() and not other.waiting)
 	return true
+
+
+## --- Pelotón ---
+
+## Pelotón de la unidad (o null).
+func platoon_of(unit_id: int) -> Platoon:
+	for p: Platoon in platoons:
+		if p.section_of(unit_id) >= 0:
+			return p
+	return null
+
+
+## Ids vivos de una sección.
+func _alive_ids(ids: PackedInt32Array) -> Array[int]:
+	var out: Array[int] = []
+	for uid: int in ids:
+		if units[uid].alive:
+			out.append(uid)
+	return out
+
+
+## Celdas en línea alrededor de target (id -> Vector2i), perpendiculares a facing
+## (o a lo ancho si no hay orientación), gap celdas entre unidades, ordenadas por su posición actual.
+func formation_cells(ids: Array[int], target: Vector2i, facing: Vector2, gap: float = Config.FORMATION_GAP) -> Dictionary:
+	var perp: Vector2 = Vector2(-facing.y, facing.x) if facing != Vector2.ZERO else Vector2(1.0, 0.0)
+	var sorted: Array[int] = ids.duplicate()
+	sorted.sort_custom(func(a: int, b: int) -> bool:
+		return units[a].pos.dot(perp) < units[b].pos.dot(perp))
+	var n: int = sorted.size()
+	var out: Dictionary = {}
+	for i: int in n:
+		var off: Vector2 = perp * (float(i) - float(n - 1) * 0.5) * gap
+		out[sorted[i]] = _clamp_cell(Vector2i((Vector2(target) + off).round()))
+	return out
+
+
+func _clamp_cell(c: Vector2i) -> Vector2i:
+	var limit: int = height_field.size - 1
+	return Vector2i(clampi(c.x, 0, limit), clampi(c.y, 0, limit))
+
+
+## Destinos de un pelotón (id -> Vector2i): las secciones lado a lado a SECTION_GAP,
+## cada una en línea a FORMATION_GAP. Las secciones se ordenan por su posición actual.
+func platoon_cells(p: Platoon, target: Vector2i, facing: Vector2) -> Dictionary:
+	var perp: Vector2 = Vector2(-facing.y, facing.x) if facing != Vector2.ZERO else Vector2(1.0, 0.0)
+	var secs: Array[Array] = []
+	for sec: PackedInt32Array in p.sections:
+		var ids: Array[int] = _alive_ids(sec)
+		if not ids.is_empty():
+			secs.append(ids)
+	secs.sort_custom(func(a: Array, b: Array) -> bool:
+		return _centroid(a).dot(perp) < _centroid(b).dot(perp))
+	var out: Dictionary = {}
+	for i: int in secs.size():
+		var center: Vector2 = Vector2(target) + perp * (float(i) - float(secs.size() - 1) * 0.5) * Config.SECTION_GAP
+		var ids: Array[int] = []
+		ids.assign(secs[i])
+		out.merge(formation_cells(ids, _clamp_cell(Vector2i(center.round())), facing))
+	return out
+
+
+func _centroid(ids: Array) -> Vector2:
+	var sum: Vector2 = Vector2.ZERO
+	for uid: int in ids:
+		sum += units[uid].pos
+	return sum / float(maxi(1, ids.size()))
+
+
+## Mueve a cada unidad a su celda; si la celda no sirve, al punto exacto. Devuelve cuántas aceptaron.
+func _move_to_cells(cells: Dictionary, target: Vector2i, facing: Vector2, covered: bool, append: bool) -> int:
+	var ok: int = 0
+	for uid: int in cells:
+		if order_move(uid, cells[uid], facing, covered, append) or order_move(uid, target, facing, covered, append):
+			ok += 1
+	return ok
+
+
+## Orden al pelotón: se reparte entre las secciones (ver platoon_cells).
+func order_platoon_move(platoon_id: int, target: Vector2i, facing: Vector2 = Vector2.ZERO, covered: bool = true, append: bool = false) -> bool:
+	if platoon_id < 0 or platoon_id >= platoons.size() or phase != Phase.PLAN:
+		return false
+	var p: Platoon = platoons[platoon_id]
+	return _move_to_cells(platoon_cells(p, target, facing), target, facing, covered, append) > 0
+
+
+## Avance por saltos: la sección más cercana al objetivo va primero y, cuando llega toda,
+## arranca la otra (las demás esperan quietas, cubriendo). Usa señales de la fase 16.
+func order_platoon_bound(platoon_id: int, target: Vector2i, facing: Vector2 = Vector2.ZERO) -> bool:
+	if platoon_id < 0 or platoon_id >= platoons.size() or phase != Phase.PLAN:
+		return false
+	var p: Platoon = platoons[platoon_id]
+	var cells: Dictionary = platoon_cells(p, target, facing)
+	var secs: Array[Array] = []
+	for sec: PackedInt32Array in p.sections:
+		var ids: Array[int] = _alive_ids(sec)
+		if not ids.is_empty():
+			secs.append(ids)
+	if secs.is_empty():
+		return false
+	secs.sort_custom(func(a: Array, b: Array) -> bool:
+		return _centroid(a).distance_to(Vector2(target)) < _centroid(b).distance_to(Vector2(target)))
+	var ok: int = 0
+	var prev_signals: Array[String] = []
+	for i: int in secs.size():
+		var my_signals: Array[String] = []
+		for uid: int in secs[i]:
+			if not cells.has(uid):
+				continue
+			var one: Dictionary = {uid: cells[uid]}
+			if _move_to_cells(one, target, facing, true, false) == 0:
+				continue
+			ok += 1
+			if units[uid].waypoints.is_empty():
+				continue # ya estaba en su celda: no espera ni avisa
+			_bound_count += 1
+			var sig: String = "salto %d" % _bound_count
+			signal_leg(uid, -1, sig)
+			my_signals.append(sig)
+			# Espera a que llegue toda la sección anterior (una condición por tanque de esa sección)
+			if not prev_signals.is_empty():
+				gate_leg(uid, 0, _all_signals_gate(prev_signals))
+		prev_signals = my_signals
+	return ok > 0
+
+
+## Condición compuesta: todas las señales.
+static func _all_signals_gate(names: Array[String]) -> Dictionary:
+	return {"type": "all_signals", "names": names.duplicate()}
 
 
 ## Ritmo de una unidad (solo en PLAN). Dura hasta que se cambie.

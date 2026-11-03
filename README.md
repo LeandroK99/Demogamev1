@@ -15,6 +15,8 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | Tecla | Acción |
 |---|---|
 | Clic izquierdo / arrastrar | Seleccionar un tanque / selección por recuadro |
+| Doble clic | Seleccionar el pelotón entero (4 tanques en dos secciones, A y B). Una orden de mover al pelotón pone las secciones lado a lado, con sus centros a 40 m |
+| J y clic derecho | Avance por saltos (pelotón entero seleccionado): la sección más cercana al objetivo avanza primero y la otra espera quieta, cubriéndola, hasta que llegue. Después avanza la segunda |
 | Clic derecho | Mover (solo al planificar) |
 | Ctrl + clic derecho | Mover por la ruta directa (la más corta, sin importar la exposición; se dibuja en naranja) |
 | Shift + clic derecho | Agregar un tramo al final de la ruta (waypoint). Ctrl + Shift: tramo directo |

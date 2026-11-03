@@ -56,6 +56,9 @@ const HULLDOWN_DIST_DIV: float = 10.0 # celdas de distancia que restan 1 punto
 const UNITS_PER_SIDE: int = 4
 const DEPLOY_SPACING: int = 8 # celdas entre tanques al desplegar
 const DEPLOY_EDGE_MARGIN: int = 6 # celdas desde el borde del mapa
+const SECTIONS_PER_PLATOON: int = 2 # el pelotón de cada bando se reparte en estas secciones
+const FORMATION_GAP: int = 3 # celdas entre tanques de una misma sección (o de una selección suelta)
+const SECTION_GAP: int = 10 # celdas entre los centros de las secciones de un pelotón
 const PATH_MAX_SLOPE: float = 4.0 # metros; celdas más empinadas son intransitables
 const PATH_SLOPE_COST: float = 1.0 # costo extra en el A* a pendiente máxima
 
