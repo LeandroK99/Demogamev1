@@ -60,6 +60,8 @@ func test_visible_target_takes_damage() -> void:
 	world.p_hit_base = 1.0
 	world.hulldown_hit_factor = 1.0
 	world.moving_shooter_factor = 1.0
+	world.armor_enabled = false
+	world.p_hit_max = 1.0
 	# Duelo aislado: un azul y un rojo pegados (factor de distancia ~1)
 	for u: Unit in world.units:
 		u.alive = u.id == 0 or u.id == 4
@@ -90,3 +92,37 @@ func test_last_side_standing_wins() -> void:
 	world.step()
 	assert_true(world.game_over, "terminó la partida")
 	assert_eq(world.winner, 0, "ganó azul")
+
+
+## Mundo llano sin IA, con el azul 0 y el rojo 4 vivos frente a frente a 20 celdas.
+func _duel_world() -> SimWorld:
+	var world: SimWorld = SimWorld.new(3, HeightField.new(96), false)
+	for u: Unit in world.units:
+		u.alive = u.id == 0 or u.id == 4
+	world.units[0].pos = Vector2(48, 60)
+	world.units[4].pos = Vector2(48, 40)
+	return world
+
+
+func test_armor_front_flank_rear() -> void:
+	var world: SimWorld = _duel_world()
+	var shooter: Unit = world.units[0]
+	var target: Unit = world.units[4]
+	target.heading = Vector2(0.0, 1.0) # mira al tirador (sur)
+	var p_front: float = world.hit_probability(shooter, target)
+	target.heading = Vector2(1.0, 0.0)
+	var p_flank: float = world.hit_probability(shooter, target)
+	target.heading = Vector2(0.0, -1.0) # le da la espalda
+	var p_rear: float = world.hit_probability(shooter, target)
+	assert_lt(p_front, p_flank, "frente < flanco")
+	assert_lt(p_flank, p_rear, "flanco < retaguardia")
+	assert_eq(SimWorld.aspect_of(target, shooter.pos), SimWorld.Aspect.REAR, "cara trasera")
+
+
+func test_hulldown_faces_threat() -> void:
+	var world: SimWorld = _duel_world()
+	var blue: Unit = world.units[0]
+	world.known_enemies[0][4] = {"cell": Vector2i(48, 20), "last_seen_turn": world.turn}
+	world.invalidate_exposure()
+	world.order_hulldown([0])
+	assert_true(blue.final_heading.dot(Vector2(0.0, -1.0)) > 0.9, "va a mirar al norte, hacia la amenaza (%s)" % blue.final_heading)

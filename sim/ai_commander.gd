@@ -82,7 +82,8 @@ func _retreat(world: SimWorld, u: Unit) -> void:
 				best = c
 				best_e = e
 				best_d = d
-	world.order_move(u.id, best)
+	# Llega mirando a la amenaza: el frente blindado hacia el enemigo
+	world.order_move(u.id, best, SimWorld.facing_to_threats(best, world.threats_for(side)))
 
 
 ## Sin amenazas: la cresta más alta en la columna de la unidad hacia adelante y,

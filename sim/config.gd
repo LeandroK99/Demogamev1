@@ -22,6 +22,13 @@ const MOVING_SHOOTER_FACTOR: float = 0.4 # si el que dispara se mueve
 const EXPOSURE_WEIGHT_K: float = 8.0 # peso de la exposición en el costo del A*
 const HULLDOWN_RADIUS: int = 15 # celdas de búsqueda de candidatos
 const MAX_TURNS: int = 12 # al llegar, gana el bando con más tanques vivos
+const P_HIT_MAX: float = 0.95 # tope de la probabilidad de impacto
+
+# --- Blindaje por ángulo ---
+const ARMOR_FRONT_COS: float = 0.5 # coseno del semiángulo frontal (0,5 = ±60°); el trasero es el simétrico
+const ARMOR_FRONT_FACTOR: float = 0.6 # multiplicador de impacto si el tirador está al frente del blanco
+const ARMOR_FLANK_FACTOR: float = 1.0
+const ARMOR_REAR_FACTOR: float = 1.4
 
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex

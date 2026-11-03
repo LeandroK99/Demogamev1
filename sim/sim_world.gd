@@ -4,6 +4,7 @@ extends RefCounted
 ## Ciclo WeGo: PLAN (se aceptan órdenes) -> EXECUTE (ticks_per_turn ticks) -> PLAN ...
 
 enum Phase { PLAN, EXECUTE }
+enum Aspect { FRONT, FLANK, REAR }
 const NO_WINNER: int = -1
 const DRAW: int = 2
 
@@ -23,13 +24,15 @@ var game_over: bool = false
 var visible_enemies: Array[Dictionary] = [{}, {}] # id -> true, visibles ahora
 var known_enemies: Array[Dictionary] = [{}, {}] # id -> {cell, last_seen_turn}
 
-# Disparos ocurridos desde la última vez que la vista los leyó: {shooter, target, hit}
+# Disparos ocurridos desde la última vez que la vista los leyó: {shooter, target, hit, aspect}
 var shot_events: Array[Dictionary] = []
 
 # Factores de combate (se pueden cambiar en tests)
 var p_hit_base: float = Config.P_HIT_BASE
 var hulldown_hit_factor: float = Config.HULLDOWN_HIT_FACTOR
 var moving_shooter_factor: float = Config.MOVING_SHOOTER_FACTOR
+var armor_enabled: bool = true
+var p_hit_max: float = Config.P_HIT_MAX
 
 # Exposición por bando (índice = side); vacía = sin calcular
 var _exposure: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array()]
@@ -171,6 +174,7 @@ func order_attack(unit_id: int, enemy_id: int) -> bool:
 		u.path.clear()
 		u.moving = false
 		u.final_heading = Vector2.ZERO
+		_face(u, enemy.pos)
 	elif not order_move(unit_id, known_enemies[u.side][enemy_id]["cell"]):
 		return false
 	u.order = Unit.Order.ATTACK
@@ -192,6 +196,15 @@ func _update_attackers() -> void:
 		elif not u.path.is_empty() and _can_see(u, enemy, Config.CENTER_H):
 			u.path.clear()
 			u.moving = false
+			u.final_heading = Vector2.ZERO
+			_face(u, enemy.pos)
+
+
+## Gira el casco de u hacia un punto (en celdas).
+static func _face(u: Unit, at: Vector2) -> void:
+	var d: Vector2 = at - u.pos
+	if d.length() > 0.001:
+		u.heading = d.normalized()
 
 
 ## Orden HULLDOWN para un grupo: cada unidad va al mejor candidato contra las amenazas
@@ -215,9 +228,20 @@ func order_hulldown(unit_ids: Array[int], already_reserved: Array[Vector2i] = []
 				if pathfinder.is_walkable(cell) and is_free(cell, reserved):
 					target = cell
 					break
-		if order_move(u.id, target):
+		if order_move(u.id, target, facing_to_threats(target, threats)):
 			reserved.append(target)
 			u.order = Unit.Order.HULLDOWN
+
+
+## Dirección desde cell hacia el centroide de las amenazas (cero si no hay).
+static func facing_to_threats(cell: Vector2i, threats: Array[Vector2i]) -> Vector2:
+	if threats.is_empty():
+		return Vector2.ZERO
+	var sum: Vector2 = Vector2.ZERO
+	for th: Vector2i in threats:
+		sum += Vector2(th)
+	var d: Vector2 = sum / float(threats.size()) - Vector2(cell)
+	return d.normalized() if d.length() > 0.001 else Vector2.ZERO
 
 
 ## ¿Está la celda a >= HULLDOWN_MIN_SEPARATION de todas las reservadas?
@@ -282,7 +306,7 @@ func _combat() -> void:
 				target.alive = false
 				target.moving = false
 				target.path.clear()
-		shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit})
+		shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit, "aspect": aspect_of(target, shooter.pos)})
 
 
 ## Enemigo visible para el bando del tirador, más cercano, al que el tirador ve.
@@ -306,7 +330,30 @@ func _pick_target(shooter: Unit) -> Unit:
 	return best
 
 
-## p = P_HIT_BASE x distancia x casco x movimiento.
+## Qué cara le muestra target a un tirador en from: frente, flanco o retaguardia,
+## según el ángulo entre el heading del blanco y la dirección al tirador.
+static func aspect_of(target: Unit, from: Vector2) -> int:
+	var to_shooter: Vector2 = from - target.pos
+	if to_shooter.length_squared() < 0.0001:
+		return Aspect.FRONT
+	var c: float = target.heading.normalized().dot(to_shooter.normalized())
+	if c >= Config.ARMOR_FRONT_COS:
+		return Aspect.FRONT
+	if c <= -Config.ARMOR_FRONT_COS:
+		return Aspect.REAR
+	return Aspect.FLANK
+
+
+static func aspect_factor(aspect: int) -> float:
+	match aspect:
+		Aspect.FRONT:
+			return Config.ARMOR_FRONT_FACTOR
+		Aspect.REAR:
+			return Config.ARMOR_REAR_FACTOR
+	return Config.ARMOR_FLANK_FACTOR
+
+
+## p = P_HIT_BASE x distancia x casco x movimiento x blindaje (tope P_HIT_MAX).
 func hit_probability(shooter: Unit, target: Unit) -> float:
 	var d: float = TerrainAnalysis.dist_m(shooter.cell(), target.cell())
 	var f_dist: float = clampf(1.0 - d / Config.MAX_RANGE, 0.2, 1.0)
@@ -314,7 +361,8 @@ func hit_probability(shooter: Unit, target: Unit) -> float:
 	if not analysis.los(shooter.cell(), Config.EYE_H, target.cell(), Config.HULL_H):
 		f_hull = hulldown_hit_factor
 	var f_move: float = moving_shooter_factor if shooter.moving else 1.0
-	return p_hit_base * f_dist * f_hull * f_move
+	var f_armor: float = aspect_factor(aspect_of(target, shooter.pos)) if armor_enabled else 1.0
+	return minf(p_hit_base * f_dist * f_hull * f_move * f_armor, p_hit_max)
 
 
 func alive_count(side: int) -> int:
