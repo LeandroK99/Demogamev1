@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · N: formación · Y: autonomía · P: evacuar heridos · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma)"
+	+ "H: hull-down · V: vigilar hacia el cursor · M: misión del pelotón al cursor (Shift+M: cancelar) · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · N: formación · Y: autonomía · P: evacuar heridos · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma)"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -247,6 +247,14 @@ func _unit_text() -> String:
 				if sel.mind.technique == SquadMind.Technique.BOUNDING:
 					tech += " alternados" if sel.mind.bound_alternate else " sucesivos"
 				lines.append("Avance: %s" % tech)
+			var pl: PlatoonLeader = world.missions[sel.side]
+			if pl != null:
+				var role: String = ""
+				if sel.id == pl.base_id:
+					role = ", base de fuego"
+				elif pl.maneuver.has(sel.id):
+					role = ", maniobra"
+				lines.append("Misión del pelotón: %s%s" % [PlatoonLeader.STAGE_NAMES[pl.stage], role])
 			var state: String = ""
 			if sel.broken:
 				state = " · QUEBRADA"

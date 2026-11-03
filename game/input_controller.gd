@@ -155,6 +155,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_V:
 		_order_overwatch_at(get_viewport().get_mouse_position())
 		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_M:
+		_mission_at(get_viewport().get_mouse_position(), key.shift_pressed)
+		return
 	var mm: InputEventMouseMotion = event as InputEventMouseMotion
 	if mm != null and _rdragging:
 		_update_facing(mm.position)
@@ -320,6 +323,20 @@ func _order_overwatch_at(screen: Vector2) -> void:
 	for id: int in selected_ids:
 		var u: Unit = world.get_unit(id)
 		world.order_overwatch(id, at - u.pos)
+
+
+## M: misión al pelotón de infantería propio, tomar el punto del cursor (maniobra solo).
+## Shift+M: cancelar la misión.
+func _mission_at(screen: Vector2, cancel: bool) -> void:
+	if cancel:
+		world.cancel_mission(PLAYER_SIDE)
+		return
+	if world.phase != SimWorld.Phase.PLAN:
+		return
+	var hit: Variant = terrain_view.raycast(camera.project_ray_origin(screen), camera.project_ray_normal(screen))
+	if hit == null:
+		return
+	world.order_mission(PLAYER_SIDE, Vector2i((Vector2((hit as Vector3).x, (hit as Vector3).z) / Config.CELL_SIZE).round()))
 
 
 ## Z: siguiente ROE (libre -> solo si te disparan -> retener) para las seleccionadas,

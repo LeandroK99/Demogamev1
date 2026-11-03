@@ -476,3 +476,14 @@ const DANGER_FIRED_SECONDS: float = 10.0 # bajo fuego no: ahí avanza por saltos
 # --- Pozos de tirador y consolidar (fase 57) ---
 const DIG_SECONDS: float = 45.0 # quieto en su lugar este tiempo (un turno), el soldado cava un pozo
 const DIG_MAX_SUPP: float = 50.0 # suprimido no cava
+
+# --- Pelotón como un cuerpo y misión (fase 58) ---
+const PLT_CONTACT_M: float = 300.0 # un contacto así de cerca de una escuadra del pelotón: la traba como base
+const PLT_FIRED_SECONDS: float = 10.0 # ... o que le hayan tirado hace menos que esto
+const PLT_FOLLOW_CELLS: int = 10 # las otras escuadras van esto detrás de la de punta
+const PLT_SHIFT_M: float = 60.0 # el asalto a esto del enemigo: el apoyo levanta el fuego
+const PLT_SHIFT_BEYOND_M: float = 50.0 # ... y lo corre más allá del objetivo
+const PLT_FLANK_ARRIVE_CELLS: int = 3 # la maniobra llegó a su puesto de flanco
+const PLT_FIX_MAX_SECONDS: float = 90.0 # flanqueando más que esto: asaltan desde donde estén
+const PLT_ASSAULT_MAX_SECONDS: float = 135.0 # asaltando más que esto: todos al objetivo
+

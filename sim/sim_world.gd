@@ -17,6 +17,8 @@ var pathfinder: Pathfinder # el de los tanques (pathfinders[Unit.Kind.TANK])
 var pathfinders: Array[Pathfinder] = [] # uno por tipo de unidad (índice = Unit.Kind)
 var units: Array[Unit] = []
 var platoons: Array[Platoon] = [] # uno por bando (índice = side)
+## Misión de pelotón por bando (fase 58): null si el pelotón de infantería no tiene misión.
+var missions: Array[PlatoonLeader] = [null, null]
 var _bound_count: int = 0 # para nombrar las señales de los avances por saltos
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 ## Azar de la autonomía (error de los contactos, demoras de radio, ruido de las decisiones). Aparte
@@ -219,6 +221,9 @@ func start_plan() -> void:
 	invalidate_exposure()
 	if ai != null and not game_over:
 		ai.issue_orders(self)
+	for pl: PlatoonLeader in missions:
+		if pl != null and not game_over:
+			pl.issue(self)
 	_rout_broken()
 
 
@@ -639,6 +644,23 @@ func _move_to_cells(cells: Dictionary, target: Vector2i, facing: Vector2, covere
 		if order_move(uid, cells[uid], facing, covered, append) or order_move(uid, target, facing, covered, append):
 			ok += 1
 	return ok
+
+
+## Misión al pelotón de infantería del bando (fase 58): tomar target. El pelotón maniobra solo
+## (ver PlatoonLeader). Solo en PLAN.
+func order_mission(side: int, target: Vector2i) -> bool:
+	if phase != Phase.PLAN or not height_field.in_bounds(target):
+		return false
+	var pl: PlatoonLeader = PlatoonLeader.new(side, target)
+	if pl.squads(self).is_empty():
+		return false
+	missions[side] = pl
+	pl.issue(self)
+	return true
+
+
+func cancel_mission(side: int) -> void:
+	missions[side] = null
 
 
 ## Orden al pelotón: se reparte entre las secciones (ver platoon_cells).
@@ -1088,6 +1110,10 @@ func step() -> void:
 	_update_attackers()
 	if ai != null and phase == Phase.EXECUTE and total_ticks % Config.AI_MONITOR_TICKS == 0:
 		ai.monitor(self)
+	if phase == Phase.EXECUTE and total_ticks % Config.AI_MONITOR_TICKS == 0:
+		for pl: PlatoonLeader in missions:
+			if pl != null:
+				pl.monitor(self)
 	minds.update(self)
 	for u: Unit in units:
 		if not u.alive or u.path.is_empty():

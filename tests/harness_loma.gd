@@ -1,7 +1,8 @@
 extends SceneTree
 ## Banco IA contra IA en La loma (no es un test): el azul avanza hacia la cresta con autonomía alta
 ## y el rojo defiende con su comandante. Imprime ganador, bajas y decisiones por semilla y el total.
-## godot --headless --path . --script res://tests/harness_loma.gd -- [semillas] [turnos] [mixta]
+## godot --headless --path . --script res://tests/harness_loma.gd -- [semillas] [turnos] [mixta|peloton]
+## peloton: el azul recibe una sola misión (tomar la cresta) y su jefe de pelotón maniobra solo.
 ## mixta: las tres escuadras azules con autonomía estricta, normal y alta (para compararlas); imprime
 ## en qué turno llegó cada una a la cresta.
 func _initialize() -> void:
@@ -9,6 +10,7 @@ func _initialize() -> void:
 	var seeds: int = int(args[0]) if args.size() > 0 else 20
 	var max_turns: int = int(args[1]) if args.size() > 1 else Config.MAX_TURNS
 	var mixed: bool = args.size() > 2 and args[2] == "mixta"
+	var platoon: bool = args.size() > 2 and args[2] == "peloton"
 	var reached_sum: Array[int] = [0, 0, 0]
 	var wins: Array[int] = [0, 0, 0] # azul, rojo, empate
 	var decisions: Dictionary = {}
@@ -22,11 +24,20 @@ func _initialize() -> void:
 				blues.append(u)
 		var reached: Array[int] = [0, 0, 0]
 		var obj: Vector2 = Vector2(w.objective_cell())
+		if platoon:
+			w.order_mission(0, w.objective_cell())
 		while not w.game_over and w.turn <= max_turns:
-			_blue_orders(w)
+			if not platoon:
+				_blue_orders(w)
 			w.begin_execute()
 			while w.phase == SimWorld.Phase.EXECUTE and not w.game_over:
 				w.step()
+			if platoon and w.missions[0] != null:
+				var pl: PlatoonLeader = w.missions[0]
+				var at: Array[String] = []
+				for u: Unit in pl.squads(w):
+					at.append("%d:%.0f%s" % [u.id, u.pos.distance_to(obj), "" if u.path.is_empty() else "→"])
+				print("  turno %d: %s  %s" % [w.turn, PlatoonLeader.STAGE_NAMES[pl.stage], " ".join(at)])
 			for b: int in blues.size():
 				if reached[b] == 0 and blues[b].alive and blues[b].pos.distance_to(obj) <= Config.LOMA_OBJECTIVE_RADIUS:
 					reached[b] = w.turn
