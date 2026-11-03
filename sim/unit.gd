@@ -64,6 +64,7 @@ var formation: int = Formation.WEDGE # la que eligió el jugador
 var shape: int = Formation.WEDGE
 var spread: float = 1.0
 var echelon_side: float = 1.0 # 1 = escalón a la derecha, -1 a la izquierda
+var trail_m: float = 0.0 # desplazamiento con vigilancia: metros extra que el equipo A va detrás
 ## Infantería: la cabeza de la escuadra (autonomía, ver MindSim). null en los tanques.
 var mind: SquadMind = null
 var jitter_at: Vector2 = Vector2(-1.0e9, -1.0e9) # dónde estaba el ancla la última vez que se reacomodaron
@@ -108,6 +109,8 @@ func pos_m() -> Vector2:
 ## Lugar del soldado i en la formación, en metros (según el ancla y el rumbo).
 func slot_pos_m(i: int) -> Vector2:
 	var base: Vector2 = formation_offset(i, shape, echelon_side) * spread
+	if trail_m > 0.0 and i < soldiers.size() and soldiers[i].team == 0:
+		base.y += trail_m
 	var off: Vector2 = base + soldiers[i].jitter if i < soldiers.size() else base
 	var right: Vector2 = Vector2(-heading.y, heading.x)
 	return pos_m() + right * off.x - heading * off.y

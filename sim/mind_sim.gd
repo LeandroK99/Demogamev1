@@ -297,8 +297,9 @@ func _start_rescue(w: SimWorld, u: Unit) -> void:
 
 ## --- Equipos de fuego: avanzar por saltos ---
 ## En marcha con un contacto cerca: el equipo A queda como base de fuego (quieto, tirando o batiendo
-## el contacto) mientras el B avanza BOUND_M con el ancla; después el ancla frena, B se cubre y A
-## sube a su lugar; y otra vez.
+## el contacto) mientras el B avanza BOUND_M con el ancla. Bajo fuego, saltos sucesivos: el ancla
+## frena, B se cubre y A sube a su lugar. Sin fuego encima, alternados (más rápidos): el que estaba
+## quieto salta y pasa adelante, y el otro queda de base.
 
 func _score_bound(w: SimWorld, u: Unit, s: Dictionary) -> void:
 	var m: SquadMind = u.mind
@@ -320,8 +321,10 @@ func _start_bound(w: SimWorld, u: Unit) -> void:
 		if throw_smoke_toward(w, u, w.inf.threat_point(w, u)):
 			w.radio(u, "humo, cruzamos")
 	var target: Vector2 = _nearest_contact_pos(u)
+	var mover: int = int(m.data.get("mover", 1))
+	m.data["mover"] = mover
 	for s: Soldier in u.soldiers:
-		s.hold_pos = s.team == 0 and s.is_ok()
+		s.hold_pos = s.team != mover and s.is_ok()
 		s.suppress_m = target if s.hold_pos else Vector2(-1.0, -1.0)
 
 
@@ -339,13 +342,22 @@ func _act_bound(w: SimWorld, u: Unit) -> void:
 		return
 	if str(m.data["phase"]) == "B":
 		if u.pos_m().distance_to(m.data["start"]) >= Config.BOUND_M or u.path.is_empty():
-			m.data["phase"] = "A" # B llegó: frena, se cubre y sube A
+			var mover: int = int(m.data.get("mover", 1))
+			m.bound_alternate = not rush and not u.path.is_empty()
+			if m.bound_alternate:
+				if w.inf.lagging(u):
+					return # el que salta todavía no llegó a su lugar
+				m.data["mover"] = 1 - mover # saltos alternados: ahora salta el otro y pasa adelante
+				_start_bound(w, u)
+				return
+			m.data["phase"] = "A" # saltos sucesivos: el que saltó frena, se cubre y el otro lo alcanza
+			m.data["mover"] = 1
 			m.hold = true
 			for s: Soldier in u.soldiers:
 				s.hold_pos = false
-				s.suppress_m = _nearest_contact_pos(u) if s.team == 1 else Vector2(-1.0, -1.0)
+				s.suppress_m = _nearest_contact_pos(u) if s.team == mover else Vector2(-1.0, -1.0)
 	elif not w.inf.lagging(u):
-		_start_bound(w, u) # A ya subió: otro salto
+		_start_bound(w, u) # ya lo alcanzó: otro salto
 
 
 func _release_teams(u: Unit) -> void:

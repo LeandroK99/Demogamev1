@@ -427,3 +427,8 @@ const FORM_LINE_ASSAULT_M: float = 60.0 # al asaltar, a esta distancia del objet
 const FORM_ECHELON_RANGE_M: float = 300.0 # contacto conocido a esta distancia y de costado: escalón
 const FORM_ECHELON_MIN_DEG: float = 40.0 # ... a más de esto del rumbo (y a menos de 140°)
 const FORM_SPREAD_STEP: float = 0.1 # cuánto se abre o se cierra por revisión (de a poco, para que nadie quede atrás)
+
+# --- Técnicas de movimiento (fase 51) ---
+const OVERWATCH_CONTACT_M: float = 600.0 # con un contacto conocido a esta distancia, desplazamiento con vigilancia
+const OVERWATCH_TRAIL_M: float = 20.0 # el equipo A (con la ametralladora) va esto más atrás
+const OVERWATCH_TRAIL_STEP: float = 2.0 # metros por revisión (de a poco)

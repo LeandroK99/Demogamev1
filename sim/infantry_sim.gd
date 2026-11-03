@@ -750,8 +750,29 @@ func update_formations(w: SimWorld) -> void:
 	if w.total_ticks % roundi(Config.FORM_UPDATE_SECONDS / Config.TICK) != 0:
 		return
 	for u: Unit in w.units:
-		if u.alive and u.is_infantry() and u.moving and (u.mind == null or u.mind.is_following()):
+		if not u.alive or not u.is_infantry():
+			continue
+		if u.mind != null:
+			choose_technique(u)
+		if u.moving and (u.mind == null or u.mind.is_following()):
 			adapt_formation(w, u) # una maniobra propia (reubicarse, flanquear) no se reacomoda en el camino
+
+
+## Técnica de movimiento según qué tan probable es el contacto: por saltos si la cabeza eligió saltar,
+## con vigilancia (el equipo A detrás) con un contacto conocido a OVERWATCH_CONTACT_M, simple si no.
+static func choose_technique(u: Unit) -> void:
+	var m: SquadMind = u.mind
+	if m.option == SquadMind.Option.BOUND:
+		m.technique = SquadMind.Technique.BOUNDING
+	else:
+		var near: bool = false
+		for id: int in m.contacts:
+			if Vector2(m.contacts[id]["pos"]).distance_to(u.pos_m()) <= Config.OVERWATCH_CONTACT_M:
+				near = true
+				break
+		m.technique = SquadMind.Technique.OVERWATCH if near and m.is_following() else SquadMind.Technique.TRAVEL
+	var trail: float = Config.OVERWATCH_TRAIL_M if m.technique == SquadMind.Technique.OVERWATCH and u.moving else 0.0
+	u.trail_m = move_toward(u.trail_m, trail, Config.OVERWATCH_TRAIL_STEP)
 
 
 ## Fila india en el bosque; cuña cerrada cerca del bosque o en terreno quebrado; abierta en terreno

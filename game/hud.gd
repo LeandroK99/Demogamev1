@@ -241,6 +241,11 @@ func _unit_text() -> String:
 			if sel.shape != sel.formation:
 				adapted = " (ahora %s)" % FORMATION_NAMES.get(sel.shape, "?")
 			lines.append("Formación: %s%s%s" % [FORMATION_NAMES.get(sel.formation, "?"), adapted, ", abierta" if sel.spread > 1.0 else ""])
+			if sel.mind != null:
+				var tech: String = SquadMind.TECHNIQUE_NAMES[sel.mind.technique]
+				if sel.mind.technique == SquadMind.Technique.BOUNDING:
+					tech += " alternados" if sel.mind.bound_alternate else " sucesivos"
+				lines.append("Avance: %s" % tech)
 			var state: String = ""
 			if sel.broken:
 				state = " · QUEBRADA"
