@@ -152,6 +152,19 @@ const SOLDIER_TELEPORT_M: float = 40.0 # más lejos que esto de su lugar, el sol
 const SOLDIER_ARRIVE_M: float = 0.3 # a esta distancia de su lugar ya llegó
 const SOLDIER_WOUND_P: float = 0.5 # un impacto hiere (si no, mata); herido otra vez, muere
 
+# --- Cobertura de cada soldado ---
+const SOLDIER_COVER_SEARCH_M: float = 6.0 # radio alrededor de su lugar en la formación
+const SOLDIER_COVER_PROBE_M: float = 2.5 # busca el obstáculo que lo protege hasta esta distancia hacia la amenaza
+const SOLDIER_COVER_SPACING: float = 2.0 # metros mínimos entre puntos de cobertura de la misma escuadra
+const SOLDIER_COVER_W_PROTECT: float = 3.0 # puntaje: protegido del fuego
+const SOLDIER_COVER_W_FIRE: float = 2.0 # puntaje: puede tirar hacia la amenaza
+const SOLDIER_COVER_W_FIRE_MG: float = 4.0 # la ametralladora prioriza poder tirar
+const SOLDIER_COVER_W_CONCEAL: float = 1.0 # puntaje: oculto por un arbusto
+const SOLDIER_COVER_W_DIST: float = 1.5 # castigo por alejarse de su lugar (a SOLDIER_COVER_SEARCH_M)
+const SOLDIER_COVER_LOS_CHECKS: int = 6 # líneas de visión largas por soldado al elegir (las mejores candidatas)
+const SOLDIER_COVER_REEVAL_DEG: float = 30.0 # si la amenaza se corre más que esto, se vuelve a buscar
+const SOLDIER_NO_THREAT_M: float = 200.0 # sin amenazas conocidas, cubre hacia adelante a esta distancia
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3

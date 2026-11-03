@@ -67,7 +67,7 @@ func test_squad_moves_in_formation() -> void:
 		worst = maxf(worst, _max_slot_error(sq))
 	assert_eq(sq.cell(), Vector2i(40, 60), "llegó")
 	assert_lt(worst, Config.SOLDIER_LAG_M + 1.0, "nadie se separa de la formación")
-	assert_lt(_max_slot_error(sq), Config.SOLDIER_ARRIVE_M + 0.01, "todos en su lugar al llegar")
+	assert_lt(_max_slot_error(sq), MicroCover.MICRO_M, "todos en su lugar al llegar (en la micro-celda más cercana)")
 
 
 func test_file_formation_follows_path() -> void:

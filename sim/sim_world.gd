@@ -916,9 +916,11 @@ func step() -> void:
 			u.moving = true # el ancla espera a los rezagados
 			continue
 		_advance(u, Config.TICK)
+	inf.update_cover(self)
 	inf.move_soldiers(self)
 	_update_suppression()
 	_update_posture()
+	inf.update_postures(self)
 	tick_in_turn += 1
 	total_ticks += 1
 	if tick_in_turn % Config.DETECTION_INTERVAL_TICKS == 0:
