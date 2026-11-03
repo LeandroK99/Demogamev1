@@ -43,6 +43,21 @@ const INF_SPOT_MOVING: float = 250.0 # metros: alcance para detectar a una escua
 const INF_SPOT_STILL: float = 120.0 # ... quieta de pie
 const INF_SPOT_PRONE: float = 60.0 # ... cuerpo a tierra
 
+# --- Armas cruzadas (el cañón usa MAX_RANGE, RELOAD_SECONDS y P_HIT_BASE) ---
+const COAX_RANGE: float = 300.0 # metros
+const COAX_RELOAD: float = 2.0 # segundos entre ráfagas
+const COAX_P_HIT: float = 0.3
+const RIFLES_RANGE: float = 300.0
+const RIFLES_RELOAD: float = 2.5
+const RIFLES_P_HIT: float = 0.3
+const AT_RANGE: float = 150.0
+const AT_RELOAD: float = 10.0
+const AT_P_HIT: float = 0.5
+const INF_AT_CHARGES: int = 2
+const INF_PRONE_HIT_FACTOR: float = 0.5 # contra una escuadra cuerpo a tierra
+const INF_WEAK_MEN: int = 3 # con estos hombres o menos, la escuadra tira peor
+const INF_WEAK_FACTOR: float = 0.5
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3

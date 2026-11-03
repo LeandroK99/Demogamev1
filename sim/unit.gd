@@ -3,6 +3,9 @@ extends RefCounted
 ## Una unidad de la simulación: un tanque o una escuadra de infantería (ver kind).
 
 enum Kind { TANK, INFANTRY }
+## Armas: el tanque lleva cañón (contra tanques) y coaxial (contra infantería); la escuadra,
+## fusiles y ametralladora (contra infantería) y un antitanque con pocas cargas.
+enum Weapon { CANNON, COAX, RIFLES, AT }
 
 enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW }
 ## Reglas de fuego: libre, solo si te dispararon hace poco, o retener.
@@ -16,7 +19,9 @@ var side: int = 0 # 0 azul, 1 rojo
 var pos: Vector2 = Vector2.ZERO # en celdas, continua
 var heading: Vector2 = Vector2(0.0, -1.0) # dirección de marcha en la grilla
 var hp: int = Config.TANK_HP
-var reload_left: float = 0.0
+var reload_left: float = 0.0 # arma principal (cañón o fusiles)
+var reload2_left: float = 0.0 # arma secundaria (coaxial o antitanque)
+var at_charges: int = Config.INF_AT_CHARGES # cargas del antitanque (solo infantería)
 var path: Array[Vector2i] = []
 var final_heading: Vector2 = Vector2.ZERO # orientación al llegar (cero = la de la marcha)
 var direct_route: bool = false # el primer tramo de la ruta es directo (ignora la exposición)
@@ -82,3 +87,10 @@ func profile_h() -> float:
 ## Altura a la que se apunta (y que hay que ver para detectarla).
 func center_h() -> float:
 	return profile_h() * Config.INF_CENTER_FRACTION if is_infantry() else Config.CENTER_H
+
+
+## Arma del slot 0 (principal) o 1 (secundaria).
+func weapon(slot: int) -> int:
+	if is_infantry():
+		return Weapon.RIFLES if slot == 0 else Weapon.AT
+	return Weapon.CANNON if slot == 0 else Weapon.COAX

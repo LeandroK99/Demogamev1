@@ -181,7 +181,10 @@ func _unit_text() -> String:
 				aspect = ", muestra %s" % ASPECT_NAMES[int(risk["worst_aspect"])]
 			lines.append("Impactos esperados: %.1f%s" % [float(risk["expected_hits"]), aspect])
 			lines.append("RIESGO %s" % RISK_NAMES[int(risk["level"])])
-		lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
+		if sel.is_infantry():
+			lines.append("Antitanque: %d / %d" % [sel.at_charges, Config.INF_AT_CHARGES])
+		else:
+			lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
 		lines.append("")
 	lines.append("Disparos recibidos")
 	for u: Unit in world.units:

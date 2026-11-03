@@ -804,62 +804,109 @@ func _update_posture() -> void:
 
 func _combat() -> void:
 	for shooter: Unit in units:
-		if not shooter.alive:
-			continue
+		for slot: int in 2:
+			if shooter.alive:
+				_fire_slot(shooter, slot)
+
+
+## Un arma de un tirador: recarga y, si está lista y hay blanco, dispara.
+func _fire_slot(shooter: Unit, slot: int) -> void:
+	var w: int = shooter.weapon(slot)
+	if slot == 0:
 		shooter.reload_left = maxf(0.0, shooter.reload_left - Config.TICK)
 		if shooter.reload_left > 0.0:
-			continue
-		var target: Unit = _pick_target(shooter)
-		if target == null:
-			continue
-		shooter.reload_left = Config.RELOAD_SECONDS
-		shooter.last_fire_tick = total_ticks
-		# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
-		known_enemies[target.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
-		target.shots_received += 1
-		target.last_fired_upon_tick = total_ticks
-		var hit: bool = rng.randf() < hit_probability(shooter, target)
-		if hit:
-			target.hp -= 1
-			if target.hp <= 0:
-				target.alive = false
-				target.moving = false
-				target.path.clear()
-		shooter.overwatch_ready = false
-		if shooter.order == Unit.Order.SCOOT and not shooter.scoot_fired:
-			_start_scoot_return(shooter, target)
-		shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit, "aspect": aspect_of(target, shooter.pos)})
+			return
+	else:
+		shooter.reload2_left = maxf(0.0, shooter.reload2_left - Config.TICK)
+		if shooter.reload2_left > 0.0 or (w == Unit.Weapon.AT and shooter.at_charges <= 0):
+			return
+	var target: Unit = _pick_target(shooter, w)
+	if target == null:
+		return
+	if slot == 0:
+		shooter.reload_left = weapon_reload(w)
+	else:
+		shooter.reload2_left = weapon_reload(w)
+	if w == Unit.Weapon.AT:
+		shooter.at_charges -= 1
+	shooter.last_fire_tick = total_ticks
+	# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
+	known_enemies[target.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
+	target.shots_received += 1
+	target.last_fired_upon_tick = total_ticks
+	var hit: bool = rng.randf() < hit_probability(shooter, target, w)
+	if hit:
+		target.hp -= 1
+		if target.hp <= 0:
+			target.alive = false
+			target.moving = false
+			target.path.clear()
+	shooter.overwatch_ready = false
+	if shooter.order == Unit.Order.SCOOT and not shooter.scoot_fired:
+		_start_scoot_return(shooter, target)
+	shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit,
+		"aspect": aspect_of(target, shooter.pos), "weapon": w})
+
+
+## ¿Contra qué tipo de unidad sirve el arma?
+static func weapon_target_kind(w: int) -> int:
+	return Unit.Kind.INFANTRY if w == Unit.Weapon.COAX or w == Unit.Weapon.RIFLES else Unit.Kind.TANK
+
+
+static func weapon_range(w: int) -> float:
+	match w:
+		Unit.Weapon.COAX:
+			return Config.COAX_RANGE
+		Unit.Weapon.RIFLES:
+			return Config.RIFLES_RANGE
+		Unit.Weapon.AT:
+			return Config.AT_RANGE
+	return Config.MAX_RANGE
+
+
+static func weapon_reload(w: int) -> float:
+	match w:
+		Unit.Weapon.COAX:
+			return Config.COAX_RELOAD
+		Unit.Weapon.RIFLES:
+			return Config.RIFLES_RELOAD
+		Unit.Weapon.AT:
+			return Config.AT_RELOAD
+	return Config.RELOAD_SECONDS
 
 
 ## Enemigo visible para el bando del tirador, más cercano, al que el tirador ve
 ## y que su ROE permite (arco y distancia máxima de enganche incluidos).
-func _pick_target(shooter: Unit) -> Unit:
-	if not roe_allows_fire(shooter) or shooter.is_infantry():
+## weapon: solo blancos del tipo que el arma puede dañar y dentro de su alcance.
+func _pick_target(shooter: Unit, weapon: int = Unit.Weapon.CANNON) -> Unit:
+	if not roe_allows_fire(shooter):
 		return null
+	var kind: int = weapon_target_kind(weapon)
+	var reach: float = weapon_range(weapon)
 	var vis: Dictionary = visible_enemies[shooter.side]
 	# Blanco prioritario de la orden ATTACK, si se lo puede tirar
 	if shooter.attack_target >= 0 and vis.has(shooter.attack_target):
 		var prio: Unit = units[shooter.attack_target]
-		if prio.alive and _can_engage(shooter, prio):
+		if prio.alive and prio.kind == kind and _can_engage(shooter, prio, reach):
 			return prio
 	var best: Unit = null
 	var best_d: float = INF
 	for id: int in vis:
 		var enemy: Unit = units[id]
-		if not enemy.alive or enemy.is_infantry():
+		if not enemy.alive or enemy.kind != kind:
 			continue
 		var d: float = TerrainAnalysis.dist_m(shooter.cell(), enemy.cell())
 		if shooter.order == Unit.Order.OVERWATCH and not in_overwatch_sector(shooter, enemy.pos):
 			continue
-		if d < best_d and _can_engage(shooter, enemy):
+		if d < best_d and _can_engage(shooter, enemy, reach):
 			best = enemy
 			best_d = d
 	return best
 
 
 ## Línea de tiro y dentro del arco y la distancia máxima de enganche del tirador.
-func _can_engage(shooter: Unit, enemy: Unit) -> bool:
-	return TerrainAnalysis.dist_m(shooter.cell(), enemy.cell()) <= shooter.max_engage_m \
+func _can_engage(shooter: Unit, enemy: Unit, reach: float = Config.MAX_RANGE) -> bool:
+	return TerrainAnalysis.dist_m(shooter.cell(), enemy.cell()) <= minf(shooter.max_engage_m, reach) \
 		and in_fire_arc(shooter, enemy.pos) and _can_see(shooter, enemy, enemy.center_h())
 
 
@@ -935,13 +982,13 @@ static func aspect_factor(aspect: int) -> float:
 	return Config.ARMOR_FLANK_FACTOR
 
 
-## p = P_HIT_BASE x distancia x casco x movimiento (x emboscada) x blindaje (tope P_HIT_MAX).
-func hit_probability(shooter: Unit, target: Unit) -> float:
+## Cañón: p = P_HIT_BASE x distancia x casco x movimiento (x emboscada) x blindaje (tope P_HIT_MAX).
+## Otras armas: p del arma x distancia (sobre su alcance) x movimiento x postura del blanco
+## x escuadra diezmada; el antitanque además x casco x blindaje.
+func hit_probability(shooter: Unit, target: Unit, weapon: int = Unit.Weapon.CANNON) -> float:
 	var d: float = TerrainAnalysis.dist_m(shooter.cell(), target.cell())
-	var f_dist: float = clampf(1.0 - d / Config.MAX_RANGE, 0.2, 1.0)
-	var f_hull: float = 1.0
-	if not analysis.los(shooter.cell(), shooter.eye_h(), target.cell(), target.profile_h()):
-		f_hull = hulldown_hit_factor
+	var reach: float = weapon_range(weapon)
+	var f_dist: float = clampf(1.0 - d / reach, 0.2, 1.0)
 	var f_move: float = 1.0
 	if shooter.moving:
 		match effective_pace(shooter):
@@ -951,10 +998,24 @@ func hit_probability(shooter: Unit, target: Unit) -> float:
 				f_move = Config.PACE_CAUTIOUS_FIRE_FACTOR
 			_:
 				f_move = moving_shooter_factor
+	if weapon == Unit.Weapon.COAX or weapon == Unit.Weapon.RIFLES:
+		var p: float = Config.COAX_P_HIT if weapon == Unit.Weapon.COAX else Config.RIFLES_P_HIT
+		var f_posture: float = Config.INF_PRONE_HIT_FACTOR if target.prone else 1.0
+		return minf(p * f_dist * f_move * f_posture * _weak_factor(shooter), p_hit_max)
+	var f_hull: float = 1.0
+	if not analysis.los(shooter.cell(), shooter.eye_h(), target.cell(), target.profile_h()):
+		f_hull = hulldown_hit_factor
+	var f_armor: float = aspect_factor(aspect_of(target, shooter.pos)) if armor_enabled and not target.is_infantry() else 1.0
+	if weapon == Unit.Weapon.AT:
+		return minf(Config.AT_P_HIT * f_dist * f_move * f_hull * f_armor * _weak_factor(shooter), p_hit_max)
 	if shooter.order == Unit.Order.OVERWATCH and shooter.overwatch_ready and target.moving:
 		f_move *= Config.OVERWATCH_FIRST_SHOT_FACTOR # emboscada
-	var f_armor: float = aspect_factor(aspect_of(target, shooter.pos)) if armor_enabled and not target.is_infantry() else 1.0
 	return minf(p_hit_base * f_dist * f_hull * f_move * f_armor, p_hit_max)
+
+
+## Escuadra diezmada: tira peor.
+static func _weak_factor(shooter: Unit) -> float:
+	return Config.INF_WEAK_FACTOR if shooter.is_infantry() and shooter.hp <= Config.INF_WEAK_MEN else 1.0
 
 
 ## Probabilidad de que un tirador quieto en shooter_cell impacte a un blanco en target_cell

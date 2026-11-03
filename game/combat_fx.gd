@@ -25,8 +25,14 @@ func _point(u: Unit, h: float) -> Vector3:
 	return Vector3(u.pos.x * Config.CELL_SIZE, height_field.height_at(u.pos) + h, u.pos.y * Config.CELL_SIZE)
 
 
-func add_shot(shooter: Unit, target: Unit, hit: bool, aspect: int = SimWorld.Aspect.FRONT) -> void:
+func add_shot(shooter: Unit, target: Unit, hit: bool, aspect: int = SimWorld.Aspect.FRONT, weapon: int = Unit.Weapon.CANNON) -> void:
 	var to: Vector3 = _point(target, target.center_h())
+	if weapon == Unit.Weapon.COAX or weapon == Unit.Weapon.RIFLES:
+		# Armas livianas: varias trazadoras cortas alrededor del blanco, sin fogonazo de impacto
+		for i: int in 3:
+			var spread: Vector3 = Vector3(randf_range(-3.0, 3.0), randf_range(0.0, 1.5), randf_range(-3.0, 3.0))
+			_tracers.append({"from": _point(shooter, shooter.eye_h()), "to": to + spread, "left": TRACER_SECONDS * 0.5})
+		return
 	if not hit:
 		# Errado: la trazadora pasa un poco por al lado
 		to += Vector3(randf_range(-4.0, 4.0), randf_range(0.5, 3.0), randf_range(-4.0, 4.0))
