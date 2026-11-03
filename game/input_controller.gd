@@ -3,6 +3,7 @@ extends Node
 ## Selección (clic o recuadro con el izquierdo) y órdenes con el derecho:
 ## clic = mover; mantener y arrastrar = mover y elegir la orientación final; sobre un rojo = atacar.
 ## Con Ctrl, la ruta es directa (la más corta) en vez de la más cubierta.
+## Con Shift, la orden agrega un tramo (waypoint) al final de la ruta actual.
 
 const CLICK_PICK_PX: float = 30.0 # radio en píxeles para seleccionar con un clic
 const DRAG_MIN_PX: float = 8.0 # menos que esto es un clic, no un recuadro
@@ -10,6 +11,7 @@ const FORMATION_GAP: int = 3 # celdas entre tanques que reciben la misma orden
 const PLAYER_SIDE: int = 0
 const COLOR_PATH: Color = Color(1.0, 0.9, 0.2)
 const COLOR_PATH_DIRECT: Color = Color(1.0, 0.5, 0.1)
+const COLOR_WAYPOINT: Color = Color(1.0, 1.0, 1.0)
 const COLOR_FACING: Color = Color(0.3, 0.9, 1.0)
 const COLOR_ATTACK: Color = Color(1.0, 0.25, 0.2)
 const FACING_ARROW_CELLS: float = 4.0 # largo de la flecha de orientación
@@ -29,6 +31,7 @@ var _rdrag_start: Vector2 = Vector2.ZERO
 var _rdrag_target: Variant = null # punto del terreno donde se apretó el derecho (Vector3)
 var _rdrag_facing: Vector2 = Vector2.ZERO # orientación elegida mientras se arrastra
 var _rdrag_direct: bool = false # Ctrl apretado al dar la orden: ruta directa
+var _rdrag_append: bool = false # Shift apretado al dar la orden: agregar tramo
 var _box: ColorRect = ColorRect.new()
 var _paths_mesh: ImmediateMesh = ImmediateMesh.new()
 var _paths_material: StandardMaterial3D = StandardMaterial3D.new()
@@ -69,7 +72,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					_select_box(Rect2(_drag_start, Vector2.ZERO).expand(mb.position))
 		elif mb.button_index == MOUSE_BUTTON_RIGHT:
 			if mb.pressed:
-				_right_pressed(mb.position, mb.ctrl_pressed)
+				_right_pressed(mb.position, mb.ctrl_pressed, mb.shift_pressed)
 			elif _rdragging:
 				_right_released()
 		return
@@ -154,7 +157,7 @@ func primary_unit() -> Unit:
 
 
 ## Derecho apretado: sobre un rojo conocido ataca; si no, empieza la orden de mover.
-func _right_pressed(screen: Vector2, direct: bool) -> void:
+func _right_pressed(screen: Vector2, direct: bool, append: bool) -> void:
 	# Órdenes solo en la fase PLAN
 	if selected_ids.is_empty() or world.phase != SimWorld.Phase.PLAN:
 		return
@@ -171,6 +174,7 @@ func _right_pressed(screen: Vector2, direct: bool) -> void:
 	_rdrag_target = hit
 	_rdrag_facing = Vector2.ZERO
 	_rdrag_direct = direct
+	_rdrag_append = append
 
 
 ## Mientras se arrastra: la orientación apunta del destino hacia el punto bajo el mouse.
@@ -189,7 +193,7 @@ func _update_facing(screen: Vector2) -> void:
 func _right_released() -> void:
 	_rdragging = false
 	var target: Vector2i = world.height_field.world_to_cell(_rdrag_target as Vector3)
-	_issue_move(target, _rdrag_facing, not _rdrag_direct)
+	_issue_move(target, _rdrag_facing, not _rdrag_direct, _rdrag_append)
 	_rdrag_facing = Vector2.ZERO
 
 
@@ -209,7 +213,7 @@ func _enemy_at(screen: Vector2) -> UnitView:
 
 ## Mover en línea: los tanques se reparten perpendiculares a la orientación
 ## (o a lo ancho si no hay orientación), ordenados por su posición actual.
-func _issue_move(target: Vector2i, facing: Vector2, covered: bool) -> void:
+func _issue_move(target: Vector2i, facing: Vector2, covered: bool, append: bool) -> void:
 	var perp: Vector2 = Vector2(-facing.y, facing.x) if facing != Vector2.ZERO else Vector2(1.0, 0.0)
 	var ids: Array[int] = selected_ids.duplicate()
 	ids.sort_custom(func(a: int, b: int) -> bool:
@@ -220,8 +224,8 @@ func _issue_move(target: Vector2i, facing: Vector2, covered: bool) -> void:
 		var off: Vector2 = perp * (float(i) - float(n - 1) * 0.5) * FORMATION_GAP
 		var c: Vector2i = Vector2i((Vector2(target) + off).round())
 		var cell: Vector2i = Vector2i(clampi(c.x, 0, limit), clampi(c.y, 0, limit))
-		if not world.order_move(ids[i], cell, facing, covered):
-			world.order_move(ids[i], target, facing, covered) # si la celda desplazada no sirve, al punto exacto
+		if not world.order_move(ids[i], cell, facing, covered, append):
+			world.order_move(ids[i], target, facing, covered, append) # si la celda desplazada no sirve, al punto exacto
 
 
 ## Rutas planificadas (amarillo cubierta, naranja directa), orientación final (celeste) y blanco de ataque (rojo).
@@ -235,11 +239,18 @@ func _draw_paths() -> void:
 			continue
 		var start: Vector3 = _ground(u.pos)
 		var prev: Vector3 = start
-		var path_color: Color = COLOR_PATH_DIRECT if u.direct_route else COLOR_PATH
+		var seg_idx: int = 0
 		for c: Vector2i in u.path:
+			var direct: bool = u.direct_route
+			if seg_idx < u.waypoints.size():
+				direct = bool(u.waypoints[seg_idx]["direct"])
 			var p: Vector3 = _ground(Vector2(c))
-			_seg(segs, colors, prev, p, path_color)
+			_seg(segs, colors, prev, p, COLOR_PATH_DIRECT if direct else COLOR_PATH)
 			prev = p
+			if seg_idx < u.waypoints.size() and u.waypoints[seg_idx]["cell"] == c:
+				seg_idx += 1
+				if seg_idx < u.waypoints.size():
+					_cross(segs, colors, Vector2(c), COLOR_WAYPOINT) # quiebre entre tramos
 		if u.final_heading != Vector2.ZERO and not u.path.is_empty():
 			_arrow(segs, colors, Vector2(u.path.back()), u.final_heading, COLOR_FACING)
 		if u.attack_target >= 0 and world.known_enemies[PLAYER_SIDE].has(u.attack_target):
@@ -278,3 +289,9 @@ func _arrow(segs: PackedVector3Array, colors: PackedColorArray, at: Vector2, dir
 	for side: float in [-1.0, 1.0]:
 		var wing: Vector2 = tip_cell - dir * 1.2 + Vector2(-dir.y, dir.x) * side * 0.8
 		_seg(segs, colors, tip, _ground(wing), color)
+
+
+## Cruz pequeña sobre una celda (marca de waypoint).
+func _cross(segs: PackedVector3Array, colors: PackedColorArray, at: Vector2, color: Color) -> void:
+	for d: Vector2 in [Vector2(1.0, 1.0), Vector2(1.0, -1.0)]:
+		_seg(segs, colors, _ground(at - d), _ground(at + d), color)

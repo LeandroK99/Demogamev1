@@ -162,24 +162,45 @@ func invalidate_exposure() -> void:
 	_pathfinder_side = -1
 
 
+## Ruta para una unidad desde from hasta to, con la exposición de su bando (sin la celda from).
+## Vacía si no hay ruta. No mira la fase: también sirve para rutas decididas en EXECUTE.
+func _route(u: Unit, from: Vector2i, to: Vector2i, covered: bool) -> Array[Vector2i]:
+	if covered and _pathfinder_side != u.side:
+		pathfinder.set_exposure(exposure_for(u.side))
+		_pathfinder_side = u.side
+	var path: Array[Vector2i] = pathfinder.find_path(from, to, covered)
+	if not path.is_empty():
+		path.remove_at(0)
+	return path
+
+
 ## Calcula la ruta más cubierta para el bando de la unidad. Devuelve false si no hay ruta.
 ## facing: orientación final opcional (Vector2.ZERO = la de la marcha).
 ## covered = false: ruta directa, la más corta sin importar la exposición.
-func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.ZERO, covered: bool = true) -> bool:
+## append = true: agrega un tramo desde el destino actual (waypoint) en vez de reemplazar la ruta.
+func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.ZERO, covered: bool = true, append: bool = false) -> bool:
 	var u: Unit = get_unit(unit_id)
 	if u == null or not u.alive or phase != Phase.PLAN:
 		return false
-	if _pathfinder_side != u.side:
-		pathfinder.set_exposure(exposure_for(u.side))
-		_pathfinder_side = u.side
-	var path: Array[Vector2i] = pathfinder.find_path(u.cell(), target_cell, covered)
-	if path.is_empty():
+	append = append and not u.path.is_empty()
+	var from: Vector2i = destination(u) if append else u.cell()
+	if from == target_cell and append:
 		return false
-	path.remove_at(0) # la celda actual
-	u.path = path
-	u.direct_route = not covered
+	var path: Array[Vector2i] = []
+	if from != target_cell:
+		path = _route(u, from, target_cell, covered)
+		if path.is_empty():
+			return false
+	if append:
+		u.path.append_array(path)
+	else:
+		u.path = path
+		u.waypoints.clear()
+		u.direct_route = not covered
+	if not path.is_empty():
+		u.waypoints.append({"cell": target_cell, "direct": not covered})
 	u.order = Unit.Order.MOVE
-	u.moving = not path.is_empty()
+	u.moving = not u.path.is_empty()
 	u.attack_target = -1
 	u.final_heading = facing.normalized() if facing != Vector2.ZERO else Vector2.ZERO
 	if not u.moving and u.final_heading != Vector2.ZERO:
@@ -442,7 +463,10 @@ func _advance(u: Unit, dt: float) -> void:
 		if d_m <= budget_m:
 			u.pos = target
 			budget_m -= d_m
+			var reached: Vector2i = u.path[0]
 			u.path.remove_at(0)
+			if not u.waypoints.is_empty() and u.waypoints[0]["cell"] == reached:
+				u.waypoints.remove_at(0)
 		else:
 			u.pos += delta.normalized() * (budget_m / Config.CELL_SIZE)
 			budget_m = 0.0

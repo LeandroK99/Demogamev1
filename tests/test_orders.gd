@@ -90,3 +90,37 @@ func test_attack_ends_when_target_dies() -> void:
 	world.step()
 	assert_eq(world.units[0].order, Unit.Order.NONE, "la orden terminó")
 	assert_eq(world.units[0].attack_target, -1, "sin blanco")
+
+
+func test_waypoints_chain() -> void:
+	var ids: Array[int] = [0, 4]
+	var world: SimWorld = _world(ids)
+	world.p_hit_base = 0.0
+	var u: Unit = world.units[0]
+	var a: Vector2i = u.cell() + Vector2i(0, -6)
+	var b: Vector2i = a + Vector2i(6, 0)
+	assert_true(world.order_move(0, a), "primer tramo")
+	assert_true(world.order_move(0, b, Vector2.ZERO, false, true), "segundo tramo (directo, agregado)")
+	assert_true(u.path.has(a), "la ruta pasa por el primer destino")
+	assert_eq(u.path.back(), b, "termina en el segundo")
+	assert_eq(u.waypoints.size(), 2, "dos tramos")
+	assert_true(bool(u.waypoints[1]["direct"]), "el segundo tramo es directo")
+	world.begin_execute()
+	for i: int in 120:
+		world.step()
+	assert_eq(u.cell(), b, "llegó al final")
+	assert_true(u.waypoints.is_empty(), "consumió los waypoints")
+
+
+func test_move_without_append_replaces() -> void:
+	var ids: Array[int] = [0, 4]
+	var world: SimWorld = _world(ids)
+	var u: Unit = world.units[0]
+	var a: Vector2i = u.cell() + Vector2i(0, -6)
+	assert_true(world.order_move(0, a), "primer tramo")
+	assert_true(world.order_move(0, a + Vector2i(6, 0), Vector2.ZERO, true, true), "segundo tramo")
+	var c: Vector2i = u.cell() + Vector2i(-5, 0)
+	assert_true(world.order_move(0, c), "orden nueva sin Shift")
+	assert_eq(u.path.back(), c, "la ruta nueva termina en c")
+	assert_true(not u.path.has(a), "descartó los tramos anteriores")
+	assert_eq(u.waypoints.size(), 1, "un solo tramo")
