@@ -38,6 +38,9 @@ var peek_tick: int = 0 # tick en que cambia entre asomarse y volver a cubierto
 var team: int = 0
 var hold_pos: bool = false # se queda donde está (base de fuego mientras el otro equipo avanza)
 var suppress_m: Vector2 = Vector2(-1.0, -1.0) # sin blanco a la vista, bate este punto (negativo = nada)
+## Sistema médico (fases 45–47)
+var bleed_left: float = 0.0 # herido sin estabilizar: segundos hasta morir desangrado
+var stabilized: bool = false # herido estabilizado: ya no se desangra
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
@@ -54,6 +57,11 @@ static func team_of(i: int) -> int:
 
 func is_ok() -> bool:
 	return state == State.OK
+
+
+## Herido que se está desangrando.
+func is_bleeding() -> bool:
+	return state == State.WOUNDED and not stabilized
 
 
 ## Altura del ojo sobre el terreno según la postura.

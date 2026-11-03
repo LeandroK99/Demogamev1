@@ -176,13 +176,23 @@ static func soldiers_text(u: Unit) -> String:
 	return out
 
 
-## " (2 heridos)" si la escuadra tiene heridos.
+## " (2 heridos, 1 se desangra: 45 s)" si la escuadra tiene heridos.
 static func wounded_text(u: Unit) -> String:
 	var n: int = 0
+	var bleeding: int = 0
+	var worst: float = INF
 	for s: Soldier in u.soldiers:
 		if s.state == Soldier.State.WOUNDED:
 			n += 1
-	return " (%d herido%s)" % [n, "" if n == 1 else "s"] if n > 0 else ""
+			if s.is_bleeding():
+				bleeding += 1
+				worst = minf(worst, s.bleed_left)
+	if n == 0:
+		return ""
+	var out: String = " (%d herido%s" % [n, "" if n == 1 else "s"]
+	if bleeding > 0:
+		out += ", %d se desangra%s: %d s" % [bleeding, "" if bleeding == 1 else "n", roundi(worst)]
+	return out + ")"
 
 
 ## Rumbo de la grilla como punto cardinal (y crece hacia el sur).

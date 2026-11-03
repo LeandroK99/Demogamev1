@@ -262,6 +262,12 @@ const RADIO_DELAY_MIN: float = 3.0 # segundos que tarda un contacto en llegar po
 const RADIO_DELAY_MAX: float = 5.0
 const RADIO_REPORT_SECONDS: float = 30.0 # un bando no vuelve a anunciar el mismo contacto antes de esto
 
+# --- Sistema médico ---
+const BLEED_MIN_SECONDS: float = 90.0 # un herido sin atender se desangra entre esto...
+const BLEED_MAX_SECONDS: float = 240.0 # ... y esto
+const MORALE_BLEEDING_DRAIN: float = 0.1 # por segundo y por herido que se desangra (la escuadra lo oye)
+const MORALE_BLED_OUT: float = 5.0 # baja de moral cuando uno se muere desangrado
+
 # --- Reflejos del soldado ---
 const REFLEX_DIVE_SUPP: float = 8.0 # un tiro que le suma esto en marcha y al descubierto lo tira al suelo
 const REFLEX_DIVE_SECONDS: float = 2.0 # ... por este tiempo

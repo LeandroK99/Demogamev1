@@ -1065,6 +1065,7 @@ func step() -> void:
 	_update_posture()
 	inf.update_postures(self)
 	inf.update_peeks(self)
+	inf.update_wounded(self)
 	_tick_smoke()
 	tick_in_turn += 1
 	total_ticks += 1

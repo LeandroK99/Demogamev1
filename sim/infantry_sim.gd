@@ -71,11 +71,33 @@ func hit_soldier(w: SimWorld, u: Unit, s: Soldier) -> void:
 		return
 	if s.state == Soldier.State.OK and w.rng.randf() < Config.SOLDIER_WOUND_P:
 		s.state = Soldier.State.WOUNDED
+		s.stabilized = false
+		# Azar del sistema médico aparte del de combate (no cambia los dados de los tiros)
+		s.bleed_left = w.mind_rng.randf_range(Config.BLEED_MIN_SECONDS, Config.BLEED_MAX_SECONDS)
 	else:
 		s.state = Soldier.State.DEAD
 	s.posture = Soldier.Posture.PRONE
 	s.moving = false
 	u.hp = u.ok_count()
+
+
+## --- Heridos ---
+
+## Cada tick: los heridos sin estabilizar se desangran (y a la escuadra se le va la moral); al
+## llegar a cero, mueren.
+func update_wounded(w: SimWorld) -> void:
+	for u: Unit in w.units:
+		if not u.alive or not u.is_infantry():
+			continue
+		for s: Soldier in u.soldiers:
+			if not s.is_bleeding():
+				continue
+			s.bleed_left -= Config.TICK
+			w._lose_morale(u, Config.MORALE_BLEEDING_DRAIN * Config.TICK)
+			if s.bleed_left <= 0.0:
+				s.state = Soldier.State.DEAD
+				w._lose_morale(u, Config.MORALE_BLED_OUT)
+				w.radio(u, "perdimos al soldado %d, se desangró" % (s.index + 1))
 
 
 ## --- Cobertura ---
