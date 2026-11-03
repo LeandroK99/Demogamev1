@@ -17,7 +17,8 @@ static func soldier_key(unit_id: int, index: int) -> int:
 ## ¿Algún soldado de la escuadra quedó lejos de su lugar? Entonces el ancla lo espera.
 func lagging(u: Unit) -> bool:
 	for s: Soldier in u.soldiers:
-		if s.is_ok() and s.suppression < Config.PINNED and s.pos.distance_to(u.slot_pos_m(s.index)) > Config.SOLDIER_LAG_M:
+		if s.is_ok() and s.suppression < Config.PINNED and not s.hold_pos \
+				and s.pos.distance_to(u.slot_pos_m(s.index)) > Config.SOLDIER_LAG_M:
 			return true
 	return false
 
@@ -32,8 +33,8 @@ func move_soldiers(w: SimWorld) -> void:
 		var speed: float = w.speed_at(u.cell(), Unit.Kind.INFANTRY) * SimWorld.pace_speed_factor(SimWorld.effective_pace(u))
 		var step_m: float = speed * Config.SOLDIER_CATCHUP * Config.TICK
 		for s: Soldier in u.soldiers:
-			if not s.is_ok() or s.suppression >= Config.PINNED or s.dive_until > w.total_ticks:
-				s.moving = false # herido, clavado o recién tirado al suelo: se queda donde está
+			if not s.is_ok() or s.suppression >= Config.PINNED or s.dive_until > w.total_ticks or s.hold_pos:
+				s.moving = false # herido, clavado, recién tirado al suelo o base de fuego: se queda donde está
 				continue
 			var target: Vector2 = u.slot_pos_m(s.index)
 			if s.has_cover and not u.moving:
@@ -523,6 +524,10 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), SimWorld.weapon_range(wpn), s.index)
 		if not t.is_empty():
 			_shoot(w, u, s.pos, eye_of(w, s), s, t["unit"], t["soldier"], wpn)
+		elif s.suppress_m.x >= 0.0:
+			var cell: Vector2i = Vector2i((s.suppress_m / Config.CELL_SIZE).round())
+			if w.can_suppress_at(u, cell):
+				_area_shot(w, u, s, wpn, cell) # base de fuego: bate el contacto aunque no lo vea
 
 
 ## Coaxial de un tanque: ráfaga al soldado enemigo visible más cercano que ve desde su óptica.
@@ -664,14 +669,16 @@ func _burst(w: SimWorld, su: Unit, moving: bool, from: Vector2, eye: float, side
 
 ## Orden SUPPRESS: cada tiro (o ráfaga) cae en un punto al azar de la zona; suprime a las escuadras
 ## enemigas de la zona y casi no mata.
-func _area_shot(w: SimWorld, u: Unit, s: Soldier, wpn: int) -> void:
-	if not w.can_suppress_at(u, u.suppress_cell):
+func _area_shot(w: SimWorld, u: Unit, s: Soldier, wpn: int, cell: Vector2i = Vector2i(-1, -1)) -> void:
+	if cell.x < 0:
+		cell = u.suppress_cell
+	if not w.can_suppress_at(u, cell):
 		return
 	s.reload_left = (Config.SOLDIER_RIFLE_RELOAD if wpn == Unit.Weapon.RIFLES else SimWorld.weapon_reload(wpn)) * w.rng.randf_range(0.75, 1.25)
 	s.last_fire_tick = w.total_ticks
 	u.last_fire_tick = w.total_ticks
 	var r: float = Config.SUPPRESS_AREA_RADIUS * Config.CELL_SIZE
-	var center: Vector2 = Vector2(u.suppress_cell) * Config.CELL_SIZE
+	var center: Vector2 = Vector2(cell) * Config.CELL_SIZE
 	var at: Vector2 = center + Vector2(w.rng.randf_range(-r, r), w.rng.randf_range(-r, r))
 	var eye: float = eye_of(w, s)
 	for tu: Unit in w.units:
@@ -681,7 +688,7 @@ func _area_shot(w: SimWorld, u: Unit, s: Soldier, wpn: int) -> void:
 		w.minds.flash(w, tu, u, s.pos)
 		w._add_suppression(tu, SimWorld.weapon_suppression(wpn) * Config.SUPPRESS_AREA_SUPP * Config.SOLDIER_SHOT_SUPP_SCALE)
 	_burst(w, u, s.moving, s.pos, eye, 1 - u.side, at, wpn, Config.SUPPRESS_AREA_HIT_FACTOR, s)
-	w.shot_events.append({"shooter": u.id, "target": -1, "cell": u.suppress_cell, "hit": false,
+	w.shot_events.append({"shooter": u.id, "target": -1, "cell": cell, "hit": false,
 		"aspect": SimWorld.Aspect.FRONT, "weapon": wpn, "from_m": s.pos, "from_h": eye, "to_m": at, "to_h": 0.5})
 
 

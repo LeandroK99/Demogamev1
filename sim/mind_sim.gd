@@ -159,7 +159,138 @@ func score_options(w: SimWorld, u: Unit) -> Dictionary:
 	_score_relocate(w, u, s)
 	_score_ambush(w, u, s)
 	_score_break(w, u, s)
+	_score_bound(w, u, s)
+	_score_flank(w, u, s)
 	return s
+
+
+## --- Equipos de fuego: avanzar por saltos ---
+## En marcha con un contacto cerca: el equipo A queda como base de fuego (quieto, tirando o batiendo
+## el contacto) mientras el B avanza BOUND_M con el ancla; después el ancla frena, B se cubre y A
+## sube a su lugar; y otra vez.
+
+func _score_bound(w: SimWorld, u: Unit, s: Dictionary) -> void:
+	var m: SquadMind = u.mind
+	if u.path.is_empty() or u.order not in [Unit.Order.MOVE, Unit.Order.HULLDOWN, Unit.Order.ATTACK]:
+		return
+	if m.option != SquadMind.Option.BOUND and m.option != SquadMind.Option.FOLLOW:
+		return
+	if _nearest_contact_m(u) <= Config.BOUND_CONTACT_M:
+		s[SquadMind.Option.BOUND] = Config.BOUND_SCORE
+
+
+func _start_bound(_w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	m.data["phase"] = "B"
+	m.data["start"] = u.pos_m()
+	m.hold = false
+	var target: Vector2 = _nearest_contact_pos(u)
+	for s: Soldier in u.soldiers:
+		s.hold_pos = s.team == 0 and s.is_ok()
+		s.suppress_m = target if s.hold_pos else Vector2(-1.0, -1.0)
+
+
+func _act_bound(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	if not m.data.has("phase"):
+		_start_bound(w, u)
+		return
+	if str(m.data["phase"]) == "B":
+		if u.pos_m().distance_to(m.data["start"]) >= Config.BOUND_M or u.path.is_empty():
+			m.data["phase"] = "A" # B llegó: frena, se cubre y sube A
+			m.hold = true
+			for s: Soldier in u.soldiers:
+				s.hold_pos = false
+				s.suppress_m = _nearest_contact_pos(u) if s.team == 1 else Vector2(-1.0, -1.0)
+	elif not w.inf.lagging(u):
+		_start_bound(w, u) # A ya subió: otro salto
+
+
+func _release_teams(u: Unit) -> void:
+	for s: Soldier in u.soldiers:
+		s.hold_pos = false
+		s.suppress_m = Vector2(-1.0, -1.0)
+
+
+func _nearest_contact_pos(u: Unit) -> Vector2:
+	var best: Vector2 = Vector2(-1.0, -1.0)
+	var best_d: float = INF
+	for id: int in u.mind.contacts:
+		var p: Vector2 = u.mind.contacts[id]["pos"]
+		var d: float = p.distance_to(u.pos_m())
+		if d < best_d:
+			best = p
+			best_d = d
+	return best
+
+
+## --- Flanquear ---
+## Un contacto al que otra escuadra propia ya le está tirando (base de fuego) y a esta no le tiran:
+## va por la ruta cubierta a un punto FLANK_OFFSET_M al costado del contacto y se queda ahí.
+
+func _score_flank(w: SimWorld, u: Unit, s: Dictionary) -> void:
+	var m: SquadMind = u.mind
+	if m.option == SquadMind.Option.FLANK:
+		if not u.path.is_empty():
+			s[SquadMind.Option.FLANK] = Config.FLANK_SCORE + 1.0
+		return
+	if m.option != SquadMind.Option.FOLLOW:
+		return
+	if w.fired_upon_within(u, Config.FLANK_QUIET_SECONDS) or u.order in [Unit.Order.ASSAULT, Unit.Order.WITHDRAW]:
+		return
+	for id: int in m.contacts:
+		if m.reacted.has(-1 - id) or _someone_flanking(w, u, id):
+			continue
+		var c: Vector2 = m.contacts[id]["pos"]
+		if c.distance_to(u.pos_m()) > Config.FLANK_MAX_M:
+			continue
+		var base: Unit = _base_of_fire(w, u, c)
+		if base == null:
+			continue
+		var cell: Vector2i = flank_cell(w, u, c, base.pos_m())
+		if cell.x < 0:
+			continue
+		m.target_cell = cell
+		m.flank_enemy = id
+		s[SquadMind.Option.FLANK] = Config.FLANK_SCORE
+		return
+
+
+## Otra escuadra propia tirando hace poco a menos de FLANK_BASE_M del contacto.
+func _base_of_fire(w: SimWorld, u: Unit, c: Vector2) -> Unit:
+	for o: Unit in w.units:
+		if o == u or not o.alive or o.side != u.side or not o.is_infantry():
+			continue
+		if o.pos_m().distance_to(c) <= Config.FLANK_BASE_M \
+				and float(w.total_ticks - o.last_fire_tick) * Config.TICK < Config.FLANK_BASE_FIRED_SECONDS:
+			return o
+	return null
+
+
+func _someone_flanking(w: SimWorld, u: Unit, enemy_id: int) -> bool:
+	for o: Unit in w.units:
+		if o != u and o.alive and o.side == u.side and o.mind != null \
+				and o.mind.option == SquadMind.Option.FLANK and o.mind.flank_enemy == enemy_id:
+			return true
+	return false
+
+
+## Celda transitable al costado del contacto c (perpendicular a la línea base de fuego -> contacto),
+## del lado más cercano a la escuadra. (-1, -1) si no hay.
+func flank_cell(w: SimWorld, u: Unit, c: Vector2, base: Vector2) -> Vector2i:
+	var axis: Vector2 = (c - base).normalized()
+	if axis.length() < 0.5:
+		return Vector2i(-1, -1)
+	var perp: Vector2 = Vector2(-axis.y, axis.x)
+	var a: Vector2 = c + perp * Config.FLANK_OFFSET_M - axis * Config.FLANK_OFFSET_M * 0.3
+	var b: Vector2 = c - perp * Config.FLANK_OFFSET_M - axis * Config.FLANK_OFFSET_M * 0.3
+	var p: Vector2 = a if a.distance_to(u.pos_m()) <= b.distance_to(u.pos_m()) else b
+	var n: int = w.height_field.size - 1
+	var cell: Vector2i = Vector2i((p / Config.CELL_SIZE).round())
+	cell = Vector2i(clampi(cell.x, 0, n), clampi(cell.y, 0, n))
+	if not w.pathfinders[Unit.Kind.INFANTRY].is_walkable(cell):
+		return Vector2i(-1, -1)
+	return cell
 
 
 ## --- Reubicarse ---
@@ -289,8 +420,8 @@ func _score_drill(w: SimWorld, u: Unit, s: Dictionary) -> void:
 		if float(w.total_ticks - int(m.data.get("calm_since", m.since_tick))) * Config.TICK < Config.DRILL_CALM_SECONDS:
 			s[SquadMind.Option.CONTACT_DRILL] = Config.DRILL_SCORE
 		return
-	if u.path.is_empty() or u.order in [Unit.Order.ASSAULT, Unit.Order.WITHDRAW]:
-		return
+	if u.path.is_empty() or u.order in [Unit.Order.ASSAULT, Unit.Order.WITHDRAW] or m.option == SquadMind.Option.BOUND:
+		return # el asalto, la retirada y el avance por saltos ya son la respuesta al contacto
 	if w.fired_upon_within(u, Config.DRILL_FIRED_SECONDS) or not _new_contacts(w, u).is_empty():
 		s[SquadMind.Option.CONTACT_DRILL] = Config.DRILL_SCORE
 
@@ -339,6 +470,15 @@ func _enter(w: SimWorld, u: Unit, opt: int) -> void:
 			m.hold = false
 			m.data["roe"] = u.roe
 			u.roe = Unit.Roe.HOLD
+		SquadMind.Option.BOUND:
+			m.hold = false
+			for id: int in m.contacts:
+				m.reacted[id] = true
+			_start_bound(w, u)
+		SquadMind.Option.FLANK:
+			m.reacted[-1 - m.flank_enemy] = true # no vuelve a flanquear al mismo
+			if not autonomous_move(w, u, m.target_cell):
+				m.hold = true
 		SquadMind.Option.BREAK_CONTACT:
 			throw_smoke_toward(w, u, w.inf.threat_point(w, u))
 			w.begin_autonomous()
@@ -357,6 +497,10 @@ func _exit(w: SimWorld, u: Unit, opt: int) -> void:
 			u.roe = int(m.data.get("roe", Unit.Roe.FREE))
 			if _nearest_contact_m(u) <= Config.AMBUSH_FIRE_M or w.fired_upon_within(u, 1.0):
 				w.radio(u, "¡fuego!")
+		SquadMind.Option.BOUND:
+			_release_teams(u)
+		SquadMind.Option.FLANK:
+			m.saved = {} # en el flanco se queda: de ahí tira
 		SquadMind.Option.BREAK_CONTACT:
 			m.saved = {} # replegada: no vuelve a meterse donde la estaban castigando
 			u.path.clear()
@@ -375,12 +519,18 @@ func _announce(opt: int) -> String:
 			return "emboscada, retengan el fuego"
 		SquadMind.Option.BREAK_CONTACT:
 			return "rompemos el contacto, humo y atrás"
+		SquadMind.Option.BOUND:
+			return "avanzamos por saltos"
+		SquadMind.Option.FLANK:
+			return "los fijan ustedes, nosotros flanqueamos"
 	return SquadMind.OPTION_NAMES[opt]
 
 
 ## Lo que hace la opción actual en este tick.
-func act(_w: SimWorld, _u: Unit) -> void:
-	pass
+func act(w: SimWorld, u: Unit) -> void:
+	match u.mind.option:
+		SquadMind.Option.BOUND:
+			_act_bound(w, u)
 
 
 ## --- Orden del jugador ---

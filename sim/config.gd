@@ -225,6 +225,15 @@ const BREAK_MEN: int = 4 # con estos hombres o menos (o la moral baja) rompe el 
 const BREAK_MORALE: float = 40.0
 const BREAK_HALTED_SECONDS: float = 20.0 # o si lleva esto frenada por la supresión
 const BREAK_CALM_SECONDS: float = 10.0 # ya replegada, sin fuego este tiempo, deja de romper el contacto
+const BOUND_SCORE: float = 2.0 # avanzar por saltos de equipo
+const BOUND_CONTACT_M: float = 250.0 # con un contacto a menos de esto, avanza por saltos
+const BOUND_M: float = 25.0 # largo de cada salto del equipo que maniobra
+const FLANK_SCORE: float = 2.2
+const FLANK_BASE_M: float = 200.0 # otra escuadra propia tirando a menos de esto del contacto hace de base de fuego
+const FLANK_BASE_FIRED_SECONDS: float = 5.0 # ... si tiró hace menos que esto
+const FLANK_QUIET_SECONDS: float = 10.0 # flanquea solo si a ella no le tiraron en este tiempo
+const FLANK_MAX_M: float = 300.0 # contactos más lejos que esto no los flanquea
+const FLANK_OFFSET_M: float = 60.0 # el punto de flanqueo, a esto del contacto, de costado
 
 # --- Conocimiento de cada escuadra y radio ---
 const CONTACT_OWN_M: float = 150.0 # lo que la escuadra ve a menos de esto lo sabe en el acto y exacto

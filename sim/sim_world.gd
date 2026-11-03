@@ -234,6 +234,9 @@ func _can_order(u: Unit) -> bool:
 func _new_intent(u: Unit) -> void:
 	if _autonomous == 0 and u.mind != null:
 		u.mind.reset(total_ticks)
+		for s: Soldier in u.soldiers:
+			s.hold_pos = false # ningún equipo queda clavado como base de fuego
+			s.suppress_m = Vector2(-1.0, -1.0)
 
 
 func begin_autonomous() -> void:

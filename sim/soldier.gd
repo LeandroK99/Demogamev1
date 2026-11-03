@@ -34,12 +34,22 @@ var fire_pos: Vector2 = Vector2.ZERO
 var fire_posture: int = Posture.PRONE
 var peeking: bool = false # está asomado en fire_pos
 var peek_tick: int = 0 # tick en que cambia entre asomarse y volver a cubierto
+## Equipos de fuego (fase 41): 0 = A (base de fuego: ametralladora y 2, 4, 6), 1 = B (maniobra: jefe, AT, 5, 7, 8).
+var team: int = 0
+var hold_pos: bool = false # se queda donde está (base de fuego mientras el otro equipo avanza)
+var suppress_m: Vector2 = Vector2(-1.0, -1.0) # sin blanco a la vista, bate este punto (negativo = nada)
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
 	index = p_index
 	role = p_role
 	pos = p_pos
+	team = team_of(p_index)
+
+
+## Equipo de fuego del soldado i.
+static func team_of(i: int) -> int:
+	return 0 if i in [1, 2, 4, 6] else 1
 
 
 func is_ok() -> bool:
