@@ -503,3 +503,18 @@ const BUILDING_LOS_STEP: float = 0.5 # metros entre muestras de la línea de vis
 const BUILDING_WALK_STEP: float = 0.4 # ... y del camino recto de un soldado
 const ROUTE_REPLAN_M: float = 2.0 # el destino del soldado se corrió esto: rehace la ruta por adentro
 const ROUTE_ARRIVE_M: float = 0.4 # llegó a un punto de su ruta
+
+# --- El pueblo (fase 61) ---
+const TOWN_RADIUS_CELLS: int = 14 # el pueblo ocupa este medio lado (celdas) alrededor de la plaza, aplanado
+const TOWN_BLEND_CELLS: int = 6 # transición del terreno aplanado al de alrededor
+const TOWN_PLAZA_HALF_M: int = 14 # medio lado de la plaza (metros)
+const TOWN_STREET_HALF_M: int = 5 # medio ancho de las calles
+const TOWN_LOT_M: int = 16 # de una casa a la siguiente sobre la calle
+const TOWN_HOUSES_PER_QUADRANT: int = 3
+const TOWN_HOUSE_MIN_M: Vector2i = Vector2i(8, 7)
+const TOWN_HOUSE_MAX_M: Vector2i = Vector2i(13, 11)
+const TOWN_WINDOW_EVERY_M: int = 3
+const TOWN_BACK_DOOR_P: float = 0.5
+const TOWN_SPLIT_M: int = 9 # una casa así de ancha (o de honda) tiene una pared interior
+const TOWN_OBJECTIVE_RADIUS: float = 5.0 # celdas: la plaza que hay que ocupar
+const TOWN_RED_TANK_BACK: int = 22 # celdas detrás de la plaza donde espera el tanque rojo

@@ -6,7 +6,7 @@ extends RefCounted
 enum Phase { PLAN, EXECUTE }
 ## TANKS: la demo original (4 tanques por bando, sin cobertura). LOMA: infantería y un tanque
 ## por bando, con cobertura; el rojo defiende la cresta central.
-enum Scenario { TANKS, LOMA }
+enum Scenario { TANKS, LOMA, PUEBLO }
 enum Aspect { FRONT, FLANK, REAR }
 const NO_WINNER: int = -1
 const DRAW: int = 2
@@ -103,6 +103,8 @@ func _init(sim_seed: int = Config.SEED, hf: HeightField = null, with_ai: bool = 
 		mc.generate(sim_seed, cm)
 		set_micro(mc)
 		_deploy_loma()
+	elif scenario == Scenario.PUEBLO:
+		_setup_pueblo(sim_seed)
 	else:
 		_deploy()
 	update_detection()
@@ -153,6 +155,54 @@ func _deploy_loma() -> void:
 				tank_ids.append(u.id)
 		var secs: Array[PackedInt32Array] = [inf_ids, tank_ids]
 		platoons.append(Platoon.new(side, side, secs))
+
+
+## El pueblo (fase 61): terreno aplanado en el centro con casas, calles y plaza; sin bosques ni
+## microcobertura suelta adentro. El azul entra desde el sur como en la loma; el rojo defiende
+## desde las casas (ver AICommander) y su tanque espera detrás de la plaza.
+func _setup_pueblo(sim_seed: int) -> void:
+	ticks_per_turn = roundi(Config.LOMA_TURN_SECONDS / Config.TICK)
+	var bm: BuildingMap = TownGenerator.build(height_field, sim_seed)
+	# El terreno cambió: los A* se rehacen
+	pathfinders = [Pathfinder.new(height_field), Pathfinder.new(height_field, Config.INF_MAX_SLOPE)]
+	pathfinder = pathfinders[Unit.Kind.TANK]
+	var area: Rect2i = TownGenerator.area_cells(height_field)
+	var cm: CoverMap = CoverMap.new(height_field.size)
+	cm.generate(sim_seed)
+	for y: int in range(area.position.y, area.end.y):
+		for x: int in range(area.position.x, area.end.x):
+			cm.set_type(Vector2i(x, y), CoverMap.Type.NONE)
+	set_cover(cm)
+	var mc: MicroCover = MicroCover.new(height_field.size)
+	mc.generate(sim_seed, cm)
+	var per: int = Config.MICRO_PER_CELL
+	for y: int in range(area.position.y * per - per / 2, area.end.y * per - per / 2):
+		for x: int in range(area.position.x * per - per / 2, area.end.x * per - per / 2):
+			mc.set_type(Vector2i(x, y), MicroCover.Type.NONE)
+	set_micro(mc)
+	set_buildings(bm)
+	_deploy_loma()
+	# El rojo: escuadras a las casas de sus papeles (AICommander), el tanque detrás de la plaza
+	for u: Unit in units:
+		if u.side == 1 and not u.is_infantry():
+			var c: Vector2i = objective_cell() - Vector2i(0, Config.TOWN_RED_TANK_BACK)
+			u.pos = Vector2(_nearest_walkable(c, Unit.Kind.TANK))
+	if ai != null:
+		ai.assign_roles(self)
+		for id: int in ai.roles:
+			var u: Unit = units[id]
+			u.pos = Vector2(ai.anchors[id])
+			u.snap_soldiers()
+
+
+## ¿El escenario tiene un objetivo a ocupar (la cresta, la plaza)?
+func has_objective() -> bool:
+	return scenario == Scenario.LOMA or scenario == Scenario.PUEBLO
+
+
+## Radio (celdas) del objetivo.
+func objective_radius() -> float:
+	return Config.TOWN_OBJECTIVE_RADIUS if scenario == Scenario.PUEBLO else Config.LOMA_OBJECTIVE_RADIUS
 
 
 ## Celda transitable para el tipo más cercana a c (c si ya lo es).
@@ -1709,8 +1759,8 @@ func _end_turn() -> void:
 		var red: int = alive_count(1)
 		game_over = true
 		winner = DRAW if blue == red else (0 if blue > red else 1)
-		if scenario == Scenario.LOMA:
-			# La loma: el azul gana solo si ocupa la cresta sin rojos; en disputa, empate; si no, gana el rojo
+		if has_objective():
+			# La loma (y el pueblo): el azul gana solo si ocupa la cresta sin rojos; en disputa, empate; si no, gana el rojo
 			var holder: int = objective_holder()
 			winner = 0 if holder == 0 else (DRAW if holder == DRAW else 1)
 		phase = Phase.PLAN
@@ -1722,6 +1772,8 @@ func _end_turn() -> void:
 
 ## Centro del objetivo de la loma: el eje de la cresta en el medio del mapa.
 func objective_cell() -> Vector2i:
+	if scenario == Scenario.PUEBLO:
+		return TownGenerator.center_cell(height_field)
 	var x: int = height_field.size / 2
 	return Vector2i(x, roundi(height_field.ridge_center_y(float(x))))
 
@@ -1732,7 +1784,7 @@ func objective_holder() -> int:
 	var present: Array[bool] = [false, false]
 	var center: Vector2 = Vector2(objective_cell())
 	for u: Unit in units:
-		if u.alive and u.is_infantry() and not u.broken and u.pos.distance_to(center) <= Config.LOMA_OBJECTIVE_RADIUS:
+		if u.alive and u.is_infantry() and not u.broken and u.pos.distance_to(center) <= objective_radius():
 			present[u.side] = true
 	if present[0] and present[1]:
 		return DRAW

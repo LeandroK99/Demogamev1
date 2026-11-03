@@ -560,15 +560,15 @@ func _draw_paths() -> void:
 		if u.attack_target >= 0 and world.known_enemies[PLAYER_SIDE].has(u.attack_target):
 			var cell: Vector2i = world.known_enemies[PLAYER_SIDE][u.attack_target]["cell"]
 			_seg(segs, colors, start + Vector3.UP * 2.0, _ground(Vector2(cell)) + Vector3.UP * 2.0, COLOR_ATTACK)
-	# Objetivo de la loma: un círculo sobre la cresta
-	if world.scenario == SimWorld.Scenario.LOMA:
+	# Objetivo de la loma (o la plaza del pueblo): un círculo
+	if world.has_objective():
 		var oc: Vector2 = Vector2(world.objective_cell())
 		var steps: int = 24
 		for i: int in steps:
 			var a0: float = TAU * float(i) / float(steps)
 			var a1: float = TAU * float(i + 1) / float(steps)
-			_seg(segs, colors, _ground(oc + Vector2.from_angle(a0) * Config.LOMA_OBJECTIVE_RADIUS),
-				_ground(oc + Vector2.from_angle(a1) * Config.LOMA_OBJECTIVE_RADIUS), COLOR_WAYPOINT)
+			_seg(segs, colors, _ground(oc + Vector2.from_angle(a0) * world.objective_radius()),
+				_ground(oc + Vector2.from_angle(a1) * world.objective_radius()), COLOR_WAYPOINT)
 	# Vista previa mientras se arrastra el derecho
 	if _rdragging and _rdrag_facing != Vector2.ZERO:
 		var t: Vector3 = _rdrag_target as Vector3

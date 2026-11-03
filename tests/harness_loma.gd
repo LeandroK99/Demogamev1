@@ -1,7 +1,8 @@
 extends SceneTree
 ## Banco IA contra IA en La loma (no es un test): el azul avanza hacia la cresta con autonomía alta
 ## y el rojo defiende con su comandante. Imprime ganador, bajas y decisiones por semilla y el total.
-## godot --headless --path . --script res://tests/harness_loma.gd -- [semillas] [turnos] [mixta|peloton]
+## godot --headless --path . --script res://tests/harness_loma.gd -- [semillas] [turnos] [mixta|peloton|pueblo]
+## pueblo: lo mismo en El pueblo (la plaza es el objetivo).
 ## peloton: el azul recibe una sola misión (tomar la cresta) y su jefe de pelotón maniobra solo.
 ## mixta: las tres escuadras azules con autonomía estricta, normal y alta (para compararlas); imprime
 ## en qué turno llegó cada una a la cresta.
@@ -11,12 +12,13 @@ func _initialize() -> void:
 	var max_turns: int = int(args[1]) if args.size() > 1 else Config.MAX_TURNS
 	var mixed: bool = args.size() > 2 and args[2] == "mixta"
 	var platoon: bool = args.size() > 2 and args[2] == "peloton"
+	var scen: int = SimWorld.Scenario.PUEBLO if args.size() > 2 and args[2] == "pueblo" else SimWorld.Scenario.LOMA
 	var reached_sum: Array[int] = [0, 0, 0]
 	var wins: Array[int] = [0, 0, 0] # azul, rojo, empate
 	var decisions: Dictionary = {}
 	var men_left: Array[int] = [0, 0]
 	for k: int in seeds:
-		var w: SimWorld = SimWorld.new(1000 + k, null, true, SimWorld.Scenario.LOMA)
+		var w: SimWorld = SimWorld.new(1000 + k, null, true, scen)
 		var blues: Array[Unit] = []
 		for u: Unit in w.units:
 			if u.side == 0 and u.mind != null:
@@ -39,7 +41,7 @@ func _initialize() -> void:
 					at.append("%d:%.0f%s" % [u.id, u.pos.distance_to(obj), "" if u.path.is_empty() else "→"])
 				print("  turno %d: %s  %s" % [w.turn, PlatoonLeader.STAGE_NAMES[pl.stage], " ".join(at)])
 			for b: int in blues.size():
-				if reached[b] == 0 and blues[b].alive and blues[b].pos.distance_to(obj) <= Config.LOMA_OBJECTIVE_RADIUS:
+				if reached[b] == 0 and blues[b].alive and blues[b].pos.distance_to(obj) <= w.objective_radius():
 					reached[b] = w.turn
 		if mixed:
 			print("  llegó a la cresta (turno, 0 = no): estricta %d · normal %d · alta %d" % [reached[0], reached[1], reached[2]])

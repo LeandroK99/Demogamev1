@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · M: misión del pelotón al cursor (Shift+M: cancelar) · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · N: formación · Y: autonomía · P: evacuar heridos · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma)"
+	+ "H: hull-down · V: vigilar hacia el cursor · M: misión del pelotón al cursor (Shift+M: cancelar) · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · N: formación · Y: autonomía · P: evacuar heridos · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma / el pueblo) · O: techos"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -104,9 +104,10 @@ func _process(_delta: float) -> void:
 	if world.phase == SimWorld.Phase.EXECUTE:
 		phase_text = "EJECUTANDO %d / %d s" % [world.tick_in_turn / 10, roundi(world.ticks_per_turn * Config.TICK)]
 	var scen: String = "Tanques"
-	if world.scenario == SimWorld.Scenario.LOMA:
+	if world.has_objective():
 		var holders: Dictionary = {0: "azul", 1: "rojo", SimWorld.DRAW: "en disputa", SimWorld.NO_WINNER: "nadie"}
-		scen = "La loma (cresta: %s)" % holders.get(world.objective_holder(), "?")
+		var fmt: String = "El pueblo (plaza: %s)" if world.scenario == SimWorld.Scenario.PUEBLO else "La loma (cresta: %s)"
+		scen = fmt % holders.get(world.objective_holder(), "?")
 	_status.text = "%s · Turno %d / %d · %s · ×%d\nAzules vivos: %d · Rojos vivos: %d · Semilla %d" % [
 		scen, world.turn, Config.MAX_TURNS, phase_text, roundi(turn_controller.speed()),
 		world.alive_count(0), world.alive_count(1), map_seed]

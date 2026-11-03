@@ -136,7 +136,7 @@ func _check_arrival(w: SimWorld, u: Unit) -> void:
 	var m: SquadMind = u.mind
 	var has: bool = not u.path.is_empty()
 	if m.had_path and not has and m.is_following():
-		var at_objective: bool = w.scenario == SimWorld.Scenario.LOMA and u.pos.distance_to(Vector2(w.objective_cell())) <= Config.LOMA_OBJECTIVE_RADIUS
+		var at_objective: bool = w.has_objective() and u.pos.distance_to(Vector2(w.objective_cell())) <= w.objective_radius()
 		if m.path_order == Unit.Order.ASSAULT or at_objective:
 			w.inf.consolidate(w, u)
 	m.had_path = has
