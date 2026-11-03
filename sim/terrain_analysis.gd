@@ -6,6 +6,7 @@ var height_field: HeightField
 ## Nubes de humo activas: {center: Vector2 (celdas), radius: float (celdas), top_h: float (m, absoluto)}.
 ## Las mantiene SimWorld; acá solo se usan para cortar la línea de visión.
 var smoke: Array[Dictionary] = []
+var cover: CoverMap = null # bosques que cortan la línea de visión (null = sin cobertura)
 
 
 func _init(hf: HeightField) -> void:
@@ -28,6 +29,8 @@ func los(from_cell: Vector2i, from_h: float, to_cell: Vector2i, to_h: float) -> 
 	var dh: float = hf.height_at_cell(to_cell) + to_h - ha
 	var t_step: float = Config.LOS_STEP / maxf(dist, 0.0001)
 	var t: float = t_step
+	var forest_types: PackedByteArray = cover.types if cover != null else PackedByteArray()
+	var forest_left: float = Config.FOREST_LOS_CELLS
 	while t < 1.0:
 		# Bilineal en línea (es el bucle caliente)
 		var x: float = ax + dx * t
@@ -40,8 +43,14 @@ func los(from_cell: Vector2i, from_h: float, to_cell: Vector2i, to_h: float) -> 
 		var h0: float = hs[i] + (hs[i + 1] - hs[i]) * tx
 		var h1: float = hs[i + size] + (hs[i + size + 1] - hs[i + size]) * tx
 		var ground: float = h0 + (h1 - h0) * ty
-		if ground > ha + dh * t - Config.LOS_EPSILON:
+		var ray_h: float = ha + dh * t
+		if ground > ray_h - Config.LOS_EPSILON:
 			return false
+		if not forest_types.is_empty() and ray_h < ground + Config.FOREST_TREE_H \
+				and forest_types[int(y + 0.5) * size + int(x + 0.5)] == CoverMap.Type.FOREST:
+			forest_left -= Config.LOS_STEP
+			if forest_left < 0.0:
+				return false
 		t += t_step
 	if smoke.is_empty():
 		return true
@@ -109,7 +118,8 @@ func exposure_map(threats: Array[Vector2i], target_h: float = Config.HULL_H) -> 
 ## Cada uno: {cell, score, can_fire, hull_hidden}.
 ## eye_h, hull_h y center_h: alturas de la unidad que busca posición (por defecto, un tanque).
 func hulldown_candidates(origin: Vector2i, threats: Array[Vector2i], radius: int,
-		eye_h: float = Config.EYE_H, hull_h: float = Config.HULL_H, center_h: float = Config.CENTER_H) -> Array[Dictionary]:
+		eye_h: float = Config.EYE_H, hull_h: float = Config.HULL_H, center_h: float = Config.CENTER_H,
+		cover_weight: float = 0.0) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var hf: HeightField = height_field
 	for dy: int in range(-radius, radius + 1):
@@ -129,6 +139,8 @@ func hulldown_candidates(origin: Vector2i, threats: Array[Vector2i], radius: int
 			var score: float = Config.HULLDOWN_W_HIDDEN * float(hull_hidden) \
 				+ Config.HULLDOWN_W_FIRE * float(can_fire) \
 				- Vector2(origin).distance_to(Vector2(c)) / Config.HULLDOWN_DIST_DIV
+			if cover != null and cover_weight > 0.0:
+				score += cover_weight * cover.cover_at(c)
 			out.append({"cell": c, "score": score, "can_fire": can_fire, "hull_hidden": hull_hidden})
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["score"]) > float(b["score"]))
 	return out

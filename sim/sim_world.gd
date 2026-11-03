@@ -50,6 +50,7 @@ var p_hit_max: float = Config.P_HIT_MAX
 var _exposure: Array[PackedFloat32Array] = []
 var _pathfinder_side: Array[int] = [-1, -1] # por tipo: bando cuya exposición está cargada en su pathfinder
 var ai: AICommander = null # IA del bando rojo (null = sin IA)
+var cover: CoverMap = null # cobertura fina (null = sin cobertura, como en la demo de tanques)
 
 
 ## Si hf es null se genera el terreno procedural con la semilla.
@@ -90,6 +91,23 @@ func _deploy() -> void:
 				secs.append(PackedInt32Array())
 			secs[secs.size() - 1].append(side * Config.UNITS_PER_SIDE + i)
 		platoons.append(Platoon.new(side, side, secs))
+
+
+## Activa la cobertura fina: la línea de visión, los pathfinders y la exposición la usan.
+func set_cover(cm: CoverMap) -> void:
+	cover = cm
+	analysis.cover = cm
+	var costs: PackedFloat32Array = PackedFloat32Array()
+	costs.resize(height_field.size * height_field.size)
+	for i: int in costs.size():
+		costs[i] = Config.FOREST_TANK_PATH_COST if cm != null and cm.types[i] == CoverMap.Type.FOREST else 0.0
+	pathfinders[Unit.Kind.TANK].set_extra_cost(costs)
+	invalidate_exposure()
+
+
+## Cobertura de la celda para la infantería (0 sin cobertura).
+func cover_at(c: Vector2i) -> float:
+	return cover.cover_at(c) if cover != null else 0.0
 
 
 ## Agrega una unidad (escenarios y tests). No la mete en ningún pelotón.
@@ -179,9 +197,10 @@ func _can_spot(observer: Unit, target: Unit) -> bool:
 func infantry_spot_range(target: Unit) -> float:
 	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
 		return Config.INF_SPOT_MOVING
+	var f_cover: float = 1.0 - cover_at(target.cell()) * Config.COVER_SPOT_FACTOR
 	if target.prone:
-		return Config.INF_SPOT_PRONE
-	return Config.INF_SPOT_STILL
+		return Config.INF_SPOT_PRONE * f_cover
+	return Config.INF_SPOT_STILL * f_cover
 
 
 func recently_fired(u: Unit) -> bool:
@@ -715,7 +734,7 @@ func order_hulldown(unit_ids: Array[int], already_reserved: Array[Vector2i] = []
 			target = _advance_target(u.cell())
 		else:
 			var cands: Array[Dictionary] = analysis.hulldown_candidates(u.cell(), threats, Config.HULLDOWN_RADIUS,
-				u.eye_h(), u.profile_h(), u.center_h())
+				u.eye_h(), u.profile_h(), u.center_h(), Config.COVER_W_TAKE_POSITION if u.is_infantry() else 0.0)
 			for c: Dictionary in cands:
 				var cell: Vector2i = c["cell"]
 				if pathfinders[u.kind].is_walkable(cell) and is_free(cell, reserved):
@@ -1001,7 +1020,8 @@ func hit_probability(shooter: Unit, target: Unit, weapon: int = Unit.Weapon.CANN
 	if weapon == Unit.Weapon.COAX or weapon == Unit.Weapon.RIFLES:
 		var p: float = Config.COAX_P_HIT if weapon == Unit.Weapon.COAX else Config.RIFLES_P_HIT
 		var f_posture: float = Config.INF_PRONE_HIT_FACTOR if target.prone else 1.0
-		return minf(p * f_dist * f_move * f_posture * _weak_factor(shooter), p_hit_max)
+		var f_cover: float = 1.0 - cover_at(target.cell())
+		return minf(p * f_dist * f_move * f_posture * f_cover * _weak_factor(shooter), p_hit_max)
 	var f_hull: float = 1.0
 	if not analysis.los(shooter.cell(), shooter.eye_h(), target.cell(), target.profile_h()):
 		f_hull = hulldown_hit_factor
@@ -1126,6 +1146,8 @@ func _end_turn() -> void:
 func speed_at(c: Vector2i, kind: int = Unit.Kind.TANK) -> float:
 	var max_slope: float = Config.INF_MAX_SLOPE if kind == Unit.Kind.INFANTRY else Config.PATH_MAX_SLOPE
 	var base: float = Config.INF_SPEED if kind == Unit.Kind.INFANTRY else Config.TANK_SPEED
+	if kind == Unit.Kind.TANK and cover != null and cover.is_forest(c):
+		base *= Config.FOREST_TANK_SPEED
 	var t: float = clampf(height_field.slope_at(c) / max_slope, 0.0, 1.0)
 	return base * lerpf(1.0, Config.SLOPE_SPEED_PENALTY, t)
 

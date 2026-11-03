@@ -56,6 +56,11 @@ func _start_game(p_seed: int) -> void:
 	camera_rig._clamp_to_map()
 	camera_rig.camera.make_current()
 
+	if world.cover != null:
+		var cover_view: CoverView = CoverView.new()
+		_game_root.add_child(cover_view)
+		cover_view.setup(world.cover, height_field)
+
 	for u: Unit in world.units:
 		var v: UnitView = UnitView.new()
 		_game_root.add_child(v)

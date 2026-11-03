@@ -7,6 +7,8 @@ var astar_direct: AStarGrid2D = AStarGrid2D.new() # ruta directa: solo pendiente
 var height_field: HeightField
 var exposure_k: float = Config.EXPOSURE_WEIGHT_K # se puede cambiar en tests
 var max_slope: float = Config.PATH_MAX_SLOPE # metros; más empinado es intransitable
+var extra_cost: PackedFloat32Array = PackedFloat32Array() # costo extra por celda (vacío = ninguno)
+var _exposure: PackedFloat32Array = PackedFloat32Array()
 
 
 func _init(hf: HeightField, p_max_slope: float = Config.PATH_MAX_SLOPE) -> void:
@@ -34,11 +36,25 @@ func _init(hf: HeightField, p_max_slope: float = Config.PATH_MAX_SLOPE) -> void:
 
 ## weight_scale = 1 + K * exposición + penalidad por pendiente.
 func set_exposure(exposure: PackedFloat32Array) -> void:
+	_exposure = exposure
+	var hf: HeightField = height_field
+	var has_extra: bool = not extra_cost.is_empty()
+	for y: int in hf.size:
+		for x: int in hf.size:
+			var c: Vector2i = Vector2i(x, y)
+			var extra: float = extra_cost[y * hf.size + x] if has_extra else 0.0
+			astar.set_point_weight_scale(c, 1.0 + exposure_k * exposure[y * hf.size + x] + _slope_penalty(c) + extra)
+
+
+## Costo extra por celda (por ejemplo, bosque para el tanque). Rehace los pesos de las dos rutas.
+func set_extra_cost(costs: PackedFloat32Array) -> void:
+	extra_cost = costs
 	var hf: HeightField = height_field
 	for y: int in hf.size:
 		for x: int in hf.size:
 			var c: Vector2i = Vector2i(x, y)
-			astar.set_point_weight_scale(c, 1.0 + exposure_k * exposure[y * hf.size + x] + _slope_penalty(c))
+			astar_direct.set_point_weight_scale(c, 1.0 + _slope_penalty(c) + costs[y * hf.size + x])
+	set_exposure(_exposure)
 
 
 func _slope_penalty(c: Vector2i) -> float:

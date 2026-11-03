@@ -58,6 +58,25 @@ const INF_PRONE_HIT_FACTOR: float = 0.5 # contra una escuadra cuerpo a tierra
 const INF_WEAK_MEN: int = 3 # con estos hombres o menos, la escuadra tira peor
 const INF_WEAK_FACTOR: float = 0.5
 
+# --- Cobertura fina ---
+const COVER_FOREST: float = 0.4 # cobertura para la infantería (0..1)
+const COVER_WALL: float = 0.6
+const COVER_PIT: float = 0.7
+const COVER_SPOT_FACTOR: float = 0.5 # la cobertura achica la detección de infantería en cobertura x esto
+const FOREST_TREE_H: float = 10.0 # metros: altura de los árboles para la línea de visión
+const FOREST_LOS_CELLS: float = 2.0 # celdas de bosque que la línea de visión atraviesa antes de cortarse
+const FOREST_TANK_SPEED: float = 0.5 # multiplicador de velocidad del tanque en el bosque
+const FOREST_TANK_PATH_COST: float = 1.0 # costo extra del A* del tanque por celda de bosque
+const COVER_W_TAKE_POSITION: float = 2.0 # peso de la cobertura al tomar posición (infantería)
+const COVER_DEPLOY_CLEAR: int = 4 # celdas libres de cobertura más allá del margen de despliegue
+const FOREST_COUNT: int = 7
+const FOREST_R_MIN: float = 3.0 # celdas
+const FOREST_R_MAX: float = 6.0
+const WALL_COUNT: int = 6
+const WALL_LEN_MIN: int = 5
+const WALL_LEN_MAX: int = 10
+const PIT_COUNT: int = 25
+
 # --- Generación del terreno ---
 const NOISE_FREQUENCY: float = 0.02 # frecuencia del Simplex
 const NOISE_OCTAVES: int = 3
