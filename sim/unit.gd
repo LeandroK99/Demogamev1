@@ -2,7 +2,11 @@ class_name Unit
 extends RefCounted
 ## Un tanque de la simulación.
 
-enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT }
+enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITHDRAW }
+## Reglas de fuego: libre, solo si te dispararon hace poco, o retener.
+enum Roe { FREE, RETURN_FIRE, HOLD }
+## Ritmo de marcha: normal, rápido (más veloz, tira peor) o cauto (lento, se detecta como si estuviera quieto).
+enum Pace { NORMAL, FAST, CAUTIOUS }
 
 var id: int = 0
 var side: int = 0 # 0 azul, 1 rojo
@@ -13,7 +17,9 @@ var reload_left: float = 0.0
 var path: Array[Vector2i] = []
 var final_heading: Vector2 = Vector2.ZERO # orientación al llegar (cero = la de la marcha)
 var direct_route: bool = false # el primer tramo de la ruta es directo (ignora la exposición)
-var waypoints: Array[Dictionary] = [] # fin de cada tramo de la ruta: {cell: Vector2i, direct: bool}
+## Fin de cada tramo de la ruta: {cell: Vector2i, direct: bool} y, opcionales, gate (condición para
+## arrancar el tramo, ver SimWorld.gate_*), gate_open (ya se cumplió) y signal (señal que emite al llegar).
+var waypoints: Array[Dictionary] = []
 var attack_target: int = -1 # id del enemigo a atacar (-1 = ninguno)
 var overwatch_dir: Vector2 = Vector2.ZERO # centro del sector de tiro en vigilancia
 var overwatch_ready: bool = false # le queda el disparo de emboscada de este turno
@@ -22,10 +28,16 @@ var scoot_fired: bool = false # disparar y replegarse: ya hizo su disparo
 var reversing: bool = false # marcha atrás: no gira el casco al moverse
 var order: int = Order.NONE
 var moving: bool = false
+var waiting: bool = false # tiene ruta pero espera la condición del tramo actual
 var alive: bool = true
 var last_fire_tick: int = -1000000 # tick global del último disparo
 var smoke_charges: int = Config.SMOKE_CHARGES
 var shots_received: int = 0 # disparos recibidos (impacten o no)
+var roe: int = Roe.FREE # reglas de fuego; duran hasta que se cambien (no las borra otra orden)
+var fire_arc_dir: Vector2 = Vector2.ZERO # centro del arco de tiro (cero = sin arco)
+var max_engage_m: float = Config.MAX_RANGE # distancia máxima de enganche
+var last_fired_upon_tick: int = -1000000 # tick global del último disparo recibido
+var pace: int = Pace.NORMAL # ritmo; dura hasta que se cambie (ASSAULT siempre va rápido)
 
 
 func _init(p_id: int, p_side: int, p_pos: Vector2) -> void:

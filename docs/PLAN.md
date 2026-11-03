@@ -271,3 +271,17 @@ Usar `HeightField` sintéticos armados a mano (no el procedural):
 1. **Repetición del turno:** grabar las posiciones por tick y reproducir el último turno con la tecla `T`, con el overlay activable.
 2. **Orden de "ruta recta"** (Shift + clic derecho) para comparar contra la cubierta y verificar el criterio de éxito 2.
 3. **Comunicación con demora:** los contactos de una unidad recién llegan al resto del bando al turno siguiente.
+
+---
+
+## Fases 14–18 — Órdenes (lógica)
+
+Salen de la evaluación del brief de órdenes e interfaz. Todo con tanques; la infantería se decide después de jugarlas. Las teclas son provisorias hasta el menú radial (fase 19).
+
+- **14 — ROE.** `Unit.roe` (fuego libre, solo si le disparan, retener), `fire_arc_dir` y `max_engage_m`, filtradas en `_pick_target`. Duran hasta que se cambien. La IA en vigilancia no tira a más de `AI_AMBUSH_RANGE` salvo que la hayan atacado. Teclas Z y C.
+- **15 — Ritmo y verbos.** `Unit.pace` (normal, rápido, cauto); cauto se detecta como quieto. `order_assault` (directo, rápido, no frena) y `order_withdraw` (reversa a la celda menos expuesta, frente a las amenazas). Teclas X, T, B.
+- **16 — Condiciones.** Cada tramo (`waypoints[i]`) puede tener `gate` (tiempo del turno, contacto, señal, esperar a otra unidad) y `signal` que emite al llegar. La unidad espera quieta (`waiting`). Tecla K.
+- **17 — Pelotón.** `Platoon` con dos secciones por bando; `order_platoon_move` reparte las secciones lado a lado y `order_platoon_bound` hace avance por saltos con señales. Doble clic y J.
+- **18 — Vista previa de riesgo.** `route_risk`: duración, segundos expuestos, impactos esperados contra amenazas conocidas, peor cara del blindaje y nivel. La ruta expuesta se pinta en rojo.
+
+Siguen (interfaz): mockups de los 7 estados, 19 menú radial, 20 HUD fijo con minimapa y símbolos OTAN, 21 contactos inciertos y dificultad.

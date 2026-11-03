@@ -56,6 +56,9 @@ const HULLDOWN_DIST_DIV: float = 10.0 # celdas de distancia que restan 1 punto
 const UNITS_PER_SIDE: int = 4
 const DEPLOY_SPACING: int = 8 # celdas entre tanques al desplegar
 const DEPLOY_EDGE_MARGIN: int = 6 # celdas desde el borde del mapa
+const SECTIONS_PER_PLATOON: int = 2 # el pelotón de cada bando se reparte en estas secciones
+const FORMATION_GAP: int = 3 # celdas entre tanques de una misma sección (o de una selección suelta)
+const SECTION_GAP: int = 10 # celdas entre los centros de las secciones de un pelotón
 const PATH_MAX_SLOPE: float = 4.0 # metros; celdas más empinadas son intransitables
 const PATH_SLOPE_COST: float = 1.0 # costo extra en el A* a pendiente máxima
 
@@ -81,6 +84,22 @@ const SMOKE_RANGE: float = 150.0 # metros: alcance del lanzador
 const SMOKE_TURNS: int = 2 # turnos de ejecución que dura la nube
 const AI_SMOKE_EXPOSURE: float = 0.5 # la IA tira humo al retroceder si su celda está más expuesta que esto
 const AI_SMOKE_DIST: float = 5.0 # celdas hacia la amenaza donde la IA pone la nube
+
+# --- Reglas de fuego (ROE) ---
+const ROE_RETURN_FIRE_SECONDS: float = 15.0 # "solo si te disparan": queda liberado este tiempo tras recibir un disparo
+const FIRE_ARC_HALF_ANGLE_DEG: float = 45.0 # semiángulo del arco de tiro
+const AI_AMBUSH_RANGE: float = 250.0 # metros: la IA en vigilancia no tira más lejos que esto si no la atacaron
+
+# --- Ritmo, asalto y retirada ---
+const PACE_FAST_SPEED: float = 1.4 # multiplicador de velocidad a ritmo rápido
+const PACE_CAUTIOUS_SPEED: float = 0.5 # multiplicador de velocidad a ritmo cauto
+const PACE_FAST_FIRE_FACTOR: float = 0.6 # se suma al de tirador en movimiento a ritmo rápido
+const PACE_CAUTIOUS_FIRE_FACTOR: float = 0.75 # reemplaza al de tirador en movimiento a ritmo cauto
+const WITHDRAW_RADIUS: int = 10 # celdas: dónde buscar cubierta al retirarse sin destino
+
+# --- Vista previa de riesgo ---
+const RISK_MEDIUM_HITS: float = 0.3 # impactos esperados en la ruta a partir de los que el riesgo es medio
+const RISK_HIGH_HITS: float = 1.0 # ... y alto
 
 # --- Orden hull-down e IA ---
 const HULLDOWN_MIN_SEPARATION: float = 3.0 # celdas mínimas entre destinos de una misma orden

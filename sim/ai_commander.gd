@@ -29,12 +29,16 @@ func issue_orders(world: SimWorld) -> void:
 	for u: Unit in world.units:
 		if u.side != side or not u.alive:
 			continue
+		world.set_engagement(u.id, Vector2.ZERO, Config.MAX_RANGE)
 		if u.hp == 1 and not threats.is_empty():
 			_retreat(world, u)
 			reserved.append(world.destination(u))
 		elif not threats.is_empty():
 			var state: Dictionary = evaluate_cell(world, u.cell(), threats)
 			if state["hull_hidden"] and state["can_fire"]:
+				# Emboscada: no tira de lejos salvo que ya lo hayan atacado
+				var ambush_m: float = Config.MAX_RANGE if world.fired_upon_recently(u) else Config.AI_AMBUSH_RANGE
+				world.set_engagement(u.id, Vector2.ZERO, ambush_m)
 				if not world.order_overwatch(u.id, SimWorld.facing_to_threats(u.cell(), threats)):
 					u.path.clear()
 					u.moving = false
@@ -102,24 +106,7 @@ func _smoke_cover(world: SimWorld, u: Unit) -> void:
 
 ## Retroceder: la celda transitable de menor exposición (desempate: la más cercana).
 func _retreat(world: SimWorld, u: Unit) -> void:
-	var exposure: PackedFloat32Array = world.exposure_for(side)
-	var hf: HeightField = world.height_field
-	var origin: Vector2i = u.cell()
-	var best: Vector2i = origin
-	var best_e: float = exposure[origin.y * hf.size + origin.x]
-	var best_d: float = 0.0
-	var r: int = Config.AI_RETREAT_RADIUS
-	for dy: int in range(-r, r + 1):
-		for dx: int in range(-r, r + 1):
-			var c: Vector2i = origin + Vector2i(dx, dy)
-			if dx * dx + dy * dy > r * r or not world.pathfinder.is_walkable(c):
-				continue
-			var e: float = exposure[c.y * hf.size + c.x]
-			var d: float = Vector2(dx, dy).length()
-			if e < best_e or (is_equal_approx(e, best_e) and d < best_d):
-				best = c
-				best_e = e
-				best_d = d
+	var best: Vector2i = world.lowest_exposure_cell(side, u.cell(), Config.AI_RETREAT_RADIUS)
 	# Llega mirando a la amenaza: el frente blindado hacia el enemigo
 	world.order_move(u.id, best, SimWorld.facing_to_threats(best, world.threats_for(side)))
 	# Después de elegir la ruta con la exposición sin humo: la nube tapa la retirada

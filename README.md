@@ -15,6 +15,8 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | Tecla | Acción |
 |---|---|
 | Clic izquierdo / arrastrar | Seleccionar un tanque / selección por recuadro |
+| Doble clic | Seleccionar el pelotón entero (4 tanques en dos secciones, A y B). Una orden de mover al pelotón pone las secciones lado a lado, con sus centros a 40 m |
+| J y clic derecho | Avance por saltos (pelotón entero seleccionado): la sección más cercana al objetivo avanza primero y la otra espera quieta, cubriéndola, hasta que llegue. Después avanza la segunda |
 | Clic derecho | Mover (solo al planificar) |
 | Ctrl + clic derecho | Mover por la ruta directa (la más corta, sin importar la exposición; se dibuja en naranja) |
 | Shift + clic derecho | Agregar un tramo al final de la ruta (waypoint). Ctrl + Shift: tramo directo |
@@ -24,6 +26,12 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | V | Vigilancia: el tanque se queda quieto mirando hacia el cursor y solo dispara dentro de un sector de ±35°. Arranca cada turno con la recarga lista y su primer disparo contra un blanco en movimiento tiene ×1,5 |
 | F y clic derecho | Disparar y replegarse: va a esa posición, hace un disparo y vuelve en reversa a donde estaba, mirando al blanco. Esc cancela |
 | G y clic izquierdo | Humo: una nube de 12 m de radio que corta la línea de visión durante 2 turnos. 2 cargas por tanque, hasta 150 m y con línea de visión al punto. Aparece en el acto, así que tirala antes de planear la ruta. Esc cancela |
+| T y clic derecho | Asaltar: ruta directa a ritmo rápido hasta ese punto, disparando en marcha y sin frenar. Esc cancela |
+| B | Retirarse: en reversa por la ruta cubierta hasta la celda menos expuesta cercana, con el frente hacia las amenazas |
+| K | Condición para arrancar el último tramo de la ruta: ninguna → a los 10 s del turno → a los 20 s → al haber contacto. El tanque espera quieto (y se lo detecta como quieto); el punto de paso se marca en violeta |
+| X | Ritmo de los seleccionados: normal → rápido (×1,4 de velocidad, tira peor) → cauto (×0,5, tira mejor en marcha y se lo detecta como si estuviera quieto) |
+| Z | Reglas de fuego (ROE) de los seleccionados: fuego libre → solo si le disparan → retener fuego |
+| C | Área de enganche: solo dispara dentro de un arco de ±45° hacia el cursor y hasta la distancia del cursor. Shift+C la quita |
 | Espacio | Ejecutar el turno |
 | 1 | Overlay de exposición azul (verde = cubierto, rojo = visto por todos los enemigos conocidos) |
 | 2 | Mejores posiciones hull-down de la unidad seleccionada |
@@ -38,6 +46,10 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 
 - **Blindaje:** un tanque recibe menos impactos de frente (×0,6) que de flanco (×1) o por detrás (×1,4). Al ir a hull-down mira hacia las amenazas; con el clic derecho arrastrado elegís vos la orientación. El casco no gira solo.
 - **Detección:** a un tanque en movimiento se lo detecta hasta 350 m; quieto, hasta 220 m, y quieto con el casco oculto, hasta 150 m. Disparar te delata: el enemigo sabe de dónde vino el tiro y durante 3 s te ve a 350 m.
+
+- **Reglas de fuego:** con *fuego libre* el tanque tira solo a lo que ve. Con *solo si le disparan* espera a recibir un disparo y queda liberado 15 s. Con *retener fuego* no tira nunca, y como no dispara tampoco se delata. Las ROE y el área de enganche duran hasta que las cambies. La IA en vigilancia espera a que te acerques a 250 m, salvo que ya la hayas atacado.
+
+- **Vista previa de riesgo:** con un tanque seleccionado, los tramos de su ruta que quedan a la vista de un enemigo conocido se pintan en rojo, y el panel muestra cuánto dura la ruta, cuántos segundos está expuesto, los impactos esperados (contra los enemigos conocidos, quietos y con la recarga lista), qué cara del blindaje muestra y un riesgo bajo, medio o alto. No cuenta las esperas de las condiciones.
 
 Ganás si destruís a los 4 rojos. Si se llega al turno 12, gana el bando con más tanques vivos.
 

@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
+	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -13,6 +13,21 @@ const ORDER_NAMES: Dictionary = {
 	Unit.Order.ATTACK: "atacar",
 	Unit.Order.OVERWATCH: "vigilancia",
 	Unit.Order.SCOOT: "disparar y replegarse",
+	Unit.Order.ASSAULT: "asaltar",
+	Unit.Order.WITHDRAW: "retirarse",
+}
+const ASPECT_NAMES: Array[String] = ["el frente", "el flanco", "la cola"]
+const RISK_NAMES: Array[String] = ["BAJO", "MEDIO", "ALTO"]
+const PACE_NAMES: Dictionary = {
+	Unit.Pace.NORMAL: "normal",
+	Unit.Pace.FAST: "rápido",
+	Unit.Pace.CAUTIOUS: "cauto",
+}
+
+const ROE_NAMES: Dictionary = {
+	Unit.Roe.FREE: "fuego libre",
+	Unit.Roe.RETURN_FIRE: "solo si le disparan",
+	Unit.Roe.HOLD: "retener fuego",
 }
 
 var world: SimWorld
@@ -85,6 +100,21 @@ func _process(_delta: float) -> void:
 		_banner.text = "%s\nR: jugar de nuevo · Shift+R: mapa nuevo" % result
 
 
+static func gate_text(gate: Dictionary) -> String:
+	match str(gate.get("type", "")):
+		"time":
+			return "a los %d s" % roundi(float(gate["seconds"]))
+		"contact":
+			return "contacto"
+		"signal":
+			return "la señal %s" % gate["name"]
+		"unit":
+			return "al tanque %d" % (int(gate["unit"]) + 1)
+		"all_signals":
+			return "a que llegue la otra sección"
+	return "?"
+
+
 ## Rumbo de la grilla como punto cardinal (y crece hacia el sur).
 static func compass(dir: Vector2) -> String:
 	const NAMES: Array[String] = ["este", "sureste", "sur", "suroeste", "oeste", "noroeste", "norte", "noreste"]
@@ -98,11 +128,20 @@ func _unit_text() -> String:
 	if input_controller.pending_mode == "scoot":
 		lines.append("Clic derecho: posición de tiro (Esc cancela)")
 		lines.append("")
+	elif input_controller.pending_mode == "bound":
+		lines.append("Clic derecho: objetivo del avance por saltos (Esc cancela)")
+		lines.append("")
+	elif input_controller.pending_mode == "assault":
+		lines.append("Clic derecho: objetivo del asalto (Esc cancela)")
+		lines.append("")
 	elif input_controller.pending_mode == "smoke":
 		lines.append("Clic izquierdo: dónde tirar el humo (Esc cancela)")
 		lines.append("")
 	if sel != null:
-		lines.append("Tanque %d" % (sel.id + 1))
+		var plt: Platoon = world.platoon_of(sel.id)
+		if input_controller.selected_platoon() != null:
+			lines.append("Pelotón completo (%d tanques)" % input_controller.selected_ids.size())
+		lines.append("Tanque %d · sección %s" % [sel.id + 1, Platoon.section_letter(plt.section_of(sel.id) if plt != null else -1)])
 		lines.append("Vida: %d / %d" % [sel.hp, Config.TANK_HP])
 		lines.append("Recarga: %s" % ("lista" if sel.reload_left <= 0.0 else "%.1f s" % sel.reload_left))
 		var order_text: String = ORDER_NAMES.get(sel.order, "?")
@@ -110,6 +149,34 @@ func _unit_text() -> String:
 			order_text += " (rojo %d)" % (sel.attack_target - Config.UNITS_PER_SIDE + 1)
 		lines.append("Orden: %s" % order_text)
 		lines.append("Mira al %s" % compass(sel.heading))
+		var roe_text: String = ROE_NAMES.get(sel.roe, "?")
+		if sel.fire_arc_dir != Vector2.ZERO:
+			roe_text += ", arco al %s" % compass(sel.fire_arc_dir)
+		if sel.max_engage_m < Config.MAX_RANGE:
+			roe_text += ", hasta %d m" % roundi(sel.max_engage_m)
+		lines.append("ROE: %s" % roe_text)
+		lines.append("Ritmo: %s" % PACE_NAMES.get(SimWorld.effective_pace(sel), "?"))
+		for i: int in sel.waypoints.size():
+			var wp: Dictionary = sel.waypoints[i]
+			var parts: PackedStringArray = PackedStringArray()
+			if wp.has("gate") and not bool(wp.get("gate_open", false)):
+				parts.append("espera %s" % gate_text(wp["gate"]))
+			if str(wp.get("signal", "")) != "":
+				parts.append("al llegar emite la señal %s" % wp["signal"])
+			if not parts.is_empty():
+				lines.append("Tramo %d: %s" % [i + 1, ", ".join(parts)])
+		if sel.waiting:
+			lines.append("ESPERANDO")
+		var risk: Dictionary = input_controller.risk_for(sel)
+		if not risk.is_empty():
+			lines.append("")
+			lines.append("Ruta: %d s, %d s a la vista de %d amenaza(s)" % [
+				roundi(risk["total_s"]), roundi(risk["exposed_s"]), int(risk["threats_seeing"])])
+			var aspect: String = ""
+			if int(risk["worst_aspect"]) >= 0:
+				aspect = ", muestra %s" % ASPECT_NAMES[int(risk["worst_aspect"])]
+			lines.append("Impactos esperados: %.1f%s" % [float(risk["expected_hits"]), aspect])
+			lines.append("RIESGO %s" % RISK_NAMES[int(risk["level"])])
 		lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
 		lines.append("")
 	lines.append("Disparos recibidos")

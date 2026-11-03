@@ -12,6 +12,8 @@ var height_field: HeightField
 var analysis: TerrainAnalysis
 var pathfinder: Pathfinder
 var units: Array[Unit] = []
+var platoons: Array[Platoon] = [] # uno por bando (índice = side)
+var _bound_count: int = 0 # para nombrar las señales de los avances por saltos
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var turn: int = 1
 var tick_in_turn: int = 0
@@ -29,6 +31,9 @@ var known_enemies: Array[Dictionary] = [{}, {}] # id -> {cell, last_seen_turn}
 # Es el mismo array que analysis.smoke (la LOS las usa directamente).
 var smoke_clouds: Array[Dictionary] = []
 var _next_smoke_id: int = 0
+
+# Señales con nombre emitidas por bando (nombre -> tick global); duran toda la partida
+var signals: Array[Dictionary] = [{}, {}]
 
 # Disparos ocurridos desde la última vez que la vista los leyó: {shooter, target, hit, aspect}
 var shot_events: Array[Dictionary] = []
@@ -73,6 +78,15 @@ func _deploy() -> void:
 		for i: int in Config.UNITS_PER_SIDE:
 			var x: int = first_x + i * Config.DEPLOY_SPACING
 			units.append(Unit.new(units.size(), side, Vector2(x, y)))
+	# Un pelotón por bando, con los tanques repartidos en secciones consecutivas
+	var per_section: int = maxi(1, ceili(float(Config.UNITS_PER_SIDE) / Config.SECTIONS_PER_PLATOON))
+	for side: int in 2:
+		var secs: Array[PackedInt32Array] = []
+		for i: int in Config.UNITS_PER_SIDE:
+			if i % per_section == 0:
+				secs.append(PackedInt32Array())
+			secs[secs.size() - 1].append(side * Config.UNITS_PER_SIDE + i)
+		platoons.append(Platoon.new(side, side, secs))
 
 
 func get_unit(unit_id: int) -> Unit:
@@ -139,7 +153,7 @@ func _can_spot(observer: Unit, target: Unit) -> bool:
 		return false
 	if not analysis.los(observer.cell(), Config.EYE_H, target.cell(), Config.CENTER_H):
 		return false
-	if target.moving or recently_fired(target):
+	if recently_fired(target) or (target.moving and effective_pace(target) != Unit.Pace.CAUTIOUS):
 		return true
 	if d <= Config.SPOT_RANGE_HULLDOWN:
 		return true
@@ -218,6 +232,310 @@ func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.Z
 	if not u.moving and u.final_heading != Vector2.ZERO:
 		u.heading = u.final_heading # ya está en destino: solo gira
 	return true
+
+
+## --- Condiciones de la cadena de órdenes ---
+## Cada tramo de la ruta puede esperar una condición antes de arrancar. Una vez cumplida,
+## queda abierta aunque después deje de cumplirse.
+
+## A los seconds segundos del turno.
+static func gate_time(seconds: float) -> Dictionary:
+	return {"type": "time", "seconds": seconds}
+
+
+## Cuando el bando ve algún enemigo.
+static func gate_contact() -> Dictionary:
+	return {"type": "contact"}
+
+
+## Cuando alguna unidad del bando emitió la señal (go-code) con ese nombre.
+static func gate_signal(name: String) -> Dictionary:
+	return {"type": "signal", "name": name}
+
+
+## Cuando la otra unidad terminó su ruta (o murió).
+static func gate_unit(unit_id: int) -> Dictionary:
+	return {"type": "unit", "unit": unit_id}
+
+
+## Pone (o quita, con gate vacío) la condición del tramo leg (-1 = el último). Solo en PLAN.
+func gate_leg(unit_id: int, leg: int, gate: Dictionary) -> bool:
+	var wp: Variant = _leg(unit_id, leg)
+	if wp == null:
+		return false
+	var d: Dictionary = wp
+	if gate.is_empty():
+		d.erase("gate")
+	else:
+		d["gate"] = gate.duplicate()
+	d["gate_open"] = false
+	return true
+
+
+## El tramo leg (-1 = el último) emite la señal name al llegar a su fin. Vacío la quita. Solo en PLAN.
+func signal_leg(unit_id: int, leg: int, name: String) -> bool:
+	var wp: Variant = _leg(unit_id, leg)
+	if wp == null:
+		return false
+	(wp as Dictionary)["signal"] = name
+	return true
+
+
+func _leg(unit_id: int, leg: int) -> Variant:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN or u.waypoints.is_empty():
+		return null
+	var i: int = leg if leg >= 0 else u.waypoints.size() + leg
+	if i < 0 or i >= u.waypoints.size():
+		return null
+	return u.waypoints[i]
+
+
+## ¿El tramo actual de u espera una condición que todavía no se cumplió? Si se cumple, la abre.
+func _leg_gate_closed(u: Unit) -> bool:
+	if u.waypoints.is_empty():
+		return false
+	var wp: Dictionary = u.waypoints[0]
+	if not wp.has("gate") or bool(wp.get("gate_open", false)):
+		return false
+	if gate_met(u, wp["gate"]):
+		wp["gate_open"] = true
+		return false
+	return true
+
+
+func gate_met(u: Unit, gate: Dictionary) -> bool:
+	match str(gate.get("type", "")):
+		"time":
+			return float(tick_in_turn) * Config.TICK >= float(gate["seconds"]) - 0.0001
+		"contact":
+			return not visible_enemies[u.side].is_empty()
+		"signal":
+			return signals[u.side].has(gate["name"])
+		"all_signals":
+			for n: String in gate["names"]:
+				if not signals[u.side].has(n):
+					return false
+			return true
+		"unit":
+			var other: Unit = get_unit(int(gate["unit"]))
+			return other == null or not other.alive or (other.path.is_empty() and not other.waiting)
+	return true
+
+
+## --- Pelotón ---
+
+## Pelotón de la unidad (o null).
+func platoon_of(unit_id: int) -> Platoon:
+	for p: Platoon in platoons:
+		if p.section_of(unit_id) >= 0:
+			return p
+	return null
+
+
+## Ids vivos de una sección.
+func _alive_ids(ids: PackedInt32Array) -> Array[int]:
+	var out: Array[int] = []
+	for uid: int in ids:
+		if units[uid].alive:
+			out.append(uid)
+	return out
+
+
+## Celdas en línea alrededor de target (id -> Vector2i), perpendiculares a facing
+## (o a lo ancho si no hay orientación), gap celdas entre unidades, ordenadas por su posición actual.
+func formation_cells(ids: Array[int], target: Vector2i, facing: Vector2, gap: float = Config.FORMATION_GAP) -> Dictionary:
+	var perp: Vector2 = Vector2(-facing.y, facing.x) if facing != Vector2.ZERO else Vector2(1.0, 0.0)
+	var sorted: Array[int] = ids.duplicate()
+	sorted.sort_custom(func(a: int, b: int) -> bool:
+		return units[a].pos.dot(perp) < units[b].pos.dot(perp))
+	var n: int = sorted.size()
+	var out: Dictionary = {}
+	for i: int in n:
+		var off: Vector2 = perp * (float(i) - float(n - 1) * 0.5) * gap
+		out[sorted[i]] = _clamp_cell(Vector2i((Vector2(target) + off).round()))
+	return out
+
+
+func _clamp_cell(c: Vector2i) -> Vector2i:
+	var limit: int = height_field.size - 1
+	return Vector2i(clampi(c.x, 0, limit), clampi(c.y, 0, limit))
+
+
+## Destinos de un pelotón (id -> Vector2i): las secciones lado a lado a SECTION_GAP,
+## cada una en línea a FORMATION_GAP. Las secciones se ordenan por su posición actual.
+func platoon_cells(p: Platoon, target: Vector2i, facing: Vector2) -> Dictionary:
+	var perp: Vector2 = Vector2(-facing.y, facing.x) if facing != Vector2.ZERO else Vector2(1.0, 0.0)
+	var secs: Array[Array] = []
+	for sec: PackedInt32Array in p.sections:
+		var ids: Array[int] = _alive_ids(sec)
+		if not ids.is_empty():
+			secs.append(ids)
+	secs.sort_custom(func(a: Array, b: Array) -> bool:
+		return _centroid(a).dot(perp) < _centroid(b).dot(perp))
+	var out: Dictionary = {}
+	for i: int in secs.size():
+		var center: Vector2 = Vector2(target) + perp * (float(i) - float(secs.size() - 1) * 0.5) * Config.SECTION_GAP
+		var ids: Array[int] = []
+		ids.assign(secs[i])
+		out.merge(formation_cells(ids, _clamp_cell(Vector2i(center.round())), facing))
+	return out
+
+
+func _centroid(ids: Array) -> Vector2:
+	var sum: Vector2 = Vector2.ZERO
+	for uid: int in ids:
+		sum += units[uid].pos
+	return sum / float(maxi(1, ids.size()))
+
+
+## Mueve a cada unidad a su celda; si la celda no sirve, al punto exacto. Devuelve cuántas aceptaron.
+func _move_to_cells(cells: Dictionary, target: Vector2i, facing: Vector2, covered: bool, append: bool) -> int:
+	var ok: int = 0
+	for uid: int in cells:
+		if order_move(uid, cells[uid], facing, covered, append) or order_move(uid, target, facing, covered, append):
+			ok += 1
+	return ok
+
+
+## Orden al pelotón: se reparte entre las secciones (ver platoon_cells).
+func order_platoon_move(platoon_id: int, target: Vector2i, facing: Vector2 = Vector2.ZERO, covered: bool = true, append: bool = false) -> bool:
+	if platoon_id < 0 or platoon_id >= platoons.size() or phase != Phase.PLAN:
+		return false
+	var p: Platoon = platoons[platoon_id]
+	return _move_to_cells(platoon_cells(p, target, facing), target, facing, covered, append) > 0
+
+
+## Avance por saltos: la sección más cercana al objetivo va primero y, cuando llega toda,
+## arranca la otra (las demás esperan quietas, cubriendo). Usa señales de la fase 16.
+func order_platoon_bound(platoon_id: int, target: Vector2i, facing: Vector2 = Vector2.ZERO) -> bool:
+	if platoon_id < 0 or platoon_id >= platoons.size() or phase != Phase.PLAN:
+		return false
+	var p: Platoon = platoons[platoon_id]
+	var cells: Dictionary = platoon_cells(p, target, facing)
+	var secs: Array[Array] = []
+	for sec: PackedInt32Array in p.sections:
+		var ids: Array[int] = _alive_ids(sec)
+		if not ids.is_empty():
+			secs.append(ids)
+	if secs.is_empty():
+		return false
+	secs.sort_custom(func(a: Array, b: Array) -> bool:
+		return _centroid(a).distance_to(Vector2(target)) < _centroid(b).distance_to(Vector2(target)))
+	var ok: int = 0
+	var prev_signals: Array[String] = []
+	for i: int in secs.size():
+		var my_signals: Array[String] = []
+		for uid: int in secs[i]:
+			if not cells.has(uid):
+				continue
+			var one: Dictionary = {uid: cells[uid]}
+			if _move_to_cells(one, target, facing, true, false) == 0:
+				continue
+			ok += 1
+			if units[uid].waypoints.is_empty():
+				continue # ya estaba en su celda: no espera ni avisa
+			_bound_count += 1
+			var sig: String = "salto %d" % _bound_count
+			signal_leg(uid, -1, sig)
+			my_signals.append(sig)
+			# Espera a que llegue toda la sección anterior (una condición por tanque de esa sección)
+			if not prev_signals.is_empty():
+				gate_leg(uid, 0, _all_signals_gate(prev_signals))
+		prev_signals = my_signals
+	return ok > 0
+
+
+## Condición compuesta: todas las señales.
+static func _all_signals_gate(names: Array[String]) -> Dictionary:
+	return {"type": "all_signals", "names": names.duplicate()}
+
+
+## Ritmo de una unidad (solo en PLAN). Dura hasta que se cambie.
+func set_pace(unit_id: int, pace: int) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN:
+		return false
+	u.pace = pace
+	return true
+
+
+## El asalto siempre va a ritmo rápido.
+static func effective_pace(u: Unit) -> int:
+	return Unit.Pace.FAST if u.order == Unit.Order.ASSAULT else u.pace
+
+
+static func pace_speed_factor(pace: int) -> float:
+	match pace:
+		Unit.Pace.FAST:
+			return Config.PACE_FAST_SPEED
+		Unit.Pace.CAUTIOUS:
+			return Config.PACE_CAUTIOUS_SPEED
+	return 1.0
+
+
+## Orden ASSAULT: ruta directa a ritmo rápido hasta target_cell, disparando en marcha.
+## A diferencia de ATTACK, no frena al tener línea de tiro.
+func order_assault(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.ZERO) -> bool:
+	if not order_move(unit_id, target_cell, facing, false):
+		return false
+	units[unit_id].order = Unit.Order.ASSAULT
+	return true
+
+
+## Orden WITHDRAW: en reversa por la ruta cubierta, con el frente hacia las amenazas.
+## Sin destino (celda fuera del mapa): la celda menos expuesta a <= WITHDRAW_RADIUS o,
+## si no hay amenazas, WITHDRAW_RADIUS celdas hacia atrás.
+func order_withdraw(unit_id: int, target_cell: Vector2i = Vector2i(-1, -1)) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN:
+		return false
+	var threats: Array[Vector2i] = threats_for(u.side)
+	if not height_field.in_bounds(target_cell):
+		target_cell = lowest_exposure_cell(u.side, u.cell(), Config.WITHDRAW_RADIUS)
+		if target_cell == u.cell():
+			target_cell = _back_target(u)
+	if target_cell == u.cell():
+		return false
+	var facing: Vector2 = facing_to_threats(target_cell, threats)
+	if facing == Vector2.ZERO:
+		facing = u.heading
+	if not order_move(unit_id, target_cell, facing):
+		return false
+	u.order = Unit.Order.WITHDRAW
+	u.reversing = u.moving
+	return true
+
+
+## Celda transitable de menor exposición del bando dentro de radius (desempate: la más cercana).
+func lowest_exposure_cell(side: int, origin: Vector2i, radius: int) -> Vector2i:
+	var exposure: PackedFloat32Array = exposure_for(side)
+	var n: int = height_field.size
+	var best: Vector2i = origin
+	var best_e: float = exposure[origin.y * n + origin.x]
+	var best_d: float = 0.0
+	for dy: int in range(-radius, radius + 1):
+		for dx: int in range(-radius, radius + 1):
+			var c: Vector2i = origin + Vector2i(dx, dy)
+			if dx * dx + dy * dy > radius * radius or not pathfinder.is_walkable(c):
+				continue
+			var e: float = exposure[c.y * n + c.x]
+			var d: float = Vector2(dx, dy).length()
+			if e < best_e or (is_equal_approx(e, best_e) and d < best_d):
+				best = c
+				best_e = e
+				best_d = d
+	return best
+
+
+## Celda transitable hasta WITHDRAW_RADIUS celdas detrás de u (contra su heading).
+func _back_target(u: Unit) -> Vector2i:
+	var dir: Vector2 = -u.heading.normalized()
+	for back: int in Config.WITHDRAW_RADIUS:
+		var c: Vector2i = Vector2i((u.pos + dir * float(Config.WITHDRAW_RADIUS - back)).round())
+		if height_field.in_bounds(c) and pathfinder.is_walkable(c):
+			return c
+	return u.cell()
 
 
 ## Orden OVERWATCH: quieto, con el casco hacia dir, y solo dispara dentro del sector
@@ -425,8 +743,15 @@ func step() -> void:
 		return
 	_update_attackers()
 	for u: Unit in units:
-		if u.alive and not u.path.is_empty():
-			_advance(u, Config.TICK)
+		if not u.alive or u.path.is_empty():
+			u.waiting = false
+			continue
+		if _leg_gate_closed(u):
+			u.waiting = true
+			u.moving = false
+			continue
+		u.waiting = false
+		_advance(u, Config.TICK)
 	tick_in_turn += 1
 	total_ticks += 1
 	if tick_in_turn % Config.DETECTION_INTERVAL_TICKS == 0:
@@ -452,6 +777,7 @@ func _combat() -> void:
 		# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
 		known_enemies[target.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
 		target.shots_received += 1
+		target.last_fired_upon_tick = total_ticks
 		var hit: bool = rng.randf() < hit_probability(shooter, target)
 		if hit:
 			target.hp -= 1
@@ -465,13 +791,16 @@ func _combat() -> void:
 		shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit, "aspect": aspect_of(target, shooter.pos)})
 
 
-## Enemigo visible para el bando del tirador, más cercano, al que el tirador ve.
+## Enemigo visible para el bando del tirador, más cercano, al que el tirador ve
+## y que su ROE permite (arco y distancia máxima de enganche incluidos).
 func _pick_target(shooter: Unit) -> Unit:
+	if not roe_allows_fire(shooter):
+		return null
 	var vis: Dictionary = visible_enemies[shooter.side]
 	# Blanco prioritario de la orden ATTACK, si se lo puede tirar
 	if shooter.attack_target >= 0 and vis.has(shooter.attack_target):
 		var prio: Unit = units[shooter.attack_target]
-		if prio.alive and _can_see(shooter, prio, Config.CENTER_H):
+		if prio.alive and _can_engage(shooter, prio):
 			return prio
 	var best: Unit = null
 	var best_d: float = INF
@@ -482,19 +811,74 @@ func _pick_target(shooter: Unit) -> Unit:
 		var d: float = TerrainAnalysis.dist_m(shooter.cell(), enemy.cell())
 		if shooter.order == Unit.Order.OVERWATCH and not in_overwatch_sector(shooter, enemy.pos):
 			continue
-		if d < best_d and _can_see(shooter, enemy, Config.CENTER_H):
+		if d < best_d and _can_engage(shooter, enemy):
 			best = enemy
 			best_d = d
 	return best
 
 
+## Línea de tiro y dentro del arco y la distancia máxima de enganche del tirador.
+func _can_engage(shooter: Unit, enemy: Unit) -> bool:
+	return TerrainAnalysis.dist_m(shooter.cell(), enemy.cell()) <= shooter.max_engage_m \
+		and in_fire_arc(shooter, enemy.pos) and _can_see(shooter, enemy, Config.CENTER_H)
+
+
+## ¿La ROE de u le deja abrir fuego ahora?
+func roe_allows_fire(u: Unit) -> bool:
+	match u.roe:
+		Unit.Roe.HOLD:
+			return false
+		Unit.Roe.RETURN_FIRE:
+			return fired_upon_recently(u)
+	return true
+
+
+## ¿Recibió un disparo en los últimos ROE_RETURN_FIRE_SECONDS?
+func fired_upon_recently(u: Unit) -> bool:
+	return float(total_ticks - u.last_fired_upon_tick) * Config.TICK < Config.ROE_RETURN_FIRE_SECONDS
+
+
+## ¿Está at (en celdas) dentro del arco de tiro de u? Sin arco, siempre.
+static func in_fire_arc(u: Unit, at: Vector2) -> bool:
+	if u.fire_arc_dir == Vector2.ZERO:
+		return true
+	var d: Vector2 = at - u.pos
+	if d.length_squared() < 0.0001:
+		return true
+	return u.fire_arc_dir.dot(d.normalized()) >= cos(deg_to_rad(Config.FIRE_ARC_HALF_ANGLE_DEG))
+
+
+## Reglas de fuego de una unidad (solo en PLAN). Duran hasta que se cambien.
+func set_roe(unit_id: int, roe: int) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN:
+		return false
+	u.roe = roe
+	return true
+
+
+## Arco de tiro (dir cero = sin arco) y distancia máxima de enganche, en metros (tope MAX_RANGE). Solo en PLAN.
+func set_engagement(unit_id: int, arc_dir: Vector2, max_m: float = Config.MAX_RANGE) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN:
+		return false
+	u.fire_arc_dir = arc_dir.normalized() if arc_dir.length() > 0.001 else Vector2.ZERO
+	u.max_engage_m = clampf(max_m, 0.0, Config.MAX_RANGE)
+	return true
+
+
 ## Qué cara le muestra target a un tirador en from: frente, flanco o retaguardia,
 ## según el ángulo entre el heading del blanco y la dirección al tirador.
 static func aspect_of(target: Unit, from: Vector2) -> int:
-	var to_shooter: Vector2 = from - target.pos
-	if to_shooter.length_squared() < 0.0001:
+	return aspect_from(target.heading, target.pos, from)
+
+
+## Igual que aspect_of, para un blanco hipotético con ese heading en target_pos.
+static func aspect_from(heading: Vector2, target_pos: Vector2, from: Vector2) -> int:
+	var to_shooter: Vector2 = from - target_pos
+	if to_shooter.length_squared() < 0.0001 or heading.length_squared() < 0.0001:
 		return Aspect.FRONT
-	var c: float = target.heading.normalized().dot(to_shooter.normalized())
+	var c: float = heading.normalized().dot(to_shooter.normalized())
 	if c >= Config.ARMOR_FRONT_COS:
 		return Aspect.FRONT
 	if c <= -Config.ARMOR_FRONT_COS:
@@ -518,11 +902,91 @@ func hit_probability(shooter: Unit, target: Unit) -> float:
 	var f_hull: float = 1.0
 	if not analysis.los(shooter.cell(), Config.EYE_H, target.cell(), Config.HULL_H):
 		f_hull = hulldown_hit_factor
-	var f_move: float = moving_shooter_factor if shooter.moving else 1.0
+	var f_move: float = 1.0
+	if shooter.moving:
+		match effective_pace(shooter):
+			Unit.Pace.FAST:
+				f_move = moving_shooter_factor * Config.PACE_FAST_FIRE_FACTOR
+			Unit.Pace.CAUTIOUS:
+				f_move = Config.PACE_CAUTIOUS_FIRE_FACTOR
+			_:
+				f_move = moving_shooter_factor
 	if shooter.order == Unit.Order.OVERWATCH and shooter.overwatch_ready and target.moving:
 		f_move *= Config.OVERWATCH_FIRST_SHOT_FACTOR # emboscada
 	var f_armor: float = aspect_factor(aspect_of(target, shooter.pos)) if armor_enabled else 1.0
 	return minf(p_hit_base * f_dist * f_hull * f_move * f_armor, p_hit_max)
+
+
+## Probabilidad de que un tirador quieto en shooter_cell impacte a un blanco en target_cell
+## con ese heading (para la vista previa de riesgo: sin emboscada ni movimiento del tirador).
+func hit_probability_at(shooter_cell: Vector2i, target_cell: Vector2i, target_heading: Vector2) -> float:
+	var d: float = TerrainAnalysis.dist_m(shooter_cell, target_cell)
+	var f_dist: float = clampf(1.0 - d / Config.MAX_RANGE, 0.2, 1.0)
+	var f_hull: float = 1.0
+	if not analysis.los(shooter_cell, Config.EYE_H, target_cell, Config.HULL_H):
+		f_hull = hulldown_hit_factor
+	var f_armor: float = 1.0
+	if armor_enabled:
+		f_armor = aspect_factor(aspect_from(target_heading, Vector2(target_cell), Vector2(shooter_cell)))
+	return minf(p_hit_base * f_dist * f_hull * f_armor, p_hit_max)
+
+
+## Vista previa de riesgo de la ruta planificada de una unidad contra las amenazas conocidas
+## de su bando (en su última posición conocida, quietas y con la recarga lista).
+## Devuelve {total_s, exposed_s, expected_hits, threats_seeing, worst_aspect (-1 = nunca lo ven),
+## level (0 bajo, 1 medio, 2 alto), exposed (PackedByteArray: 1 si la celda i de la ruta está expuesta)}.
+## No cuenta las esperas de las condiciones de los tramos.
+func route_risk(unit_id: int) -> Dictionary:
+	var u: Unit = get_unit(unit_id)
+	var out: Dictionary = {"total_s": 0.0, "exposed_s": 0.0, "expected_hits": 0.0, "threats_seeing": 0,
+		"worst_aspect": -1, "level": 0, "exposed": PackedByteArray()}
+	if u == null or not u.alive or u.path.is_empty():
+		return out
+	var threats: Array[Vector2i] = threats_for(u.side)
+	var pace: int = effective_pace(u)
+	var spot_m: float = Config.SPOT_RANGE_STATIONARY if pace == Unit.Pace.CAUTIOUS else Config.MAX_RANGE
+	var seeing: Dictionary = {}
+	var exposed: PackedByteArray = PackedByteArray()
+	var pos: Vector2 = u.pos
+	var heading: Vector2 = u.heading
+	var total: float = 0.0
+	var exposed_s: float = 0.0
+	var hits: float = 0.0
+	var worst: int = -1
+	for c: Vector2i in u.path:
+		var delta: Vector2 = Vector2(c) - pos
+		var speed: float = speed_at(c) * pace_speed_factor(pace) * (Config.REVERSE_SPEED_FACTOR if u.reversing else 1.0)
+		var dt: float = delta.length() * Config.CELL_SIZE / maxf(speed, 0.01)
+		if not u.reversing and delta.length() > 0.0001:
+			heading = delta.normalized()
+		total += dt
+		var seen_here: bool = false
+		for i: int in threats.size():
+			var th: Vector2i = threats[i]
+			if TerrainAnalysis.dist_m(th, c) > minf(spot_m, Config.MAX_RANGE) \
+					or not analysis.los(th, Config.EYE_H, c, Config.CENTER_H):
+				continue
+			seen_here = true
+			seeing[i] = true
+			hits += dt / Config.RELOAD_SECONDS * hit_probability_at(th, c, heading)
+			worst = maxi(worst, aspect_from(heading, Vector2(c), Vector2(th)))
+		if seen_here:
+			exposed_s += dt
+		exposed.append(1 if seen_here else 0)
+		pos = Vector2(c)
+	out["total_s"] = total
+	out["exposed_s"] = exposed_s
+	out["expected_hits"] = hits
+	out["threats_seeing"] = seeing.size()
+	out["worst_aspect"] = worst
+	out["exposed"] = exposed
+	var level: int = 0
+	if hits >= Config.RISK_HIGH_HITS:
+		level = 2
+	elif hits >= Config.RISK_MEDIUM_HITS or worst == Aspect.REAR:
+		level = 1
+	out["level"] = level
+	return out
 
 
 func alive_count(side: int) -> int:
@@ -563,7 +1027,7 @@ func speed_at(c: Vector2i) -> float:
 
 
 func _advance(u: Unit, dt: float) -> void:
-	var budget_m: float = speed_at(u.cell()) * dt
+	var budget_m: float = speed_at(u.cell()) * pace_speed_factor(effective_pace(u)) * dt
 	if u.reversing:
 		budget_m *= Config.REVERSE_SPEED_FACTOR
 	while budget_m > 0.0 and not u.path.is_empty():
@@ -578,7 +1042,11 @@ func _advance(u: Unit, dt: float) -> void:
 			var reached: Vector2i = u.path[0]
 			u.path.remove_at(0)
 			if not u.waypoints.is_empty() and u.waypoints[0]["cell"] == reached:
-				u.waypoints.remove_at(0)
+				var done: Dictionary = u.waypoints.pop_front()
+				if str(done.get("signal", "")) != "":
+					signals[u.side][done["signal"]] = total_ticks
+				if _leg_gate_closed(u):
+					break # espera la condición del tramo siguiente
 		else:
 			u.pos += delta.normalized() * (budget_m / Config.CELL_SIZE)
 			budget_m = 0.0
@@ -586,6 +1054,6 @@ func _advance(u: Unit, dt: float) -> void:
 	if not u.moving:
 		if u.final_heading != Vector2.ZERO:
 			u.heading = u.final_heading
-		if u.order == Unit.Order.MOVE or (u.order == Unit.Order.SCOOT and u.scoot_fired):
+		if u.order in [Unit.Order.MOVE, Unit.Order.ASSAULT, Unit.Order.WITHDRAW] or (u.order == Unit.Order.SCOOT and u.scoot_fired):
 			u.order = Unit.Order.NONE
 		u.reversing = false
