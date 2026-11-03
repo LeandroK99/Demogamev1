@@ -17,6 +17,7 @@ const COLOR_PATH_DIRECT: Color = Color(1.0, 0.5, 0.1)
 const COLOR_WAYPOINT: Color = Color(1.0, 1.0, 1.0)
 const COLOR_OVERWATCH: Color = Color(0.4, 1.0, 0.6)
 const COLOR_SCOOT: Color = Color(0.9, 0.5, 1.0)
+const COLOR_ENGAGE: Color = Color(1.0, 0.55, 0.55) # área de enganche (arco + distancia de la ROE)
 const OVERWATCH_ARC_STEPS: int = 12
 const COLOR_FACING: Color = Color(0.3, 0.9, 1.0)
 const COLOR_ATTACK: Color = Color(1.0, 0.25, 0.2)
@@ -105,6 +106,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_ESCAPE:
 		pending_mode = ""
+		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_Z:
+		_cycle_roe()
+		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_C:
+		_engagement_at(get_viewport().get_mouse_position(), key.shift_pressed)
 		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_V:
 		_order_overwatch_at(get_viewport().get_mouse_position())
@@ -243,6 +250,35 @@ func _order_overwatch_at(screen: Vector2) -> void:
 		world.order_overwatch(id, at - u.pos)
 
 
+## Z: siguiente ROE (libre -> solo si te disparan -> retener) para las seleccionadas,
+## partiendo de la de la primera.
+func _cycle_roe() -> void:
+	var u: Unit = primary_unit()
+	if u == null or world.phase != SimWorld.Phase.PLAN:
+		return
+	var next: int = (u.roe + 1) % Unit.Roe.size()
+	for id: int in selected_ids:
+		world.set_roe(id, next)
+
+
+## C: área de enganche hacia el cursor (arco centrado en el cursor y distancia máxima
+## hasta él). Shift+C: sin arco y a distancia máxima.
+func _engagement_at(screen: Vector2, clear: bool) -> void:
+	if selected_ids.is_empty() or world.phase != SimWorld.Phase.PLAN:
+		return
+	if clear:
+		for id: int in selected_ids:
+			world.set_engagement(id, Vector2.ZERO, Config.MAX_RANGE)
+		return
+	var hit: Variant = terrain_view.raycast(camera.project_ray_origin(screen), camera.project_ray_normal(screen))
+	if hit == null:
+		return
+	var at: Vector2 = Vector2((hit as Vector3).x, (hit as Vector3).z) / Config.CELL_SIZE
+	for id: int in selected_ids:
+		var u: Unit = world.get_unit(id)
+		world.set_engagement(id, at - u.pos, (at - u.pos).length() * Config.CELL_SIZE)
+
+
 ## Humo en el punto bajo el cursor: lo tira la seleccionada más cercana que tenga
 ## cargas, alcance y línea de visión (una sola granada por orden).
 func _smoke_at(screen: Vector2) -> void:
@@ -329,7 +365,9 @@ func _draw_paths() -> void:
 		if u.final_heading != Vector2.ZERO and not u.path.is_empty():
 			_arrow(segs, colors, Vector2(u.path.back()), u.final_heading, COLOR_FACING)
 		if u.order == Unit.Order.OVERWATCH:
-			_sector(segs, colors, u)
+			_sector(segs, colors, u, u.overwatch_dir, Config.OVERWATCH_HALF_ANGLE_DEG, Config.MAX_RANGE, COLOR_OVERWATCH)
+		if u.fire_arc_dir != Vector2.ZERO and selected_ids.has(u.id):
+			_sector(segs, colors, u, u.fire_arc_dir, Config.FIRE_ARC_HALF_ANGLE_DEG, u.max_engage_m, COLOR_ENGAGE)
 		if u.order == Unit.Order.SCOOT and not u.scoot_fired and not u.path.is_empty():
 			_dashed(segs, colors, Vector2(u.path.back()), Vector2(u.return_cell), COLOR_SCOOT)
 		if u.attack_target >= 0 and world.known_enemies[PLAYER_SIDE].has(u.attack_target):
@@ -376,20 +414,20 @@ func _cross(segs: PackedVector3Array, colors: PackedColorArray, at: Vector2, col
 		_seg(segs, colors, _ground(at - d), _ground(at + d), color)
 
 
-## Abanico del sector de vigilancia: dos bordes y el arco a MAX_RANGE.
-func _sector(segs: PackedVector3Array, colors: PackedColorArray, u: Unit) -> void:
-	var r: float = Config.MAX_RANGE / Config.CELL_SIZE
-	var half: float = deg_to_rad(Config.OVERWATCH_HALF_ANGLE_DEG)
+## Abanico desde u.pos: dos bordes y el arco a range_m.
+func _sector(segs: PackedVector3Array, colors: PackedColorArray, u: Unit, dir: Vector2, half_deg: float, range_m: float, color: Color) -> void:
+	var r: float = range_m / Config.CELL_SIZE
+	var half: float = deg_to_rad(half_deg)
 	var limit: float = float(world.height_field.size - 1)
 	var prev: Vector2 = Vector2.ZERO
 	for i: int in OVERWATCH_ARC_STEPS + 1:
 		var a: float = -half + 2.0 * half * float(i) / float(OVERWATCH_ARC_STEPS)
-		var p: Vector2 = u.pos + u.overwatch_dir.rotated(a) * r
+		var p: Vector2 = u.pos + dir.rotated(a) * r
 		p = Vector2(clampf(p.x, 0.0, limit), clampf(p.y, 0.0, limit))
 		if i == 0 or i == OVERWATCH_ARC_STEPS:
-			_seg(segs, colors, _ground(u.pos), _ground(p), COLOR_OVERWATCH)
+			_seg(segs, colors, _ground(u.pos), _ground(p), color)
 		if i > 0:
-			_seg(segs, colors, _ground(prev), _ground(p), COLOR_OVERWATCH)
+			_seg(segs, colors, _ground(prev), _ground(p), color)
 		prev = p
 
 

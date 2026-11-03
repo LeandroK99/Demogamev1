@@ -29,12 +29,16 @@ func issue_orders(world: SimWorld) -> void:
 	for u: Unit in world.units:
 		if u.side != side or not u.alive:
 			continue
+		world.set_engagement(u.id, Vector2.ZERO, Config.MAX_RANGE)
 		if u.hp == 1 and not threats.is_empty():
 			_retreat(world, u)
 			reserved.append(world.destination(u))
 		elif not threats.is_empty():
 			var state: Dictionary = evaluate_cell(world, u.cell(), threats)
 			if state["hull_hidden"] and state["can_fire"]:
+				# Emboscada: no tira de lejos salvo que ya lo hayan atacado
+				var ambush_m: float = Config.MAX_RANGE if world.fired_upon_recently(u) else Config.AI_AMBUSH_RANGE
+				world.set_engagement(u.id, Vector2.ZERO, ambush_m)
 				if not world.order_overwatch(u.id, SimWorld.facing_to_threats(u.cell(), threats)):
 					u.path.clear()
 					u.moving = false

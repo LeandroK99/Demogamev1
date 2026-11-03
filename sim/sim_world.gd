@@ -452,6 +452,7 @@ func _combat() -> void:
 		# Fogonazo: el bando del blanco sabe de dónde vino el tiro, aunque no lo vea
 		known_enemies[target.side][shooter.id] = {"cell": shooter.cell(), "last_seen_turn": turn}
 		target.shots_received += 1
+		target.last_fired_upon_tick = total_ticks
 		var hit: bool = rng.randf() < hit_probability(shooter, target)
 		if hit:
 			target.hp -= 1
@@ -465,13 +466,16 @@ func _combat() -> void:
 		shot_events.append({"shooter": shooter.id, "target": target.id, "hit": hit, "aspect": aspect_of(target, shooter.pos)})
 
 
-## Enemigo visible para el bando del tirador, más cercano, al que el tirador ve.
+## Enemigo visible para el bando del tirador, más cercano, al que el tirador ve
+## y que su ROE permite (arco y distancia máxima de enganche incluidos).
 func _pick_target(shooter: Unit) -> Unit:
+	if not roe_allows_fire(shooter):
+		return null
 	var vis: Dictionary = visible_enemies[shooter.side]
 	# Blanco prioritario de la orden ATTACK, si se lo puede tirar
 	if shooter.attack_target >= 0 and vis.has(shooter.attack_target):
 		var prio: Unit = units[shooter.attack_target]
-		if prio.alive and _can_see(shooter, prio, Config.CENTER_H):
+		if prio.alive and _can_engage(shooter, prio):
 			return prio
 	var best: Unit = null
 	var best_d: float = INF
@@ -482,10 +486,60 @@ func _pick_target(shooter: Unit) -> Unit:
 		var d: float = TerrainAnalysis.dist_m(shooter.cell(), enemy.cell())
 		if shooter.order == Unit.Order.OVERWATCH and not in_overwatch_sector(shooter, enemy.pos):
 			continue
-		if d < best_d and _can_see(shooter, enemy, Config.CENTER_H):
+		if d < best_d and _can_engage(shooter, enemy):
 			best = enemy
 			best_d = d
 	return best
+
+
+## Línea de tiro y dentro del arco y la distancia máxima de enganche del tirador.
+func _can_engage(shooter: Unit, enemy: Unit) -> bool:
+	return TerrainAnalysis.dist_m(shooter.cell(), enemy.cell()) <= shooter.max_engage_m \
+		and in_fire_arc(shooter, enemy.pos) and _can_see(shooter, enemy, Config.CENTER_H)
+
+
+## ¿La ROE de u le deja abrir fuego ahora?
+func roe_allows_fire(u: Unit) -> bool:
+	match u.roe:
+		Unit.Roe.HOLD:
+			return false
+		Unit.Roe.RETURN_FIRE:
+			return fired_upon_recently(u)
+	return true
+
+
+## ¿Recibió un disparo en los últimos ROE_RETURN_FIRE_SECONDS?
+func fired_upon_recently(u: Unit) -> bool:
+	return float(total_ticks - u.last_fired_upon_tick) * Config.TICK < Config.ROE_RETURN_FIRE_SECONDS
+
+
+## ¿Está at (en celdas) dentro del arco de tiro de u? Sin arco, siempre.
+static func in_fire_arc(u: Unit, at: Vector2) -> bool:
+	if u.fire_arc_dir == Vector2.ZERO:
+		return true
+	var d: Vector2 = at - u.pos
+	if d.length_squared() < 0.0001:
+		return true
+	return u.fire_arc_dir.dot(d.normalized()) >= cos(deg_to_rad(Config.FIRE_ARC_HALF_ANGLE_DEG))
+
+
+## Reglas de fuego de una unidad (solo en PLAN). Duran hasta que se cambien.
+func set_roe(unit_id: int, roe: int) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN:
+		return false
+	u.roe = roe
+	return true
+
+
+## Arco de tiro (dir cero = sin arco) y distancia máxima de enganche, en metros (tope MAX_RANGE). Solo en PLAN.
+func set_engagement(unit_id: int, arc_dir: Vector2, max_m: float = Config.MAX_RANGE) -> bool:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN:
+		return false
+	u.fire_arc_dir = arc_dir.normalized() if arc_dir.length() > 0.001 else Vector2.ZERO
+	u.max_engage_m = clampf(max_m, 0.0, Config.MAX_RANGE)
+	return true
 
 
 ## Qué cara le muestra target a un tirador en from: frente, flanco o retaguardia,

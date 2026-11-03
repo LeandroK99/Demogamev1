@@ -3,6 +3,8 @@ extends RefCounted
 ## Un tanque de la simulación.
 
 enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT }
+## Reglas de fuego: libre, solo si te dispararon hace poco, o retener.
+enum Roe { FREE, RETURN_FIRE, HOLD }
 
 var id: int = 0
 var side: int = 0 # 0 azul, 1 rojo
@@ -26,6 +28,10 @@ var alive: bool = true
 var last_fire_tick: int = -1000000 # tick global del último disparo
 var smoke_charges: int = Config.SMOKE_CHARGES
 var shots_received: int = 0 # disparos recibidos (impacten o no)
+var roe: int = Roe.FREE # reglas de fuego; duran hasta que se cambien (no las borra otra orden)
+var fire_arc_dir: Vector2 = Vector2.ZERO # centro del arco de tiro (cero = sin arco)
+var max_engage_m: float = Config.MAX_RANGE # distancia máxima de enganche
+var last_fired_upon_tick: int = -1000000 # tick global del último disparo recibido
 
 
 func _init(p_id: int, p_side: int, p_pos: Vector2) -> void:

@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
+	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -13,6 +13,12 @@ const ORDER_NAMES: Dictionary = {
 	Unit.Order.ATTACK: "atacar",
 	Unit.Order.OVERWATCH: "vigilancia",
 	Unit.Order.SCOOT: "disparar y replegarse",
+}
+
+const ROE_NAMES: Dictionary = {
+	Unit.Roe.FREE: "fuego libre",
+	Unit.Roe.RETURN_FIRE: "solo si le disparan",
+	Unit.Roe.HOLD: "retener fuego",
 }
 
 var world: SimWorld
@@ -110,6 +116,12 @@ func _unit_text() -> String:
 			order_text += " (rojo %d)" % (sel.attack_target - Config.UNITS_PER_SIDE + 1)
 		lines.append("Orden: %s" % order_text)
 		lines.append("Mira al %s" % compass(sel.heading))
+		var roe_text: String = ROE_NAMES.get(sel.roe, "?")
+		if sel.fire_arc_dir != Vector2.ZERO:
+			roe_text += ", arco al %s" % compass(sel.fire_arc_dir)
+		if sel.max_engage_m < Config.MAX_RANGE:
+			roe_text += ", hasta %d m" % roundi(sel.max_engage_m)
+		lines.append("ROE: %s" % roe_text)
 		lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
 		lines.append("")
 	lines.append("Disparos recibidos")

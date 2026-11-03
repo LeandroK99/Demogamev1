@@ -82,6 +82,11 @@ const SMOKE_TURNS: int = 2 # turnos de ejecución que dura la nube
 const AI_SMOKE_EXPOSURE: float = 0.5 # la IA tira humo al retroceder si su celda está más expuesta que esto
 const AI_SMOKE_DIST: float = 5.0 # celdas hacia la amenaza donde la IA pone la nube
 
+# --- Reglas de fuego (ROE) ---
+const ROE_RETURN_FIRE_SECONDS: float = 15.0 # "solo si te disparan": queda liberado este tiempo tras recibir un disparo
+const FIRE_ARC_HALF_ANGLE_DEG: float = 45.0 # semiángulo del arco de tiro
+const AI_AMBUSH_RANGE: float = 250.0 # metros: la IA en vigilancia no tira más lejos que esto si no la atacaron
+
 # --- Orden hull-down e IA ---
 const HULLDOWN_MIN_SEPARATION: float = 3.0 # celdas mínimas entre destinos de una misma orden
 const NO_THREAT_ADVANCE: int = 20 # celdas hacia el centro si no hay amenazas conocidas
