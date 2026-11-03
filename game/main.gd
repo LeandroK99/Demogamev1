@@ -1,6 +1,7 @@
 extends Node3D
-## Punto de entrada: construye todo por código.
+## Punto de entrada: construye todo por código. R reinicia con la misma semilla; Shift+R con una nueva.
 
+var map_seed: int = Config.SEED
 var world: SimWorld
 var height_field: HeightField
 var terrain_view: TerrainView
@@ -9,52 +10,78 @@ var overlay: Overlay
 var input_controller: InputController
 var turn_controller: TurnController
 var combat_fx: CombatFx
+var hud: Hud
 var unit_views: Array[UnitView] = []
+
+var _game_root: Node3D
 
 
 func _ready() -> void:
-	world = SimWorld.new(Config.SEED)
+	_build_environment()
+	_start_game(map_seed)
+	print("Hull-Down OK")
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	var key: InputEventKey = event as InputEventKey
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_R:
+		if key.shift_pressed:
+			map_seed = randi() % 100000
+		_start_game(map_seed)
+
+
+## Arma una partida nueva (descarta la anterior si existe).
+func _start_game(p_seed: int) -> void:
+	if _game_root != null:
+		remove_child(_game_root)
+		_game_root.queue_free()
+	_game_root = Node3D.new()
+	add_child(_game_root)
+	unit_views = []
+
+	world = SimWorld.new(p_seed)
 	height_field = world.height_field
 
 	terrain_view = TerrainView.new()
-	add_child(terrain_view)
+	_game_root.add_child(terrain_view)
 	terrain_view.setup(height_field)
 
 	camera_rig = CameraRTS.new()
-	add_child(camera_rig)
+	_game_root.add_child(camera_rig)
 	camera_rig.setup(height_field)
 	# Arrancar mirando al despliegue azul
 	camera_rig.position.z = (height_field.size - 20) * Config.CELL_SIZE
 	camera_rig.zoom = 160.0
 	camera_rig._clamp_to_map()
-
-	_build_environment()
+	camera_rig.camera.make_current()
 
 	for u: Unit in world.units:
 		var v: UnitView = UnitView.new()
-		add_child(v)
+		_game_root.add_child(v)
 		v.setup(u, height_field)
 		unit_views.append(v)
 
 	overlay = Overlay.new()
-	add_child(overlay)
+	_game_root.add_child(overlay)
 	overlay.setup(terrain_view, world)
 
 	input_controller = InputController.new()
-	add_child(input_controller)
+	_game_root.add_child(input_controller)
 	input_controller.setup(world, camera_rig.camera, terrain_view, unit_views)
 	input_controller.selection_changed.connect(_update_overlay_selection)
 
 	combat_fx = CombatFx.new()
-	add_child(combat_fx)
+	_game_root.add_child(combat_fx)
 	combat_fx.setup(height_field)
 
 	turn_controller = TurnController.new()
-	add_child(turn_controller)
+	_game_root.add_child(turn_controller)
 	turn_controller.setup(world, unit_views, combat_fx)
 	turn_controller.plan_started.connect(_on_plan_started)
 
-	print("Hull-Down OK")
+	hud = Hud.new()
+	_game_root.add_child(hud)
+	hud.setup(world, turn_controller, input_controller, p_seed)
 
 
 func _process(_delta: float) -> void:
@@ -62,14 +89,14 @@ func _process(_delta: float) -> void:
 	_update_overlay_selection()
 
 
-## Nuevo turno: la exposición cambió (amenazas conocidas nuevas).
-func _on_plan_started() -> void:
-	overlay.refresh()
-
-
 func _update_overlay_selection() -> void:
 	var u: Unit = input_controller.primary_unit()
 	overlay.set_selected_cell(u.cell() if u != null else Vector2i(-1, -1))
+
+
+## Nuevo turno: la exposición cambió (amenazas conocidas nuevas).
+func _on_plan_started() -> void:
+	overlay.refresh()
 
 
 func _build_environment() -> void:
