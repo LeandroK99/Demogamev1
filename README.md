@@ -43,7 +43,9 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | Rueda | Zoom |
 | Q / E o botón medio | Rotar la cámara |
 | R / Shift+R | Reiniciar con la misma semilla / con un mapa nuevo |
-| L | Cambiar de escenario: tanques (la demo original) o la loma (infantería y un tanque por bando) |
+| L | Cambiar de escenario: tanques (la demo original), la loma (infantería y un tanque por bando) o el pueblo |
+| I y clic derecho | Abrir un boquete en la pared de una casa: el tanque le tira (a 300 m, con línea de tiro); la escuadra va, pone su carga de demolición (una por escuadra) y la vuela a los 8 s |
+| O | Mostrar u ocultar los techos (con la cámara cerca se ocultan solos) |
 | U y clic derecho | Suprimir: la unidad se queda quieta batiendo esa zona con fusiles o coaxial, aunque no vea a nadie. Casi no mata, pero suprime a todo lo que haya ahí. Esc cancela |
 
 ### Reglas de combate
@@ -76,6 +78,16 @@ Con **L** cambiás al escenario de infantería. Cada bando tiene 3 escuadras de 
 - **IA roja:** defiende en profundidad: una escuadra adelantada en la cresta, la principal en la contrapendiente y una reserva atrás, con cobertura y vista a las rutas de acercamiento; no abre fuego a más de 150 m salvo que la ataquen y suprime la última posición conocida de tu infantería. Durante el turno, la adelantada se repliega si la aprietan, la reserva refuerza a la que está en contacto y, si tu infantería en la cresta queda diezmada o frenada, contraataca. Si tu infantería llega a la cresta sin haberse afirmado (sin pozos) y el rojo tiene tantas escuadras frescas cerca, contraatacan todas.
 - **Pelotón mixto:** con el pelotón seleccionado (doble clic), la infantería va al objetivo y el tanque se queda 48 m detrás, cubriéndola.
 
+### El pueblo
+
+Con **L** (o `-- --pueblo`) llegás al pueblo: doce casas alrededor de una plaza, con dos calles que se cruzan en ella. Las mismas fuerzas que en la loma; el rojo defiende las casas y el objetivo es la plaza.
+
+- **Casas:** paredes de 1 m que cortan la vista y las balas; las ventanas dejan ver y tirar entre 0,9 y 2 m de altura, y solo se entra por las puertas (o por un boquete). Adentro hay hasta cuatro cuartos comunicados. Desde el aire las casas tienen techo; acercá la cámara o apretá O para ver adentro.
+- **Calles:** la infantería va pegada a las fachadas, en fila cerrada, y detenida se pone a lo largo de la pared. Una calle que el enemigo vigila no se cruza sin humo: tira humo, espera que tape y cruza toda la escuadra junta, en línea. Sin humo, espera.
+- **Tirar desde adentro:** el que tira desde el fondo de un cuarto se delata mucho menos que el que se asoma a la ventana. El rojo abre una aspillera baja para su ametralladora.
+- **Esquinas:** antes de doblar una esquina ciega, dos soldados la "cortan como una torta": avanzan en arco de a poco, uno de pie y otro agachado, y ven lo que hay detrás antes de exponerse enteros. El resto espera.
+- **Tanque e infantería:** un tanque solo pegado a las casas recibe más del antitanque (×1,5); con infantería propia a 30 m, la mitad.
+
 Ganás si destruís a los 4 rojos. Si se llega al turno 12, gana el bando con más tanques vivos.
 
 ## Tests
@@ -100,6 +112,11 @@ godot --headless --path . --script res://tests/bench_loma.gd
 godot --headless --path . --script res://tests/harness_loma.gd -- 6
 # ... con el azul por misión del pelotón
 godot --headless --path . --script res://tests/harness_loma.gd -- 6 12 peloton
+# ... en el pueblo
+godot --headless --path . --script res://tests/harness_loma.gd -- 6 12 pueblo
+
+# Smoke test del pueblo
+godot --headless --path . --quit-after 3000 -- --pueblo --autoplay
 ```
 
 ## Estructura
