@@ -811,6 +811,8 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 	for s: Soldier in u.soldiers:
 		if not s.is_ok() or s.reload_left > 0.0 or s.suppression >= Config.PINNED or s.care_target >= 0:
 			continue # el que atiende a un herido no tira
+		if s.reflex_key >= 0:
+			continue # tiene un enemigo encima: tira por reflejo (CqbSim)
 		if s.role == Soldier.Role.AT and not area and u.at_charges > 0 and u.reload2_left <= 0.0:
 			var tank: Unit = _pick_tank(w, u, s)
 			if tank != null:

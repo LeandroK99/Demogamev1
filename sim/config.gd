@@ -582,8 +582,8 @@ const CQB_REACT_READY: float = 0.25 # segundos para tirar con el arma lista (ent
 const CQB_REACT_MOVING: float = 0.7 # ... caminando sin esperarlo
 const CQB_REACT_SUPP: float = 1.2 # segundos más con la supresión a 100 (aturdido por la granada)
 const CQB_REACT_JITTER: float = 0.15
-const CQB_REFLEX_P_HIT: float = 0.75 # tiro reflejo a menos de CQB_REFLEX_M
-const CQB_REFLEX_RELOAD: float = 0.6 # entre un tiro reflejo y el siguiente
+const CQB_REFLEX_P_HIT: float = 0.85 # tiro reflejo a menos de CQB_REFLEX_M
+const CQB_REFLEX_RELOAD: float = 0.4 # entre un tiro reflejo y el siguiente
 const CQB_REACH_SQUADS_M: float = 40.0 # solo se buscan reflejos entre escuadras con las anclas a esto (más el alcance)
 
 # --- Limpiar la casa y defenderla (fases 70 y 71) ---

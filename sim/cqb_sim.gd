@@ -501,7 +501,8 @@ func _reflex_shot(w: SimWorld, u: Unit, s: Soldier, tu: Unit, t: Soldier) -> voi
 	tu.shots_received += 1
 	tu.last_fired_upon_tick = w.total_ticks
 	w.known_enemies[tu.side][u.id] = {"cell": u.cell(), "last_seen_turn": w.turn}
-	var hit: bool = w.rng.randf() < Config.CQB_REFLEX_P_HIT * InfantrySim.soldier_weak_factor(u, null)
+	var p: float = Config.CQB_REFLEX_P_HIT * (Config.SUPPRESSED_FIRE_FACTOR if s.suppression >= Config.SUPPRESSED else 1.0)
+	var hit: bool = w.rng.randf() < p
 	if hit:
 		w.damage_soldier(tu, t)
 	var wpn: int = Unit.Weapon.MG if s.role == Soldier.Role.MG else Unit.Weapon.RIFLES
