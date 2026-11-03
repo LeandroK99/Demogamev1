@@ -12,6 +12,7 @@ var hp: int = Config.TANK_HP
 var reload_left: float = 0.0
 var path: Array[Vector2i] = []
 var final_heading: Vector2 = Vector2.ZERO # orientación al llegar (cero = la de la marcha)
+var direct_route: bool = false # la ruta actual es directa (ignora la exposición)
 var attack_target: int = -1 # id del enemigo a atacar (-1 = ninguno)
 var order: int = Order.NONE
 var moving: bool = false

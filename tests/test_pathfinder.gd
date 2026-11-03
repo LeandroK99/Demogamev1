@@ -54,3 +54,27 @@ func test_unit_reaches_target() -> void:
 		world.step()
 	assert_eq(u.cell(), target, "llegó al destino")
 	assert_true(not u.moving, "quedó detenido")
+
+
+func test_direct_route_ignores_exposure() -> void:
+	var pf: Pathfinder = Pathfinder.new(HeightField.new(N))
+	var e: PackedFloat32Array = _band_exposure()
+	pf.set_exposure(e)
+	var covered: Array[Vector2i] = pf.find_path(FROM, TO, true)
+	var direct: Array[Vector2i] = pf.find_path(FROM, TO, false)
+	assert_eq(direct.size(), 31, "la directa cruza en línea recta")
+	assert_lt(direct.size(), covered.size(), "la directa es más corta que la cubierta")
+	var exposed: int = 0
+	for c: Vector2i in direct:
+		if e[c.y * N + c.x] > 0.0:
+			exposed += 1
+	assert_true(exposed > 0, "la directa pasa por la franja expuesta")
+
+
+func test_order_move_direct_flag() -> void:
+	var world: SimWorld = SimWorld.new(1, HeightField.new(N), false)
+	var u: Unit = world.units[0]
+	assert_true(world.order_move(u.id, u.cell() + Vector2i(0, -5), Vector2.ZERO, false), "orden directa aceptada")
+	assert_true(u.direct_route, "la unidad sabe que su ruta es directa")
+	assert_true(world.order_move(u.id, u.cell() + Vector2i(0, -5)), "orden cubierta aceptada")
+	assert_true(not u.direct_route, "la ruta cubierta no es directa")

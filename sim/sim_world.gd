@@ -135,18 +135,20 @@ func invalidate_exposure() -> void:
 
 ## Calcula la ruta más cubierta para el bando de la unidad. Devuelve false si no hay ruta.
 ## facing: orientación final opcional (Vector2.ZERO = la de la marcha).
-func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.ZERO) -> bool:
+## covered = false: ruta directa, la más corta sin importar la exposición.
+func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.ZERO, covered: bool = true) -> bool:
 	var u: Unit = get_unit(unit_id)
 	if u == null or not u.alive or phase != Phase.PLAN:
 		return false
 	if _pathfinder_side != u.side:
 		pathfinder.set_exposure(exposure_for(u.side))
 		_pathfinder_side = u.side
-	var path: Array[Vector2i] = pathfinder.find_path(u.cell(), target_cell)
+	var path: Array[Vector2i] = pathfinder.find_path(u.cell(), target_cell, covered)
 	if path.is_empty():
 		return false
 	path.remove_at(0) # la celda actual
 	u.path = path
+	u.direct_route = not covered
 	u.order = Unit.Order.MOVE
 	u.moving = not path.is_empty()
 	u.attack_target = -1

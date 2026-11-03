@@ -3,7 +3,7 @@ extends CanvasLayer
 ## HUD: estado del turno, unidad seleccionada, disparos recibidos, ayuda de teclas y cartel final.
 
 const PLAYER_SIDE: int = 0
-const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Clic der sobre rojo: atacar · " \
+const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Clic der sobre rojo: atacar\n" \
 	+ "H: hull-down · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
