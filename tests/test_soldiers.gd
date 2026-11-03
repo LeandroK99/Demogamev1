@@ -113,7 +113,7 @@ func test_wounded_stay_behind() -> void:
 	var world: SimWorld = _world()
 	var sq: Unit = world.add_unit(0, Vector2(40, 80), Unit.Kind.INFANTRY)
 	var s: Soldier = sq.soldiers[4]
-	world.inf.hit_soldier(world, sq, s)
+	world.damage_soldier(sq, s)
 	s.state = Soldier.State.WOUNDED # determinista: herido
 	var at: Vector2 = s.pos
 	world.order_move(sq.id, Vector2i(40, 60))

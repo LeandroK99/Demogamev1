@@ -72,7 +72,7 @@ func test_infantry_firefight_both_sides_bleed() -> void:
 	var b: Unit = world.add_unit(1, Vector2(48, 50), Unit.Kind.INFANTRY) # 40 m
 	_run(world, 300)
 	assert_true(_shots(world, a.id, Unit.Weapon.RIFLES) > 10, "los fusileros tiran")
-	assert_true(_shots(world, a.id, Unit.Weapon.MG) > 3, "la ametralladora tira ráfagas")
+	assert_true(_shots(world, a.id, Unit.Weapon.MG) + _shots(world, b.id, Unit.Weapon.MG) > 3, "las ametralladoras tiran ráfagas")
 	assert_lt(a.hp + b.hp, 2 * Config.INF_MEN, "hay bajas")
 
 

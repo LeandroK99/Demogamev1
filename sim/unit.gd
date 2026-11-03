@@ -118,6 +118,15 @@ func set_posture(p: int) -> void:
 			s.posture = p
 
 
+## Supresión de la unidad (y de cada soldado, si es una escuadra). Para escenarios y tests.
+func set_suppression(value: float, tick: int) -> void:
+	suppression = value
+	last_suppressed_tick = tick
+	for s: Soldier in soldiers:
+		s.suppression = value
+		s.last_suppressed_tick = tick
+
+
 ## Deja n soldados en condiciones (los demás, muertos). Para escenarios y tests.
 func set_men(n: int) -> void:
 	for s: Soldier in soldiers:

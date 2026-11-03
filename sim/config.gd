@@ -181,8 +181,17 @@ const SOLDIER_COAX_P_HIT: float = 0.12 # ráfaga de la coaxial, por soldado dent
 const SOLDIER_BURST_M: float = 3.0 # radio de una ráfaga alrededor del punto apuntado
 const SOLDIER_CROUCH_HIT_FACTOR: float = 0.75 # contra un soldado agachado (cuerpo a tierra: INF_PRONE_HIT_FACTOR)
 const SOLDIER_COVER_HIT_FACTOR: float = 0.2 # contra uno protegido por un obstáculo o el terreno
+const SOLDIER_TARGET_SPREAD: int = 5 # los tiradores de una escuadra se reparten entre estos blancos más cercanos
 const SOLDIER_TARGET_CHECKS: int = 3 # líneas de visión por soldado al elegir blanco (los más cercanos)
-const SOLDIER_SHOT_SUPP_SCALE: float = 0.12 # supresión de un tiro de un soldado, en fracción de la del arma
+const SOLDIER_SHOT_SUPP_SCALE: float = 0.12 # fuego de área de un soldado: fracción de la supresión del arma a cada escuadra
+
+# --- Supresión de cada soldado ---
+const SOLDIER_SUPP_RIFLE: float = 8.0 # supresión de un tiro de fusil al soldado al que apuntó
+const SOLDIER_SUPP_BURST: float = 15.0 # ... de una ráfaga (ametralladora o coaxial)
+const SOLDIER_SUPP_NEAR_M: float = 5.0 # los soldados a esta distancia del tiro reciben la mitad
+const SOLDIER_SUPP_COVER_FACTOR: float = 0.6 # protegido, recibe esta fracción
+const SOLDIER_SUPP_HALT: float = 0.5 # con más de esta fracción de soldados suprimidos, la escuadra no avanza
+const MORALE_LEADER_LOSS: float = 10.0 # baja extra de moral si cae el jefe
 const SUPP_MG: float = 25.0 # supresión de una ráfaga de ametralladora
 
 # --- Generación del terreno ---

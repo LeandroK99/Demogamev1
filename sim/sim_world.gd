@@ -917,8 +917,8 @@ func step() -> void:
 			u.moving = false
 			continue
 		u.waiting = false
-		if is_suppressed(u) and u.is_infantry():
-			u.moving = false # cuerpo a tierra, no avanza
+		if u.is_infantry() and inf.halted(u):
+			u.moving = false # la mayoría suprimida: cuerpo a tierra, no avanza
 			continue
 		if u.is_infantry() and inf.lagging(u):
 			u.moving = true # el ancla espera a los rezagados
@@ -943,8 +943,9 @@ func is_suppressed(u: Unit) -> bool:
 	return u.suppression >= Config.SUPPRESSED
 
 
+## Escuadra clavada: la mayoría de sus soldados en condiciones lo están (no avanza).
 func is_pinned(u: Unit) -> bool:
-	return u.is_infantry() and u.suppression >= Config.PINNED
+	return u.is_infantry() and inf.pinned_fraction(u) > 0.5
 
 
 ## La supresión baja sola pasado un rato sin fuego; la infantería suprimida pierde moral.
@@ -952,10 +953,13 @@ func _update_suppression() -> void:
 	for u: Unit in units:
 		if not u.alive:
 			continue
+		if u.is_infantry():
+			# Por soldado; la escuadra pierde moral según la parte de sus soldados suprimidos
+			var frac: float = inf.decay_suppression(self, u)
+			_lose_morale(u, Config.MORALE_SUPP_DRAIN * frac * Config.TICK)
+			continue
 		if float(total_ticks - u.last_suppressed_tick) * Config.TICK > Config.SUPP_DECAY_DELAY:
 			u.suppression = maxf(0.0, u.suppression - Config.SUPP_DECAY * Config.TICK)
-		if u.is_infantry() and is_suppressed(u):
-			_lose_morale(u, Config.MORALE_SUPP_DRAIN * Config.TICK)
 
 
 func _lose_morale(u: Unit, amount: float) -> void:
@@ -979,8 +983,15 @@ func _suppress(target: Unit, w: int, hit: bool, factor: float = 1.0) -> void:
 			_add_suppression(u, amount * 0.5)
 
 
+## Supresión a toda la unidad (a una escuadra, a cada uno de sus soldados: fuego de área y cañón).
 func _add_suppression(u: Unit, amount: float) -> void:
-	u.suppression = minf(100.0, u.suppression + amount)
+	if u.is_infantry():
+		for s: Soldier in u.soldiers:
+			if s.is_ok():
+				inf.add_soldier_suppression(self, s, amount)
+		inf.aggregate_suppression(u)
+	else:
+		u.suppression = minf(100.0, u.suppression + amount)
 	u.last_suppressed_tick = total_ticks
 	if u.is_infantry() and is_suppressed(u):
 		u.prone = true
@@ -1074,10 +1085,11 @@ func _fire_slot(shooter: Unit, slot: int) -> void:
 ## Un impacto: un hombre menos (con su golpe a la moral) o un impacto de cañón.
 func _damage(target: Unit) -> void:
 	if target.is_infantry():
-		inf.hit_random(self, target)
-		_lose_morale(target, Config.MORALE_PER_CASUALTY)
-	else:
-		target.hp -= 1
+		var s: Soldier = inf.random_ok(self, target)
+		if s != null:
+			damage_soldier(target, s)
+		return
+	target.hp -= 1
 	_check_dead(target)
 
 
@@ -1087,7 +1099,7 @@ func damage_soldier(u: Unit, s: Soldier) -> void:
 	var was_ok: bool = s.is_ok()
 	inf.hit_soldier(self, u, s)
 	if was_ok:
-		_lose_morale(u, Config.MORALE_PER_CASUALTY)
+		_lose_morale(u, Config.MORALE_PER_CASUALTY + (Config.MORALE_LEADER_LOSS if s.role == Soldier.Role.LEADER else 0.0))
 	_check_dead(u)
 
 
