@@ -133,7 +133,8 @@ static func snake_sectors(w: SimWorld, p: int, into: int) -> Array[Vector2]:
 	if axis == Vector2.ZERO:
 		axis = -w.rooms().normal_from(p, into)
 	var side: Vector2 = Vector2(-axis.y, axis.x)
-	return [axis, side, -side, -axis]
+	var out: Array[Vector2] = [axis, side, -side, -axis]
+	return out
 
 
 static func _in_room(w: SimWorld, q: Vector2, room: int) -> Vector2:
@@ -328,7 +329,9 @@ func _enter(w: SimWorld, u: Unit, step: Dictionary) -> void:
 	var room: int = int(step["room"])
 	var pts: Array[Vector2] = entry_points(w, p, room, float(c["side"]))
 	var corridor: bool = w.rooms().is_corridor(room)
-	var sectors: Array[Vector2] = snake_sectors(w, p, room) if corridor else []
+	var sectors: Array[Vector2] = []
+	if corridor:
+		sectors = snake_sectors(w, p, room)
 	var inward: Vector2 = -w.rooms().normal_from(p, room)
 	for s: Soldier in u.soldiers:
 		if s.cqb_role < 0 or not s.is_ok():
