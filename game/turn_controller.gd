@@ -73,6 +73,9 @@ func _process(delta: float) -> void:
 		elif shooter.side == PLAYER_SIDE or world.visible_enemies[PLAYER_SIDE].has(shooter.id):
 			fx.add_shot(shooter, world.units[int(e["target"])], bool(e["hit"]), int(e.get("aspect", SimWorld.Aspect.FRONT)), int(e.get("weapon", Unit.Weapon.CANNON)))
 	world.shot_events.clear()
+	for at: Vector2 in world.blast_events:
+		fx.add_blast_m(at)
+	world.blast_events.clear()
 	var alpha: float = clampf(_accum / Config.TICK, 0.0, 1.0) if world.phase == SimWorld.Phase.EXECUTE else 1.0
 	_apply_fog(alpha)
 

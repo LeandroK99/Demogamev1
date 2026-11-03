@@ -720,19 +720,124 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 			if tank != null:
 				_fire_at_tank(w, u, s, tank)
 				continue
-		if u.reload_left > 0.0 or s.ammo <= 0:
+		if u.reload_left > 0.0:
+			continue
+		if s.ammo <= 0 and s.grenades <= 0 and s.gl_rounds <= 0:
 			continue
 		var wpn: int = Unit.Weapon.MG if s.role == Soldier.Role.MG else Unit.Weapon.RIFLES
 		if area:
-			_area_shot(w, u, s, wpn)
+			if s.ammo > 0:
+				_area_shot(w, u, s, wpn)
 			continue
-		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), SimWorld.weapon_range(wpn), s.index)
+		var reach: float = SimWorld.weapon_range(wpn)
+		if s.ammo <= 0:
+			reach = Config.GL_RANGE if s.gl_rounds > 0 else Config.GRENADE_RANGE_M
+		var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), reach, s.index)
 		if not t.is_empty():
+			if grenade_at(w, u, s, t["soldier"]) or s.ammo <= 0:
+				continue
 			_shoot(w, u, s.pos, eye_of(w, s), s, t["unit"], t["soldier"], wpn)
-		elif s.suppress_m.x >= 0.0:
+		elif s.suppress_m.x >= 0.0 and s.ammo > 0:
 			var cell: Vector2i = Vector2i((s.suppress_m / Config.CELL_SIZE).round())
 			if w.can_suppress_at(u, cell):
 				_area_shot(w, u, s, wpn, cell) # base de fuego: bate el contacto aunque no lo vea
+
+
+## --- Granadas (fase 49) ---
+
+## Busca blanco y, si está protegido de su fusil, le tira una granada. Contra un enemigo visible protegido: granada de mano si está a 8-30 m, o
+## el lanzagranadas del granadero si está a 30-150 m. No la tira si cae cerca de un propio.
+func try_grenade(w: SimWorld, u: Unit, s: Soldier) -> bool:
+	if s.grenades <= 0 and s.gl_rounds <= 0:
+		return false
+	var reach: float = Config.GL_RANGE if s.gl_rounds > 0 else Config.GRENADE_RANGE_M
+	var t: Dictionary = pick_soldier(w, u, s.pos, eye_of(w, s), reach, s.index)
+	return not t.is_empty() and grenade_at(w, u, s, t["soldier"])
+
+
+## Granada contra ts (el blanco que eligió el soldado), si conviene: ver try_grenade.
+func grenade_at(w: SimWorld, u: Unit, s: Soldier, ts: Soldier) -> bool:
+	if s.grenades <= 0 and s.gl_rounds <= 0:
+		return false
+	if not is_protected_from(w, ts, s.pos):
+		return false # al descubierto alcanza el fusil
+	var d: float = s.pos.distance_to(ts.pos)
+	var hand: bool = s.grenades > 0 and d >= Config.GRENADE_MIN_M and d <= Config.GRENADE_RANGE_M
+	var launcher: bool = not hand and s.gl_rounds > 0 and d >= Config.GL_MIN_M
+	if not hand and not launcher:
+		return false
+	if _friend_near(w, u.side, ts.pos):
+		return false
+	var scatter: float = d * (Config.GRENADE_SCATTER if hand else Config.GL_SCATTER)
+	var at: Vector2 = ts.pos + Vector2(w.rng.randf_range(-scatter, scatter), w.rng.randf_range(-scatter, scatter))
+	var delay: float = Config.GRENADE_FUSE_SECONDS if hand else Config.GL_FLIGHT_SECONDS
+	if hand:
+		s.grenades -= 1
+		s.reload_left = Config.GRENADE_THROW_SECONDS
+	else:
+		s.gl_rounds -= 1
+		s.reload_left = Config.GL_RELOAD
+	s.last_fire_tick = w.total_ticks
+	s.heading = (ts.pos - s.pos).normalized()
+	u.last_fire_tick = w.total_ticks
+	w.grenades.append({"at": at, "tick": w.total_ticks + roundi(delay / Config.TICK), "side": u.side, "unit": u.id, "from": s.pos})
+	return true
+
+
+## ¿Hay un soldado propio en condiciones cerca de at?
+func _friend_near(w: SimWorld, side: int, at: Vector2) -> bool:
+	for fu: Unit in w.units:
+		if not fu.alive or fu.side != side or not fu.is_infantry() or fu.pos_m().distance_to(at) > Config.GRENADE_FRIENDLY_M + Config.SOLDIER_LAG_M * 4.0:
+			continue
+		for f: Soldier in fu.soldiers:
+			if f.state != Soldier.State.DEAD and f.state != Soldier.State.EVACUATED and f.pos.distance_to(at) <= Config.GRENADE_FRIENDLY_M:
+				return true
+	return false
+
+
+## Hace explotar las granadas que cumplieron su tiempo.
+func update_grenades(w: SimWorld) -> void:
+	while w.blast_events.size() > 64: # la vista las consume; sin vista (tests), que no crezca
+		w.blast_events.pop_front()
+	var left: Array[Dictionary] = []
+	for g: Dictionary in w.grenades:
+		if int(g["tick"]) <= w.total_ticks:
+			explode(w, g["at"], w.get_unit(int(g["unit"])), g["from"])
+		else:
+			left.append(g)
+	w.grenades = left
+
+
+## Explosión en at: esquirlas a todos (de los dos bandos) a GRENADE_RADIUS_M, sin importar rocas ni
+## muros; menos cuerpo a tierra o en un cráter. Suprime al doble del radio.
+func explode(w: SimWorld, at: Vector2, owner: Unit, from: Vector2) -> void:
+	w.blast_events.append(at)
+	var r: float = Config.GRENADE_RADIUS_M
+	for tu: Unit in w.units:
+		if not tu.alive or not tu.is_infantry() or tu.pos_m().distance_to(at) > r * 2.0 + Config.SOLDIER_LAG_M * 4.0:
+			continue
+		var touched: bool = false
+		for t: Soldier in tu.soldiers:
+			if t.state == Soldier.State.DEAD or t.state == Soldier.State.EVACUATED:
+				continue
+			var d: float = t.pos.distance_to(at)
+			if d > r * 2.0:
+				continue
+			touched = true
+			if t.is_ok():
+				add_soldier_suppression(w, t, Config.GRENADE_SUPP * (1.0 if d <= r else 0.5))
+			if d > r:
+				continue
+			var low: bool = t.posture == Soldier.Posture.PRONE or (t.posture == Soldier.Posture.CROUCH and w.micro != null and w.micro.type_at_m(t.pos) == MicroCover.Type.CRATER)
+			var p: float = Config.GRENADE_P_HIT * (1.0 - 0.5 * d / r) * (Config.GRENADE_PRONE_FACTOR if low else 1.0)
+			if w.rng.randf() < p:
+				w.damage_soldier(tu, t)
+		if touched and tu.alive:
+			tu.last_fired_upon_tick = w.total_ticks
+			if owner != null and owner.side != tu.side:
+				w.known_enemies[tu.side][owner.id] = {"cell": owner.cell(), "last_seen_turn": w.turn}
+				w.minds.flash(w, tu, owner, from)
+			aggregate_suppression(tu)
 
 
 ## --- Munición (fase 48) ---

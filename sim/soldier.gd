@@ -56,6 +56,9 @@ var down_until: int = 0 # bajo fuego: tick hasta el que queda tirado entre carre
 ## Munición (fase 48): tiros (fusil) o ráfagas (ametralladora) que le quedan; el proveedor carga extra.
 var ammo: int = 0
 var ammo_carry: int = 0
+## Granadas (fase 49): de mano, y las del fusil lanzagranadas si es el granadero.
+var grenades: int = 0
+var gl_rounds: int = 0
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
@@ -66,6 +69,9 @@ func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:
 	ammo = max_ammo(p_role)
 	if p_role == Role.ASSISTANT:
 		ammo_carry = Config.AMMO_ASSISTANT_CARRY
+	grenades = 0 if p_role == Role.MG else Config.GRENADES_PER_SOLDIER
+	if p_index == Config.GRENADIER_INDEX:
+		gl_rounds = Config.GL_ROUNDS
 
 
 ## Equipo de fuego del soldado i.

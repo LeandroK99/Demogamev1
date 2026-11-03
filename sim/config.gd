@@ -397,3 +397,23 @@ const AMMO_PASS_BELOW: float = 0.5 # le pasa cuando a la ametralladora le queda 
 const AMMO_LOW_FRACTION: float = 0.25 # por debajo de esto, la escuadra tiene poca munición y dosifica
 const FIRE_RAPID_RELOAD: float = 0.6 # fuego rápido: multiplica el tiempo entre tiros (asalto, suprimir, ritmo rápido)
 const FIRE_CONSERVE_RELOAD: float = 1.5 # con poca munición: tira más espaciado
+
+# --- Granadas de mano y granadero (fase 49) ---
+const GRENADES_PER_SOLDIER: int = 2 # de fragmentación (la ametralladora no lleva)
+const GRENADE_RANGE_M: float = 30.0 # alcance de la granada de mano
+const GRENADE_MIN_M: float = 8.0 # más cerca no la tira: lo alcanzaría a él
+const GRENADE_RADIUS_M: float = 5.0 # radio letal (ignora la protección frontal de rocas y muros)
+const GRENADE_P_HIT: float = 0.6 # en el punto de la explosión; baja hacia el borde del radio
+const GRENADE_PRONE_FACTOR: float = 0.6 # cuerpo a tierra o en un cráter, recibe menos esquirlas
+const GRENADE_SUPP: float = 45.0 # supresión en el punto; la mitad al doble del radio
+const GRENADE_FUSE_SECONDS: float = 2.5 # entre que la tira y explota
+const GRENADE_THROW_SECONDS: float = 2.0 # el que la tira no hace otra cosa este tiempo
+const GRENADE_SCATTER: float = 0.1 # error de puntería: fracción de la distancia
+const GRENADE_FRIENDLY_M: float = 7.0 # no la tira si un propio queda a esta distancia de donde apunta
+const GRENADIER_INDEX: int = 4 # el soldado 5 lleva el fusil lanzagranadas
+const GL_ROUNDS: int = 8
+const GL_RANGE: float = 150.0
+const GL_MIN_M: float = 30.0
+const GL_FLIGHT_SECONDS: float = 1.0
+const GL_SCATTER: float = 0.05
+const GL_RELOAD: float = 6.0
