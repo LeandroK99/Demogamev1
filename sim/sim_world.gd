@@ -753,13 +753,19 @@ func set_pace(unit_id: int, pace: int) -> bool:
 	var u: Unit = get_unit(unit_id)
 	if u == null or not u.alive or phase != Phase.PLAN:
 		return false
+	if pace == Unit.Pace.CRAWL and not u.is_infantry():
+		pace = Unit.Pace.NORMAL # los tanques no reptan
 	u.pace = pace
 	return true
 
 
 ## El asalto siempre va a ritmo rápido.
 static func effective_pace(u: Unit) -> int:
-	return Unit.Pace.FAST if u.order == Unit.Order.ASSAULT else u.pace
+	if u.order == Unit.Order.ASSAULT:
+		return Unit.Pace.FAST
+	if u.mind != null and u.mind.crawling:
+		return Unit.Pace.CRAWL # clavada en marcha: sigue reptando (fase 53)
+	return u.pace
 
 
 static func pace_speed_factor(pace: int) -> float:
@@ -768,6 +774,8 @@ static func pace_speed_factor(pace: int) -> float:
 			return Config.PACE_FAST_SPEED
 		Unit.Pace.CAUTIOUS:
 			return Config.PACE_CAUTIOUS_SPEED
+		Unit.Pace.CRAWL:
+			return Config.PACE_CRAWL_SPEED
 	return 1.0
 
 
@@ -1089,8 +1097,8 @@ func step() -> void:
 			u.moving = false
 			continue
 		u.waiting = false
-		if u.is_infantry() and inf.halted(u):
-			u.moving = false # la mayoría suprimida: cuerpo a tierra, no avanza
+		if u.is_infantry() and inf.halted(u) and not (u.mind != null and u.mind.crawling):
+			u.moving = false # la mayoría suprimida: cuerpo a tierra, no avanza (salvo que repte)
 			continue
 		if u.mind != null and (u.mind.hold or u.mind.is_disorganized(total_ticks)):
 			u.moving = false # la escuadra decidió frenar o cayó el jefe (ver MindSim)
@@ -1527,7 +1535,7 @@ func move_fire_factor(u: Unit, moving: bool) -> float:
 	match effective_pace(u):
 		Unit.Pace.FAST:
 			return moving_shooter_factor * Config.PACE_FAST_FIRE_FACTOR
-		Unit.Pace.CAUTIOUS:
+		Unit.Pace.CAUTIOUS, Unit.Pace.CRAWL:
 			return Config.PACE_CAUTIOUS_FIRE_FACTOR
 	return moving_shooter_factor
 
@@ -1570,7 +1578,7 @@ func route_risk(unit_id: int) -> Dictionary:
 		return out
 	var threats: Array[Vector2i] = threats_for(u.side)
 	var pace: int = effective_pace(u)
-	var spot_m: float = Config.SPOT_RANGE_STATIONARY if pace == Unit.Pace.CAUTIOUS else Config.MAX_RANGE
+	var spot_m: float = Config.SPOT_RANGE_STATIONARY if pace in [Unit.Pace.CAUTIOUS, Unit.Pace.CRAWL] else Config.MAX_RANGE
 	var seeing: Dictionary = {}
 	var exposed: PackedByteArray = PackedByteArray()
 	var pos: Vector2 = u.pos

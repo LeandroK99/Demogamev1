@@ -50,7 +50,8 @@ func move_soldiers(w: SimWorld) -> void:
 			if s.drag_target >= 0 and s.is_ok() and s.suppression < Config.PINNED:
 				_drag(w, u, s, speed)
 				continue
-			if not s.is_ok() or s.suppression >= Config.PINNED or s.dive_until > w.total_ticks or s.hold_pos:
+			var crawl: bool = u.mind != null and u.mind.crawling and u.moving
+			if not s.is_ok() or (s.suppression >= Config.PINNED and not crawl) or s.dive_until > w.total_ticks or s.hold_pos:
 				s.moving = false # herido, clavado, recién tirado al suelo o base de fuego: se queda donde está
 				continue
 			var target: Vector2 = u.slot_pos_m(s.index)
@@ -556,9 +557,10 @@ func update_postures(w: SimWorld) -> void:
 		if not u.alive or not u.is_infantry():
 			continue
 		var cautious: bool = SimWorld.effective_pace(u) == Unit.Pace.CAUTIOUS
+		var crawl: bool = SimWorld.effective_pace(u) == Unit.Pace.CRAWL
 		for s: Soldier in u.soldiers:
-			if not s.is_ok():
-				s.posture = Soldier.Posture.PRONE
+			if not s.is_ok() or (crawl and s.moving):
+				s.posture = Soldier.Posture.PRONE # reptando, cuerpo a tierra
 			elif s.suppression >= Config.SUPPRESSED:
 				s.posture = Soldier.Posture.PRONE
 			elif s.moving:
@@ -615,7 +617,7 @@ static func soldier_spot_range(w: SimWorld, u: Unit, s: Soldier) -> float:
 	var fired: bool = float(w.total_ticks - s.last_fire_tick) * Config.TICK < Config.FIRE_REVEAL_SECONDS
 	if fired:
 		return Config.INF_SPOT_MOVING
-	if (s.moving or u.moving) and SimWorld.effective_pace(u) != Unit.Pace.CAUTIOUS and s.posture != Soldier.Posture.PRONE:
+	if (s.moving or u.moving) and SimWorld.effective_pace(u) not in [Unit.Pace.CAUTIOUS, Unit.Pace.CRAWL] and s.posture != Soldier.Posture.PRONE:
 		return Config.INF_SPOT_MOVING
 	var f: float = 1.0 - w.cover_at(Vector2i((s.pos / Config.CELL_SIZE).round())) * Config.COVER_SPOT_FACTOR
 	if s.protected and not s.moving and not s.peeking:

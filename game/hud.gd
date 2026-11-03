@@ -23,6 +23,7 @@ const PACE_NAMES: Dictionary = {
 	Unit.Pace.NORMAL: "normal",
 	Unit.Pace.FAST: "rápido",
 	Unit.Pace.CAUTIOUS: "cauto",
+	Unit.Pace.CRAWL: "reptando",
 }
 
 const FORMATION_NAMES: Dictionary = {

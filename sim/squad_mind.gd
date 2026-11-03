@@ -48,6 +48,7 @@ var rescue_index: int = -1 # herido elegido para rescatar
 var drill_end_tick: int = -1000000 # cuándo terminó la última reacción al contacto
 var technique: int = Technique.TRAVEL
 var bound_alternate: bool = true # el último salto fue alternado (si no, sucesivo)
+var crawling: bool = false # clavada en marcha: repta en vez de quedarse quieta (fase 53)
 var rushing: bool = false # bajo fuego, los que avanzan van a carreras cortas (ver InfantrySim)
 var pending: Dictionary = {} # enemigos con un aviso de radio en camino
 var halted_since: int = -1 # tick desde el que la supresión la tiene frenada (-1 = no lo está)

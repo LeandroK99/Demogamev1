@@ -12,7 +12,7 @@ enum Order { NONE, MOVE, HULLDOWN, HOLD, ATTACK, OVERWATCH, SCOOT, ASSAULT, WITH
 ## Reglas de fuego: libre, solo si te dispararon hace poco, o retener.
 enum Roe { FREE, RETURN_FIRE, HOLD }
 ## Ritmo de marcha: normal, rápido (más veloz, tira peor) o cauto (lento, se detecta como si estuviera quieto).
-enum Pace { NORMAL, FAST, CAUTIOUS }
+enum Pace { NORMAL, FAST, CAUTIOUS, CRAWL }
 ## Formación de la escuadra: cuña, fila india o línea.
 enum Formation { WEDGE, FILE, LINE, ECHELON }
 

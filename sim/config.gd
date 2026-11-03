@@ -439,3 +439,7 @@ const NEAR_AMBUSH_FIRED_SECONDS: float = 2.0 # ... si le tiraron hace menos que 
 const NEAR_AMBUSH_SCORE: float = 4.0 # le gana a todo: en la zona de muerte no se piensa
 const NEAR_AMBUSH_MAX_SECONDS: float = 25.0 # el asalto dura a lo sumo esto
 const NEAR_AMBUSH_DONE_M: float = 6.0 # llegó a la posición del emboscador
+
+# --- Reptar (fase 53) ---
+const PACE_CRAWL_SPEED: float = 0.2 # multiplicador de velocidad reptando (0,3 m/s)
+const CRAWL_AFTER_SECONDS: float = 3.0 # clavada en marcha este tiempo, la escuadra sigue reptando

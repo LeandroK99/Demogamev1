@@ -115,10 +115,12 @@ func _smoke_reflex(w: SimWorld, u: Unit) -> void:
 	var m: SquadMind = u.mind
 	if not w.inf.halted(u):
 		m.halted_since = -1
+		m.crawling = false
 		return
 	if m.halted_since < 0:
 		m.halted_since = w.total_ticks
 		return
+	_crawl_reflex(w, u)
 	if m.autonomy < SquadMind.Autonomy.NORMAL or u.smoke_charges <= 0:
 		return
 	if float(w.total_ticks - m.halted_since) * Config.TICK < Config.INF_SMOKE_SUPPRESSED_SECONDS:
@@ -126,6 +128,20 @@ func _smoke_reflex(w: SimWorld, u: Unit) -> void:
 	if throw_smoke_toward(w, u, w.inf.threat_point(w, u)):
 		w.radio(u, "humo, ¡nos tienen clavados!")
 	m.halted_since = w.total_ticks # la próxima, otros 15 s después
+
+
+## Clavada en marcha más de CRAWL_AFTER_SECONDS (autonomía normal o alta): sigue reptando hacia su
+## destino en vez de quedarse quieta. No en la retirada ni si decidió frenar.
+func _crawl_reflex(w: SimWorld, u: Unit) -> void:
+	var m: SquadMind = u.mind
+	var can: bool = m.autonomy >= SquadMind.Autonomy.NORMAL and not u.path.is_empty() and not m.hold \
+			and u.order != Unit.Order.WITHDRAW and m.option in [SquadMind.Option.FOLLOW, SquadMind.Option.BOUND]
+	if not can:
+		m.crawling = false
+		return
+	if not m.crawling and float(w.total_ticks - m.halted_since) * Config.TICK >= Config.CRAWL_AFTER_SECONDS:
+		m.crawling = true
+		w.radio(u, "nos tienen clavados, seguimos reptando")
 
 
 ## Granada de humo de mano hacia threat (a INF_SMOKE_DIST_M, o a mitad de camino si está más cerca).
