@@ -202,6 +202,12 @@ const MIND_FOLLOW_SCORE: float = 1.0 # puntaje de seguir la orden del jugador
 const MIND_AUTONOMY_BLUE: int = 1 # SquadMind.Autonomy.NORMAL
 const MIND_AUTONOMY_RED: int = 2 # SquadMind.Autonomy.HIGH
 const RADIO_LOG_MAX: int = 40 # mensajes de radio que se guardan
+const DRILL_SCORE: float = 3.0 # puntaje del drill de contacto
+const DRILL_FIRED_SECONDS: float = 3.0 # le tiraron hace menos que esto: contacto
+const DRILL_SPOT_M: float = 200.0 # ve a un enemigo nuevo a menos que esto: contacto
+const DRILL_COVER_M: float = 4.0 # en el drill, cada uno busca cobertura a esta distancia de su lugar
+const DRILL_CALM_SUPP: float = 25.0 # retoma la marcha con la supresión media por debajo de esto...
+const DRILL_CALM_SECONDS: float = 5.0 # ... durante este tiempo
 
 # --- Reflejos del soldado ---
 const REFLEX_DIVE_SUPP: float = 8.0 # un tiro que le suma esto en marcha y al descubierto lo tira al suelo

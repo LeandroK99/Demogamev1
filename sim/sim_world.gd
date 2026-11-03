@@ -240,6 +240,11 @@ func end_autonomous() -> void:
 	_autonomous -= 1
 
 
+## La escuadra piensa ya (tests y eventos).
+func mind_think_now(u: Unit) -> void:
+	minds.think(self, u)
+
+
 ## Mensaje de radio de una escuadra.
 func radio(u: Unit, text: String) -> void:
 	radio_log.append({"tick": total_ticks, "turn": turn, "side": u.side, "unit": u.id, "text": text})
@@ -1330,6 +1335,11 @@ func roe_allows_fire(u: Unit) -> bool:
 
 
 ## ¿Recibió un disparo en los últimos ROE_RETURN_FIRE_SECONDS?
+## ¿Le tiraron en los últimos seconds segundos?
+func fired_upon_within(u: Unit, seconds: float) -> bool:
+	return float(total_ticks - u.last_fired_upon_tick) * Config.TICK < seconds
+
+
 func fired_upon_recently(u: Unit) -> bool:
 	return float(total_ticks - u.last_fired_upon_tick) * Config.TICK < Config.ROE_RETURN_FIRE_SECONDS
 

@@ -25,6 +25,8 @@ var saved: Dictionary = {}
 var rerouted: bool = false # la opción actual le cambió la ruta (al volver hay que rehacerla)
 var data: Dictionary = {} # estado propio de la opción actual
 var scores: Dictionary = {} # últimos puntajes (para el HUD y los tests)
+var cover_m: float = Config.SOLDIER_COVER_SEARCH_M # radio en que cada soldado busca cobertura
+var reacted: Dictionary = {} # enemigos (id) que ya provocaron un drill de contacto
 var halted_since: int = -1 # tick desde el que la supresión la tiene frenada (-1 = no lo está)
 
 
@@ -70,6 +72,7 @@ func reset(now: int) -> void:
 	saved = {}
 	rerouted = false
 	data = {}
+	cover_m = Config.SOLDIER_COVER_SEARCH_M
 
 
 func is_following() -> bool:

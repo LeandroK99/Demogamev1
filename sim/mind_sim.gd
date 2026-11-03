@@ -71,8 +71,41 @@ func think(w: SimWorld, u: Unit) -> void:
 
 
 ## Puntaje de cada opción disponible ahora (las que no figuran no se pueden elegir).
-func score_options(_w: SimWorld, _u: Unit) -> Dictionary:
-	return {SquadMind.Option.FOLLOW: Config.MIND_FOLLOW_SCORE}
+func score_options(w: SimWorld, u: Unit) -> Dictionary:
+	var s: Dictionary = {SquadMind.Option.FOLLOW: Config.MIND_FOLLOW_SCORE}
+	_score_drill(w, u, s)
+	return s
+
+
+## --- Drill de contacto ---
+## En marcha (con ruta), si le tiran o ve a un enemigo nuevo cerca: alto, cobertura a
+## DRILL_COVER_M, devolver el fuego; retoma cuando la supresión media queda por debajo de
+## DRILL_CALM_SUPP durante DRILL_CALM_SECONDS. En asalto o retirada no frena.
+
+func _score_drill(w: SimWorld, u: Unit, s: Dictionary) -> void:
+	var m: SquadMind = u.mind
+	if m.option == SquadMind.Option.CONTACT_DRILL:
+		if u.suppression >= Config.DRILL_CALM_SUPP or w.fired_upon_within(u, Config.DRILL_CALM_SECONDS):
+			m.data["calm_since"] = w.total_ticks
+		if float(w.total_ticks - int(m.data.get("calm_since", m.since_tick))) * Config.TICK < Config.DRILL_CALM_SECONDS:
+			s[SquadMind.Option.CONTACT_DRILL] = Config.DRILL_SCORE
+		return
+	if u.path.is_empty() or u.order in [Unit.Order.ASSAULT, Unit.Order.WITHDRAW]:
+		return
+	if w.fired_upon_within(u, Config.DRILL_FIRED_SECONDS) or not _new_contacts(w, u).is_empty():
+		s[SquadMind.Option.CONTACT_DRILL] = Config.DRILL_SCORE
+
+
+## Enemigos visibles a menos de DRILL_SPOT_M que todavía no provocaron un drill.
+func _new_contacts(w: SimWorld, u: Unit) -> Array[int]:
+	var out: Array[int] = []
+	for id: int in w.visible_enemies[u.side]:
+		if u.mind.reacted.has(id):
+			continue
+		var e: Unit = w.units[id]
+		if e.alive and e.pos_m().distance_to(u.pos_m()) <= Config.DRILL_SPOT_M:
+			out.append(id)
+	return out
 
 
 ## Cambia de opción: guarda la orden al salir de FOLLOW, la retoma al volver y avisa por radio.
@@ -91,15 +124,31 @@ func switch_to(w: SimWorld, u: Unit, opt: int) -> void:
 		w.radio(u, "retoma la orden")
 	else:
 		_enter(w, u, opt)
-		w.radio(u, m.option_name())
+		w.radio(u, _announce(opt))
 
 
-func _enter(_w: SimWorld, u: Unit, _opt: int) -> void:
-	u.mind.hold = true # por defecto, una decisión propia frena la marcha
+func _enter(w: SimWorld, u: Unit, opt: int) -> void:
+	var m: SquadMind = u.mind
+	m.hold = true # por defecto, una decisión propia frena la marcha
+	match opt:
+		SquadMind.Option.CONTACT_DRILL:
+			m.cover_m = Config.DRILL_COVER_M
+			m.data["calm_since"] = w.total_ticks
+			for id: int in w.visible_enemies[u.side]:
+				m.reacted[id] = true
 
 
 func _exit(_w: SimWorld, u: Unit, _opt: int) -> void:
 	u.mind.hold = false
+	u.mind.cover_m = Config.SOLDIER_COVER_SEARCH_M
+
+
+## Lo que dice por radio al tomar una decisión.
+func _announce(opt: int) -> String:
+	match opt:
+		SquadMind.Option.CONTACT_DRILL:
+			return "¡contacto! a cubierto y fuego"
+	return SquadMind.OPTION_NAMES[opt]
 
 
 ## Lo que hace la opción actual en este tick.

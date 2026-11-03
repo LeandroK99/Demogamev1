@@ -58,7 +58,7 @@ func test_hold_keeps_order_and_resumes() -> void:
 	for i: int in 50:
 		world.step()
 	assert_eq(sq.pos.y, y, "frenada por decisión propia")
-	assert_eq(world.radio_log.back()["text"], SquadMind.OPTION_NAMES[O.CONTACT_DRILL], "lo avisa por radio")
+	assert_true(str(world.radio_log.back()["text"]).begins_with("¡contacto"), "lo avisa por radio")
 	world.minds.switch_to(world, sq, O.FOLLOW)
 	for i: int in 50:
 		world.step()

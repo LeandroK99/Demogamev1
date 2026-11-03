@@ -153,7 +153,7 @@ static func _blocks_eye(w: SimWorld, p: Vector2, eye_h: float, threat: Vector2) 
 ## taken: puntos ya elegidos por la escuadra (se respeta SOLDIER_COVER_SPACING).
 func choose_cover(w: SimWorld, u: Unit, s: Soldier, threat: Vector2, taken: Array[Vector2]) -> void:
 	var center: Vector2 = u.slot_pos_m(s.index)
-	var r: float = Config.SOLDIER_COVER_SEARCH_M
+	var r: float = u.mind.cover_m if u.mind != null else Config.SOLDIER_COVER_SEARCH_M
 	var w_fire: float = Config.SOLDIER_COVER_W_FIRE_MG if s.role == Soldier.Role.MG else Config.SOLDIER_COVER_W_FIRE
 	var c0: Vector2i = MicroCover.cell_of(center)
 	var ri: int = ceili(r / MicroCover.MICRO_M)
