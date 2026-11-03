@@ -17,6 +17,7 @@ const COLOR_PATH_DIRECT: Color = Color(1.0, 0.5, 0.1)
 const COLOR_WAYPOINT: Color = Color(1.0, 1.0, 1.0)
 const COLOR_OVERWATCH: Color = Color(0.4, 1.0, 0.6)
 const COLOR_SCOOT: Color = Color(0.9, 0.5, 1.0)
+const COLOR_GATE: Color = Color(1.0, 0.3, 0.9) # tramo que espera una condición
 const COLOR_ENGAGE: Color = Color(1.0, 0.55, 0.55) # área de enganche (arco + distancia de la ROE)
 const OVERWATCH_ARC_STEPS: int = 12
 const COLOR_FACING: Color = Color(0.3, 0.9, 1.0)
@@ -106,6 +107,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_ESCAPE:
 		pending_mode = ""
+		return
+	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_K:
+		_cycle_gate()
 		return
 	if key != null and key.pressed and not key.echo and key.physical_keycode == KEY_X:
 		_cycle_pace()
@@ -279,6 +283,23 @@ func _cycle_roe() -> void:
 		world.set_roe(id, next)
 
 
+## K: siguiente condición para arrancar el último tramo de las seleccionadas:
+## ninguna -> a los 10 s -> a los 20 s -> al haber contacto -> ninguna.
+func _cycle_gate() -> void:
+	var u: Unit = primary_unit()
+	if u == null or world.phase != SimWorld.Phase.PLAN or u.waypoints.is_empty():
+		return
+	var options: Array[Dictionary] = [{}, SimWorld.gate_time(10.0), SimWorld.gate_time(20.0), SimWorld.gate_contact()]
+	var current: Dictionary = u.waypoints.back().get("gate", {})
+	var idx: int = 0
+	for i: int in options.size():
+		if options[i] == current:
+			idx = i
+	var next: Dictionary = options[(idx + 1) % options.size()]
+	for id: int in selected_ids:
+		world.gate_leg(id, -1, next)
+
+
 ## X: siguiente ritmo (normal -> rápido -> cauto) para las seleccionadas.
 func _cycle_pace() -> void:
 	var u: Unit = primary_unit()
@@ -379,6 +400,8 @@ func _draw_paths() -> void:
 		var start: Vector3 = _ground(u.pos)
 		var prev: Vector3 = start
 		var seg_idx: int = 0
+		if not u.waypoints.is_empty() and u.waypoints[0].has("gate") and not bool(u.waypoints[0].get("gate_open", false)):
+			_cross(segs, colors, u.pos, COLOR_GATE) # espera antes de arrancar
 		for c: Vector2i in u.path:
 			var direct: bool = u.direct_route
 			if seg_idx < u.waypoints.size():
@@ -389,7 +412,8 @@ func _draw_paths() -> void:
 			if seg_idx < u.waypoints.size() and u.waypoints[seg_idx]["cell"] == c:
 				seg_idx += 1
 				if seg_idx < u.waypoints.size():
-					_cross(segs, colors, Vector2(c), COLOR_WAYPOINT) # quiebre entre tramos
+					var gated: bool = u.waypoints[seg_idx].has("gate")
+					_cross(segs, colors, Vector2(c), COLOR_GATE if gated else COLOR_WAYPOINT) # quiebre entre tramos
 		if u.final_heading != Vector2.ZERO and not u.path.is_empty():
 			_arrow(segs, colors, Vector2(u.path.back()), u.final_heading, COLOR_FACING)
 		if u.order == Unit.Order.OVERWATCH:

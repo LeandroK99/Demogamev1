@@ -26,6 +26,7 @@ Cada turno el juego se pausa: das órdenes, apretás **Espacio** y se ejecutan 3
 | G y clic izquierdo | Humo: una nube de 12 m de radio que corta la línea de visión durante 2 turnos. 2 cargas por tanque, hasta 150 m y con línea de visión al punto. Aparece en el acto, así que tirala antes de planear la ruta. Esc cancela |
 | T y clic derecho | Asaltar: ruta directa a ritmo rápido hasta ese punto, disparando en marcha y sin frenar. Esc cancela |
 | B | Retirarse: en reversa por la ruta cubierta hasta la celda menos expuesta cercana, con el frente hacia las amenazas |
+| K | Condición para arrancar el último tramo de la ruta: ninguna → a los 10 s del turno → a los 20 s → al haber contacto. El tanque espera quieto (y se lo detecta como quieto); el punto de paso se marca en violeta |
 | X | Ritmo de los seleccionados: normal → rápido (×1,4 de velocidad, tira peor) → cauto (×0,5, tira mejor en marcha y se lo detecta como si estuviera quieto) |
 | Z | Reglas de fuego (ROE) de los seleccionados: fuego libre → solo si le disparan → retener fuego |
 | C | Área de enganche: solo dispara dentro de un arco de ±45° hacia el cursor y hasta la distancia del cursor. Shift+C la quita |

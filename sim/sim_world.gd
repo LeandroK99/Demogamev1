@@ -30,6 +30,9 @@ var known_enemies: Array[Dictionary] = [{}, {}] # id -> {cell, last_seen_turn}
 var smoke_clouds: Array[Dictionary] = []
 var _next_smoke_id: int = 0
 
+# Señales con nombre emitidas por bando (nombre -> tick global); duran toda la partida
+var signals: Array[Dictionary] = [{}, {}]
+
 # Disparos ocurridos desde la última vez que la vista los leyó: {shooter, target, hit, aspect}
 var shot_events: Array[Dictionary] = []
 
@@ -217,6 +220,90 @@ func order_move(unit_id: int, target_cell: Vector2i, facing: Vector2 = Vector2.Z
 	u.final_heading = facing.normalized() if facing != Vector2.ZERO else Vector2.ZERO
 	if not u.moving and u.final_heading != Vector2.ZERO:
 		u.heading = u.final_heading # ya está en destino: solo gira
+	return true
+
+
+## --- Condiciones de la cadena de órdenes ---
+## Cada tramo de la ruta puede esperar una condición antes de arrancar. Una vez cumplida,
+## queda abierta aunque después deje de cumplirse.
+
+## A los seconds segundos del turno.
+static func gate_time(seconds: float) -> Dictionary:
+	return {"type": "time", "seconds": seconds}
+
+
+## Cuando el bando ve algún enemigo.
+static func gate_contact() -> Dictionary:
+	return {"type": "contact"}
+
+
+## Cuando alguna unidad del bando emitió la señal (go-code) con ese nombre.
+static func gate_signal(name: String) -> Dictionary:
+	return {"type": "signal", "name": name}
+
+
+## Cuando la otra unidad terminó su ruta (o murió).
+static func gate_unit(unit_id: int) -> Dictionary:
+	return {"type": "unit", "unit": unit_id}
+
+
+## Pone (o quita, con gate vacío) la condición del tramo leg (-1 = el último). Solo en PLAN.
+func gate_leg(unit_id: int, leg: int, gate: Dictionary) -> bool:
+	var wp: Variant = _leg(unit_id, leg)
+	if wp == null:
+		return false
+	var d: Dictionary = wp
+	if gate.is_empty():
+		d.erase("gate")
+	else:
+		d["gate"] = gate.duplicate()
+	d["gate_open"] = false
+	return true
+
+
+## El tramo leg (-1 = el último) emite la señal name al llegar a su fin. Vacío la quita. Solo en PLAN.
+func signal_leg(unit_id: int, leg: int, name: String) -> bool:
+	var wp: Variant = _leg(unit_id, leg)
+	if wp == null:
+		return false
+	(wp as Dictionary)["signal"] = name
+	return true
+
+
+func _leg(unit_id: int, leg: int) -> Variant:
+	var u: Unit = get_unit(unit_id)
+	if u == null or not u.alive or phase != Phase.PLAN or u.waypoints.is_empty():
+		return null
+	var i: int = leg if leg >= 0 else u.waypoints.size() + leg
+	if i < 0 or i >= u.waypoints.size():
+		return null
+	return u.waypoints[i]
+
+
+## ¿El tramo actual de u espera una condición que todavía no se cumplió? Si se cumple, la abre.
+func _leg_gate_closed(u: Unit) -> bool:
+	if u.waypoints.is_empty():
+		return false
+	var wp: Dictionary = u.waypoints[0]
+	if not wp.has("gate") or bool(wp.get("gate_open", false)):
+		return false
+	if gate_met(u, wp["gate"]):
+		wp["gate_open"] = true
+		return false
+	return true
+
+
+func gate_met(u: Unit, gate: Dictionary) -> bool:
+	match str(gate.get("type", "")):
+		"time":
+			return float(tick_in_turn) * Config.TICK >= float(gate["seconds"]) - 0.0001
+		"contact":
+			return not visible_enemies[u.side].is_empty()
+		"signal":
+			return signals[u.side].has(gate["name"])
+		"unit":
+			var other: Unit = get_unit(int(gate["unit"]))
+			return other == null or not other.alive or (other.path.is_empty() and not other.waiting)
 	return true
 
 
@@ -512,8 +599,15 @@ func step() -> void:
 		return
 	_update_attackers()
 	for u: Unit in units:
-		if u.alive and not u.path.is_empty():
-			_advance(u, Config.TICK)
+		if not u.alive or u.path.is_empty():
+			u.waiting = false
+			continue
+		if _leg_gate_closed(u):
+			u.waiting = true
+			u.moving = false
+			continue
+		u.waiting = false
+		_advance(u, Config.TICK)
 	tick_in_turn += 1
 	total_ticks += 1
 	if tick_in_turn % Config.DETECTION_INTERVAL_TICKS == 0:
@@ -727,7 +821,11 @@ func _advance(u: Unit, dt: float) -> void:
 			var reached: Vector2i = u.path[0]
 			u.path.remove_at(0)
 			if not u.waypoints.is_empty() and u.waypoints[0]["cell"] == reached:
-				u.waypoints.remove_at(0)
+				var done: Dictionary = u.waypoints.pop_front()
+				if str(done.get("signal", "")) != "":
+					signals[u.side][done["signal"]] = total_ticks
+				if _leg_gate_closed(u):
+					break # espera la condición del tramo siguiente
 		else:
 			u.pos += delta.normalized() * (budget_m / Config.CELL_SIZE)
 			budget_m = 0.0

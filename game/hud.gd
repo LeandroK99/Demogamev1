@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · T + clic der: asaltar · B: retirarse · X: ritmo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
+	+ "H: hull-down · V: vigilar hacia el cursor · F + clic der: disparar y replegarse · G + clic izq: humo · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -98,6 +98,19 @@ func _process(_delta: float) -> void:
 		_banner.text = "%s\nR: jugar de nuevo · Shift+R: mapa nuevo" % result
 
 
+static func gate_text(gate: Dictionary) -> String:
+	match str(gate.get("type", "")):
+		"time":
+			return "a los %d s" % roundi(float(gate["seconds"]))
+		"contact":
+			return "contacto"
+		"signal":
+			return "la señal %s" % gate["name"]
+		"unit":
+			return "al tanque %d" % (int(gate["unit"]) + 1)
+	return "?"
+
+
 ## Rumbo de la grilla como punto cardinal (y crece hacia el sur).
 static func compass(dir: Vector2) -> String:
 	const NAMES: Array[String] = ["este", "sureste", "sur", "suroeste", "oeste", "noroeste", "norte", "noreste"]
@@ -133,6 +146,17 @@ func _unit_text() -> String:
 			roe_text += ", hasta %d m" % roundi(sel.max_engage_m)
 		lines.append("ROE: %s" % roe_text)
 		lines.append("Ritmo: %s" % PACE_NAMES.get(SimWorld.effective_pace(sel), "?"))
+		for i: int in sel.waypoints.size():
+			var wp: Dictionary = sel.waypoints[i]
+			var extra: String = ""
+			if wp.has("gate") and not bool(wp.get("gate_open", false)):
+				extra += " espera %s" % gate_text(wp["gate"])
+			if str(wp.get("signal", "")) != "":
+				extra += " · al llegar: señal %s" % wp["signal"]
+			if extra != "":
+				lines.append("Tramo %d:%s" % [i + 1, extra])
+		if sel.waiting:
+			lines.append("ESPERANDO")
 		lines.append("Humo: %d / %d" % [sel.smoke_charges, Config.SMOKE_CHARGES])
 		lines.append("")
 	lines.append("Disparos recibidos")

@@ -17,7 +17,9 @@ var reload_left: float = 0.0
 var path: Array[Vector2i] = []
 var final_heading: Vector2 = Vector2.ZERO # orientación al llegar (cero = la de la marcha)
 var direct_route: bool = false # el primer tramo de la ruta es directo (ignora la exposición)
-var waypoints: Array[Dictionary] = [] # fin de cada tramo de la ruta: {cell: Vector2i, direct: bool}
+## Fin de cada tramo de la ruta: {cell: Vector2i, direct: bool} y, opcionales, gate (condición para
+## arrancar el tramo, ver SimWorld.gate_*), gate_open (ya se cumplió) y signal (señal que emite al llegar).
+var waypoints: Array[Dictionary] = []
 var attack_target: int = -1 # id del enemigo a atacar (-1 = ninguno)
 var overwatch_dir: Vector2 = Vector2.ZERO # centro del sector de tiro en vigilancia
 var overwatch_ready: bool = false # le queda el disparo de emboscada de este turno
@@ -26,6 +28,7 @@ var scoot_fired: bool = false # disparar y replegarse: ya hizo su disparo
 var reversing: bool = false # marcha atrás: no gira el casco al moverse
 var order: int = Order.NONE
 var moving: bool = false
+var waiting: bool = false # tiene ruta pero espera la condición del tramo actual
 var alive: bool = true
 var last_fire_tick: int = -1000000 # tick global del último disparo
 var smoke_charges: int = Config.SMOKE_CHARGES
