@@ -36,3 +36,11 @@ const MINOR_HILL_H_MIN: float = 0.2
 const MINOR_HILL_H_MAX: float = 0.35
 const MINOR_HILL_R_MIN: float = 5.0 # celdas
 const MINOR_HILL_R_MAX: float = 8.0
+
+# --- Línea de visión y exposición ---
+const LOS_STEP: float = 0.5 # celdas entre muestras de la recta
+const LOS_EPSILON: float = 0.05 # margen en metros para considerar que el terreno tapa
+const HULLDOWN_MAX_SLOPE: float = 3.0 # metros; celdas más empinadas no son candidatas
+const HULLDOWN_W_HIDDEN: float = 3.0 # peso de "casco oculto" en el puntaje
+const HULLDOWN_W_FIRE: float = 2.0 # peso de "puede disparar" en el puntaje
+const HULLDOWN_DIST_DIV: float = 10.0 # celdas de distancia que restan 1 punto
