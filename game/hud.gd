@@ -29,6 +29,7 @@ const FORMATION_NAMES: Dictionary = {
 	Unit.Formation.WEDGE: "cuña",
 	Unit.Formation.FILE: "fila india",
 	Unit.Formation.LINE: "línea",
+	Unit.Formation.ECHELON: "escalón",
 }
 const ROE_NAMES: Dictionary = {
 	Unit.Roe.FREE: "fuego libre",
@@ -236,7 +237,10 @@ func _unit_text() -> String:
 		lines.append("Mira al %s" % compass(sel.heading))
 		if sel.is_infantry():
 			lines.append(soldiers_text(sel))
-			lines.append("Formación: %s" % FORMATION_NAMES.get(sel.formation, "?"))
+			var adapted: String = ""
+			if sel.shape != sel.formation:
+				adapted = " (ahora %s)" % FORMATION_NAMES.get(sel.shape, "?")
+			lines.append("Formación: %s%s%s" % [FORMATION_NAMES.get(sel.formation, "?"), adapted, ", abierta" if sel.spread > 1.0 else ""])
 			var state: String = ""
 			if sel.broken:
 				state = " · QUEBRADA"

@@ -14,7 +14,7 @@ enum Roe { FREE, RETURN_FIRE, HOLD }
 ## Ritmo de marcha: normal, rápido (más veloz, tira peor) o cauto (lento, se detecta como si estuviera quieto).
 enum Pace { NORMAL, FAST, CAUTIOUS }
 ## Formación de la escuadra: cuña, fila india o línea.
-enum Formation { WEDGE, FILE, LINE }
+enum Formation { WEDGE, FILE, LINE, ECHELON }
 
 var id: int = 0
 var kind: int = Kind.TANK
@@ -58,7 +58,12 @@ var last_fired_upon_tick: int = -1000000 # tick global del último disparo recib
 var pace: int = Pace.NORMAL # ritmo; dura hasta que se cambie (ASSAULT siempre va rápido)
 ## Infantería: los soldados de la escuadra. pos es el ancla de la formación, que sigue la ruta.
 var soldiers: Array[Soldier] = []
-var formation: int = Formation.WEDGE
+var formation: int = Formation.WEDGE # la que eligió el jugador
+## Formación en uso (fase 50): con la cuña elegida, la escuadra la adapta al terreno (fila en el bosque,
+## línea para el asalto final, escalón hacia un contacto de costado). spread abre o cierra los lugares.
+var shape: int = Formation.WEDGE
+var spread: float = 1.0
+var echelon_side: float = 1.0 # 1 = escalón a la derecha, -1 a la izquierda
 ## Infantería: la cabeza de la escuadra (autonomía, ver MindSim). null en los tanques.
 var mind: SquadMind = null
 var jitter_at: Vector2 = Vector2(-1.0e9, -1.0e9) # dónde estaba el ancla la última vez que se reacomodaron
@@ -102,15 +107,19 @@ func pos_m() -> Vector2:
 
 ## Lugar del soldado i en la formación, en metros (según el ancla y el rumbo).
 func slot_pos_m(i: int) -> Vector2:
-	var off: Vector2 = formation_offset(i, formation) + soldiers[i].jitter if i < soldiers.size() else formation_offset(i, formation)
+	var base: Vector2 = formation_offset(i, shape, echelon_side) * spread
+	var off: Vector2 = base + soldiers[i].jitter if i < soldiers.size() else base
 	var right: Vector2 = Vector2(-heading.y, heading.x)
 	return pos_m() + right * off.x - heading * off.y
 
 
 ## Desplazamiento del lugar i en una formación: x a la derecha, y hacia atrás, en metros.
-static func formation_offset(i: int, f: int) -> Vector2:
+static func formation_offset(i: int, f: int, side: float = 1.0) -> Vector2:
 	var s: float = Config.SOLDIER_SPACING
 	match f:
+		Formation.ECHELON:
+			# En diagonal hacia atrás y hacia el lado del escalón
+			return Vector2(side * float(i) * s, float(i) * s * 0.7)
 		Formation.FILE:
 			return Vector2(0.0, float(i) * s)
 		Formation.LINE:

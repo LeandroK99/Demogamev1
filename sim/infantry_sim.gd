@@ -82,7 +82,7 @@ func reroll_jitter(w: SimWorld, u: Unit) -> void:
 	var right: Vector2 = Vector2(-u.heading.y, u.heading.x)
 	var taken: Array[Vector2] = []
 	for s: Soldier in u.soldiers:
-		var base: Vector2 = Unit.formation_offset(s.index, u.formation)
+		var base: Vector2 = Unit.formation_offset(s.index, u.shape, u.echelon_side) * u.spread
 		var best: Vector2 = Vector2.ZERO
 		var best_score: float = -INF
 		for k: int in Config.JITTER_TRIES:
@@ -741,6 +741,71 @@ func fire_squad(w: SimWorld, u: Unit) -> void:
 			var cell: Vector2i = Vector2i((s.suppress_m / Config.CELL_SIZE).round())
 			if w.can_suppress_at(u, cell):
 				_area_shot(w, u, s, wpn, cell) # base de fuego: bate el contacto aunque no lo vea
+
+
+## --- Formación según terreno (fase 50) ---
+
+## Cada FORM_UPDATE_SECONDS, las escuadras en marcha con la cuña elegida adaptan la formación.
+func update_formations(w: SimWorld) -> void:
+	if w.total_ticks % roundi(Config.FORM_UPDATE_SECONDS / Config.TICK) != 0:
+		return
+	for u: Unit in w.units:
+		if u.alive and u.is_infantry() and u.moving and (u.mind == null or u.mind.is_following()):
+			adapt_formation(w, u) # una maniobra propia (reubicarse, flanquear) no se reacomoda en el camino
+
+
+## Fila india en el bosque; cuña cerrada cerca del bosque o en terreno quebrado; abierta en terreno
+## limpio; línea a FORM_LINE_ASSAULT_M del objetivo del asalto; escalón hacia un contacto de costado.
+## Si el jugador eligió fila o línea, solo se abre o se cierra.
+func adapt_formation(w: SimWorld, u: Unit) -> void:
+	var c: Vector2i = u.cell()
+	var forest_here: bool = w.cover != null and w.cover.type_at(c) == CoverMap.Type.FOREST
+	var closed: bool = forest_here or w.height_field.slope_at(c) > Config.FORM_ROUGH_SLOPE or _forest_near(w, c)
+	u.spread = move_toward(u.spread, 1.0 if closed else Config.FORM_SPREAD_OPEN, Config.FORM_SPREAD_STEP)
+	if u.formation != Unit.Formation.WEDGE:
+		u.shape = u.formation
+		return
+	var shape: int = Unit.Formation.WEDGE
+	var side: float = _contact_side(u)
+	if u.order == Unit.Order.ASSAULT and not u.path.is_empty() and u.pos.distance_to(Vector2(u.path.back())) * Config.CELL_SIZE <= Config.FORM_LINE_ASSAULT_M:
+		shape = Unit.Formation.LINE
+	elif forest_here:
+		shape = Unit.Formation.FILE
+	elif side != 0.0:
+		shape = Unit.Formation.ECHELON
+		u.echelon_side = side
+	if shape != u.shape:
+		u.shape = shape
+		reroll_jitter(w, u)
+
+
+static func _forest_near(w: SimWorld, c: Vector2i) -> bool:
+	if w.cover == null:
+		return false
+	var r: int = Config.FORM_FOREST_NEAR
+	for dy: int in range(-r, r + 1):
+		for dx: int in range(-r, r + 1):
+			if w.cover.type_at(c + Vector2i(dx, dy)) == CoverMap.Type.FOREST:
+				return true
+	return false
+
+
+## Lado (1 derecha, -1 izquierda) del contacto conocido más cercano si está de costado, 0 si no.
+static func _contact_side(u: Unit) -> float:
+	if u.mind == null:
+		return 0.0
+	var best_d: float = Config.FORM_ECHELON_RANGE_M
+	var side: float = 0.0
+	var right: Vector2 = Vector2(-u.heading.y, u.heading.x)
+	for id: int in u.mind.contacts:
+		var to: Vector2 = Vector2(u.mind.contacts[id]["pos"]) - u.pos_m()
+		var d: float = to.length()
+		if d > best_d or d < 1.0:
+			continue
+		var ang: float = rad_to_deg(absf(u.heading.angle_to(to)))
+		best_d = d
+		side = (1.0 if to.dot(right) > 0.0 else -1.0) if ang >= Config.FORM_ECHELON_MIN_DEG and ang <= 180.0 - Config.FORM_ECHELON_MIN_DEG else 0.0
+	return side
 
 
 ## --- Granadas (fase 49) ---

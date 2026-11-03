@@ -417,3 +417,13 @@ const GL_MIN_M: float = 30.0
 const GL_FLIGHT_SECONDS: float = 1.0
 const GL_SCATTER: float = 0.05
 const GL_RELOAD: float = 6.0
+
+# --- Formación según terreno y escalón (fase 50) ---
+const FORM_UPDATE_SECONDS: float = 1.0 # cada cuánto la escuadra revisa su formación en marcha
+const FORM_SPREAD_OPEN: float = 2.0 # en terreno limpio la cuña se abre a esto por SOLDIER_SPACING (6 m)
+const FORM_ROUGH_SLOPE: float = 2.0 # metros de desnivel con los vecinos: terreno quebrado, se cierra
+const FORM_FOREST_NEAR: int = 2 # celdas: con bosque así de cerca se cierra
+const FORM_LINE_ASSAULT_M: float = 60.0 # al asaltar, a esta distancia del objetivo forma en línea
+const FORM_ECHELON_RANGE_M: float = 300.0 # contacto conocido a esta distancia y de costado: escalón
+const FORM_ECHELON_MIN_DEG: float = 40.0 # ... a más de esto del rumbo (y a menos de 140°)
+const FORM_SPREAD_STEP: float = 0.1 # cuánto se abre o se cierra por revisión (de a poco, para que nadie quede atrás)

@@ -699,6 +699,7 @@ func set_formation(unit_id: int, f: int) -> bool:
 	if u == null or not u.alive or not u.is_infantry() or phase != Phase.PLAN:
 		return false
 	u.formation = f
+	u.shape = f
 	return true
 
 
@@ -1109,6 +1110,7 @@ func step() -> void:
 	inf.update_evac(self)
 	inf.update_ammo(self)
 	inf.update_grenades(self)
+	inf.update_formations(self)
 	_tick_smoke()
 	tick_in_turn += 1
 	total_ticks += 1
