@@ -61,6 +61,7 @@ var soldiers: Array[Soldier] = []
 var formation: int = Formation.WEDGE
 ## Infantería: la cabeza de la escuadra (autonomía, ver MindSim). null en los tanques.
 var mind: SquadMind = null
+var jitter_at: Vector2 = Vector2(-1.0e9, -1.0e9) # dónde estaba el ancla la última vez que se reacomodaron
 
 
 func _init(p_id: int, p_side: int, p_pos: Vector2, p_kind: int = Kind.TANK) -> void:
@@ -88,7 +89,7 @@ func pos_m() -> Vector2:
 
 ## Lugar del soldado i en la formación, en metros (según el ancla y el rumbo).
 func slot_pos_m(i: int) -> Vector2:
-	var off: Vector2 = formation_offset(i, formation)
+	var off: Vector2 = formation_offset(i, formation) + soldiers[i].jitter if i < soldiers.size() else formation_offset(i, formation)
 	var right: Vector2 = Vector2(-heading.y, heading.x)
 	return pos_m() + right * off.x - heading * off.y
 

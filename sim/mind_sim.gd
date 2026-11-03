@@ -310,11 +310,15 @@ func _score_bound(w: SimWorld, u: Unit, s: Dictionary) -> void:
 		s[SquadMind.Option.BOUND] = Config.BOUND_SCORE
 
 
-func _start_bound(_w: SimWorld, u: Unit) -> void:
+func _start_bound(w: SimWorld, u: Unit) -> void:
 	var m: SquadMind = u.mind
 	m.data["phase"] = "B"
 	m.data["start"] = u.pos_m()
 	m.hold = false
+	if w.fired_upon_within(u, Config.BOUND_SMOKE_FIRED_SECONDS) and u.smoke_charges > 0 and not m.data.has("smoked"):
+		m.data["smoked"] = true
+		if throw_smoke_toward(w, u, w.inf.threat_point(w, u)):
+			w.radio(u, "humo, cruzamos")
 	var target: Vector2 = _nearest_contact_pos(u)
 	for s: Soldier in u.soldiers:
 		s.hold_pos = s.team == 0 and s.is_ok()
@@ -323,6 +327,13 @@ func _start_bound(_w: SimWorld, u: Unit) -> void:
 
 func _act_bound(w: SimWorld, u: Unit) -> void:
 	var m: SquadMind = u.mind
+	var rush: bool = w.fired_upon_within(u, Config.RUSH_FIRED_SECONDS)
+	if rush and not m.rushing:
+		# Empiezan las carreras: las parejas se turnan (una corre mientras la otra está tirada)
+		for s: Soldier in u.soldiers:
+			s.rush_until = 0
+			s.down_until = w.total_ticks + (roundi(Config.RUSH_DOWN_MIN_SECONDS / Config.TICK) if (s.index / 2) % 2 == 1 else 0)
+	m.rushing = rush
 	if not m.data.has("phase"):
 		_start_bound(w, u)
 		return
@@ -338,6 +349,7 @@ func _act_bound(w: SimWorld, u: Unit) -> void:
 
 
 func _release_teams(u: Unit) -> void:
+	u.mind.rushing = false
 	for s: Soldier in u.soldiers:
 		s.hold_pos = false
 		s.suppress_m = Vector2(-1.0, -1.0)
@@ -533,8 +545,7 @@ func _score_break(w: SimWorld, u: Unit, s: Dictionary) -> void:
 		return
 	if u.order == Unit.Order.WITHDRAW or not w.fired_upon_within(u, Config.RELOCATE_FIRED_SECONDS):
 		return
-	var halted_s: float = float(w.total_ticks - m.halted_since) * Config.TICK if m.halted_since >= 0 else 0.0
-	if u.ok_count() <= Config.BREAK_MEN or u.morale < Config.BREAK_MORALE or halted_s >= Config.BREAK_HALTED_SECONDS:
+	if u.ok_count() <= Config.BREAK_MEN:
 		s[SquadMind.Option.BREAK_CONTACT] = Config.BREAK_SCORE
 
 
@@ -546,13 +557,20 @@ func _score_break(w: SimWorld, u: Unit, s: Dictionary) -> void:
 func _score_drill(w: SimWorld, u: Unit, s: Dictionary) -> void:
 	var m: SquadMind = u.mind
 	if m.option == SquadMind.Option.CONTACT_DRILL:
+		# Con orden de avanzar: reacción corta y sigue por fuego y movimiento, salvo que la hayan
+		# diezmado (más de la mitad caída): ahí se queda a cubierto.
+		var advancing: bool = not u.path.is_empty() and float(u.ok_count()) > float(u.max_hp()) * Config.DRILL_STAY_FRACTION
+		if advancing and float(w.total_ticks - m.since_tick) * Config.TICK >= Config.DRILL_REACT_SECONDS:
+			return
 		if u.suppression >= Config.DRILL_CALM_SUPP or w.fired_upon_within(u, Config.DRILL_CALM_SECONDS):
 			m.data["calm_since"] = w.total_ticks
-		if float(w.total_ticks - int(m.data.get("calm_since", m.since_tick))) * Config.TICK < Config.DRILL_CALM_SECONDS:
+		if advancing or float(w.total_ticks - int(m.data.get("calm_since", m.since_tick))) * Config.TICK < Config.DRILL_CALM_SECONDS:
 			s[SquadMind.Option.CONTACT_DRILL] = Config.DRILL_SCORE
 		return
 	if u.path.is_empty() or u.order in [Unit.Order.ASSAULT, Unit.Order.WITHDRAW] or m.option == SquadMind.Option.BOUND:
 		return # el asalto, la retirada y el avance por saltos ya son la respuesta al contacto
+	if float(w.total_ticks - m.drill_end_tick) * Config.TICK < Config.DRILL_COOLDOWN_SECONDS:
+		return # ya reaccionó hace poco: sigue avanzando
 	if w.fired_upon_within(u, Config.DRILL_FIRED_SECONDS) or not _new_contacts(w, u).is_empty():
 		s[SquadMind.Option.CONTACT_DRILL] = Config.DRILL_SCORE
 
@@ -629,6 +647,8 @@ func _exit(w: SimWorld, u: Unit, opt: int) -> void:
 	var m: SquadMind = u.mind
 	m.hold = false
 	m.cover_m = Config.SOLDIER_COVER_SEARCH_M
+	if opt == SquadMind.Option.CONTACT_DRILL:
+		m.drill_end_tick = w.total_ticks
 	match opt:
 		SquadMind.Option.AMBUSH:
 			u.roe = int(m.data.get("roe", Unit.Roe.FREE))
@@ -643,7 +663,7 @@ func _exit(w: SimWorld, u: Unit, opt: int) -> void:
 					u.soldiers[s.drag_target].dragged = false
 				s.drag_target = -1
 		SquadMind.Option.FLANK:
-			m.saved = {} # en el flanco se queda: de ahí tira
+			pass # desde el flanco retoma la orden: sigue hacia el objetivo
 		SquadMind.Option.BREAK_CONTACT:
 			m.saved = {} # replegada: no vuelve a meterse donde la estaban castigando
 			u.path.clear()

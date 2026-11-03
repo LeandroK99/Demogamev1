@@ -63,14 +63,32 @@ func test_drill_resumes_when_calm() -> void:
 	assert_eq(world.destination(sq), Vector2i(48, 50), "al mismo destino")
 
 
-func test_drill_waits_while_under_fire() -> void:
+func test_short_reaction_then_advance_under_fire() -> void:
 	var world: SimWorld = _world()
 	var sq: Unit = _moving_squad(world)
+	_fire_on(world, sq)
+	for i: int in 12:
+		world.step()
+	assert_eq(sq.mind.option, O.CONTACT_DRILL, "reacciona")
+	var y: float = sq.pos.y
 	for i: int in 200:
 		if i % 20 == 0:
 			_fire_on(world, sq)
 		world.step()
-	assert_eq(sq.mind.option, O.CONTACT_DRILL, "mientras le tiran, sigue en el drill")
+	assert_true(sq.mind.option != O.CONTACT_DRILL, "con orden de avanzar, la reacción es corta")
+	assert_lt(sq.pos.y, y - 2.0, "y sigue avanzando bajo fuego")
+
+
+func test_decimated_squad_stays_in_cover() -> void:
+	var world: SimWorld = _world()
+	var sq: Unit = _moving_squad(world)
+	sq.set_men(4)
+	_fire_on(world, sq)
+	for i: int in 200:
+		if i % 20 == 0:
+			_fire_on(world, sq)
+		world.step()
+	assert_eq(sq.mind.option, O.CONTACT_DRILL, "perdió más de la mitad: se queda a cubierto")
 
 
 func test_assault_does_not_halt() -> void:

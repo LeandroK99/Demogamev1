@@ -49,6 +49,10 @@ var drag_dest: Vector2 = Vector2.ZERO # adónde lo arrastra
 var dragged: bool = false # herido al que están arrastrando
 var evac_left: float = 0.0 # evacuando: segundos hasta salir del campo
 var evac_wounded: bool = false # evacuando: es el herido (si no, el camillero)
+## Avance (dispersión y carreras)
+var jitter: Vector2 = Vector2.ZERO # corrimiento de su lugar en la formación (x a la derecha, y hacia atrás)
+var rush_until: int = 0 # bajo fuego: tick en que termina su carrera (0 = no está corriendo)
+var down_until: int = 0 # bajo fuego: tick hasta el que queda tirado entre carreras
 
 
 func _init(p_index: int, p_role: int, p_pos: Vector2) -> void:

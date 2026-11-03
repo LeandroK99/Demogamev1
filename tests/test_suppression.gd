@@ -43,11 +43,11 @@ func test_suppressed_squad_does_not_advance() -> void:
 	var world: SimWorld = _world()
 	var sq: Unit = world.add_unit(0, Vector2(48, 80), Unit.Kind.INFANTRY)
 	world.order_move(sq.id, Vector2i(48, 60))
-	sq.set_suppression(80.0, 0)
+	sq.set_suppression(90.0, 0)
 	world.begin_execute()
 	for i: int in 10:
 		world.step()
-	assert_eq(sq.pos, Vector2(48, 80), "suprimida no avanza")
+	assert_eq(sq.pos, Vector2(48, 80), "clavada no avanza")
 	for i: int in 200: # la supresión baja sola
 		world.step()
 	assert_lt(sq.suppression, Config.SUPPRESSED, "la supresión bajó")

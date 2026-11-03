@@ -77,7 +77,7 @@ func test_file_formation_follows_path() -> void:
 	world.order_move(sq.id, Vector2i(40, 60))
 	_run(world, 600)
 	for s: Soldier in sq.soldiers:
-		assert_lt(absf(s.pos.x - 40.0 * Config.CELL_SIZE), 0.5, "en fila sobre el eje x = 40")
+		assert_lt(absf(s.pos.x - 40.0 * Config.CELL_SIZE), Config.JITTER_M + 0.5, "en fila sobre el eje x = 40 (con la dispersión)")
 
 
 func test_anchor_waits_for_laggard() -> void:

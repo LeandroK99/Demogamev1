@@ -60,19 +60,32 @@ func test_pinned_soldier_stays_and_squad_moves_on() -> void:
 	assert_true(sq.pos.y < 75.0, "la escuadra sigue (uno solo clavado)")
 
 
-func test_majority_suppressed_halts_squad() -> void:
+func test_majority_pinned_halts_squad() -> void:
 	var world: SimWorld = _world()
 	var sq: Unit = world.add_unit(0, Vector2(48, 80), Unit.Kind.INFANTRY)
 	for s: Soldier in sq.soldiers:
 		if s.index < 6:
-			s.suppression = 70.0
+			s.suppression = 90.0
 			s.last_suppressed_tick = 1000000
 	world.order_move(sq.id, Vector2i(48, 70))
 	world.begin_execute()
 	for i: int in 50:
 		world.step()
-	assert_eq(sq.pos, Vector2(48, 80), "con la mayoría suprimida no avanza")
-	assert_true(not world.is_pinned(sq), "pero no está clavada")
+	assert_eq(sq.pos, Vector2(48, 80), "con la mayoría clavada no avanza")
+
+
+func test_suppressed_but_not_pinned_keeps_advancing() -> void:
+	var world: SimWorld = _world()
+	var sq: Unit = world.add_unit(0, Vector2(48, 80), Unit.Kind.INFANTRY)
+	sq.mind.autonomy = SquadMind.Autonomy.STRICT
+	for s: Soldier in sq.soldiers:
+		s.suppression = 70.0
+		s.last_suppressed_tick = 1000000
+	world.order_move(sq.id, Vector2i(48, 70))
+	world.begin_execute()
+	for i: int in 50:
+		world.step()
+	assert_lt(sq.pos.y, 80.0, "suprimida pero no clavada: la orden manda")
 
 
 func test_pinned_soldiers_do_not_fire_others_do() -> void:
