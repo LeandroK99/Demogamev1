@@ -16,6 +16,9 @@ var _walls: MeshInstance3D
 var _roofs_on: bool = true
 var _version: int = -1
 var _wall_mat: StandardMaterial3D = StandardMaterial3D.new()
+var world: SimWorld = null # para marcar las casas limpias (fase 70)
+var _marks: MeshInstance3D = null
+var _marked: int = -1 # cantidad de cuartos limpios ya dibujados
 
 
 func setup(bm: BuildingMap, hf: HeightField, rig: CameraRTS) -> void:
@@ -115,6 +118,44 @@ func _process(_delta: float) -> void:
 	var show: bool = _roofs_on and (_rig == null or _rig.zoom >= ROOF_HIDE_ZOOM)
 	for r: MeshInstance3D in _roofs:
 		r.visible = show
+	if world != null and world.cleared_rooms.size() != _marked:
+		_build_marks()
+
+
+## Cuartos limpios: el piso pintado del color del bando; una casa limpia entera, con una franja en
+## el techo.
+func _build_marks() -> void:
+	_marked = world.cleared_rooms.size()
+	if _marks != null:
+		_marks.queue_free()
+		_marks = null
+	var rm: RoomMap = world.rooms()
+	if rm == null or world.cleared_rooms.is_empty():
+		return
+	var st: SurfaceTool = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for r: int in world.cleared_rooms:
+		if r >= rm.rooms.size():
+			continue
+		var col: Color = Color(0.3, 0.5, 0.95) if int(world.cleared_rooms[r]) == 0 else Color(0.9, 0.3, 0.25)
+		var rect: Rect2 = rm.rooms[r]["rect"]
+		var ground: float = _ground(rect.get_center())
+		st.set_color(col)
+		_slab(st, rect.position + Vector2.ONE * 0.3, rect.size - Vector2.ONE * 0.6, ground, FLOOR_T, FLOOR_T + 0.03)
+	for h: int in world.cleared_houses:
+		var col2: Color = Color(0.3, 0.5, 0.95) if int(world.cleared_houses[h]) == 0 else Color(0.9, 0.3, 0.25)
+		var hr: Rect2 = _bm.rect_m(h)
+		st.set_color(col2)
+		_slab(st, Vector2(hr.position.x, hr.get_center().y - 0.6), Vector2(hr.size.x, 1.2), _ground(hr.get_center()),
+			Config.BUILDING_H + ROOF_T, Config.BUILDING_H + ROOF_T + 0.05)
+	var mat: StandardMaterial3D = StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_color = Color(1, 1, 1, 0.6)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	st.set_material(mat)
+	_marks = MeshInstance3D.new()
+	_marks.mesh = st.commit()
+	add_child(_marks)
 
 
 func _ground(p: Vector2) -> float:

@@ -4,7 +4,7 @@ extends CanvasLayer
 
 const PLAYER_SIDE: int = 0
 const HELP: String = "Clic izq: seleccionar · Clic der: mover (arrastrar: orientación) · Ctrl+clic der: ruta directa · Shift+clic der: agregar tramo · Clic der sobre rojo: atacar\n" \
-	+ "H: hull-down · V: vigilar hacia el cursor · M: misión del pelotón al cursor (Shift+M: cancelar) · I + clic der: abrir boquete · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · N: formación · Y: autonomía · P: evacuar heridos · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma / el pueblo) · O: techos"
+	+ "H: hull-down · V: vigilar hacia el cursor · M: misión del pelotón al cursor (Shift+M: cancelar) · I + clic der: abrir boquete · Shift+I + clic der: limpiar la casa · F + clic der: disparar y replegarse · G + clic izq: humo · Doble clic: pelotón · J + clic der: avance por saltos · U + clic der: suprimir zona · K: condición del último tramo · T + clic der: asaltar · B: retirarse · X: ritmo · N: formación · Y: autonomía · P: evacuar heridos · Z: reglas de fuego · C: área de enganche hacia el cursor (Shift+C: quitar) · Espacio: ejecutar turno\n1/2/3: overlays · +/-: velocidad · Q/E: rotar · R: reiniciar · Shift+R: mapa nuevo · L: cambiar escenario (tanques / la loma / el pueblo) · O: techos"
 const ORDER_NAMES: Dictionary = {
 	Unit.Order.NONE: "ninguna",
 	Unit.Order.MOVE: "mover",
@@ -17,6 +17,7 @@ const ORDER_NAMES: Dictionary = {
 	Unit.Order.WITHDRAW: "retirarse",
 	Unit.Order.SUPPRESS: "suprimir",
 	Unit.Order.BREACH: "abrir boquete",
+	Unit.Order.CLEAR: "limpiar la casa",
 }
 const ASPECT_NAMES: Array[String] = ["el frente", "el flanco", "la cola"]
 const RISK_NAMES: Array[String] = ["BAJO", "MEDIO", "ALTO"]
@@ -236,6 +237,10 @@ func _unit_text() -> String:
 			order_text = "tomar posición"
 		if sel.order == Unit.Order.ATTACK and sel.attack_target >= 0:
 			order_text += " (rojo %d)" % (sel.attack_target - Config.UNITS_PER_SIDE + 1)
+		if not sel.clear.is_empty():
+			var plan: Array = sel.clear["plan"]
+			order_text = "limpiar la casa (cuarto %d de %d%s)" % [mini(int(sel.clear["step"]) + 1, plan.size()), plan.size(),
+				"" if str(sel.clear["phase"]) != "approach" else ", yendo a la puerta"]
 		lines.append("Orden: %s" % order_text)
 		lines.append("Mira al %s" % compass(sel.heading))
 		if sel.is_infantry():

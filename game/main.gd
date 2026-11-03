@@ -81,6 +81,7 @@ func _start_game(p_seed: int) -> void:
 		var bv: BuildingView = BuildingView.new()
 		_game_root.add_child(bv)
 		bv.setup(world.buildings, height_field, camera_rig)
+		bv.world = world
 
 	for u: Unit in world.units:
 		var v: UnitView = UnitView.new()
